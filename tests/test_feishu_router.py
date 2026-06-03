@@ -68,6 +68,10 @@ class StubOAuth:
         return f"https://auth.example.test/?subject_id={subject_id}", "state-1"
 
 
+def _writeback_settings() -> Settings:
+    return Settings(env="test", writeback_enabled=True)
+
+
 @pytest.mark.asyncio
 async def test_router_replies_with_model_response(tmp_path) -> None:
     store = SQLiteStore(tmp_path / "fcgo.sqlite3")
@@ -94,7 +98,12 @@ async def test_router_sends_writeback_proposal_card_and_saves_pending_action(tmp
         expires_at=datetime.now(UTC) + timedelta(minutes=30),
     )
     client = RecordingFeishuClient()
-    router = FeishuMessageRouter(ProposalAssistant(proposal), client, store)
+    router = FeishuMessageRouter(
+        ProposalAssistant(proposal),
+        client,
+        store,
+        settings=_writeback_settings(),
+    )
 
     await router.handle_message(_message("om_writeback_card", "帮我写回"))
 
@@ -114,6 +123,28 @@ async def test_router_sends_writeback_proposal_card_and_saves_pending_action(tmp
 
 
 @pytest.mark.asyncio
+async def test_router_drops_writeback_proposals_when_disabled(tmp_path) -> None:
+    store = SQLiteStore(tmp_path / "fcgo.sqlite3")
+    await store.init()
+    proposal = ActionProposal(
+        actor_id="ou_user",
+        action_type=WriteActionType.MESSAGE_SEND,
+        target={"chat_id": "oc_chat"},
+        payload={"text": "hello"},
+        preview="向当前会话发送：hello",
+        expires_at=datetime.now(UTC) + timedelta(minutes=30),
+    )
+    client = RecordingFeishuClient()
+    router = FeishuMessageRouter(ProposalAssistant(proposal), client, store)
+
+    await router.handle_message(_message("om_writeback_disabled", "帮我写回"))
+
+    assert await store.get_pending_action(proposal.id) is None
+    assert client.cards == []
+    assert "写入功能当前已暂停" in client.replies[0][1]
+
+
+@pytest.mark.asyncio
 async def test_router_warns_but_allows_recent_duplicate_writeback(tmp_path) -> None:
     store = SQLiteStore(tmp_path / "fcgo.sqlite3")
     await store.init()
@@ -130,7 +161,12 @@ async def test_router_warns_but_allows_recent_duplicate_writeback(tmp_path) -> N
     await store.set_pending_action_status(previous.id, PendingActionStatus.CONFIRMED)
     await store.set_pending_action_status(previous.id, PendingActionStatus.EXECUTED)
     client = RecordingFeishuClient()
-    router = FeishuMessageRouter(ProposalAssistant(proposal), client, store)
+    router = FeishuMessageRouter(
+        ProposalAssistant(proposal),
+        client,
+        store,
+        settings=_writeback_settings(),
+    )
 
     await router.handle_message(_message("om_duplicate_writeback", "请写回"))
 
@@ -159,7 +195,12 @@ async def test_router_trusts_assistant_action_proposals_without_keyword_gate(
         expires_at=datetime.now(UTC) + timedelta(minutes=30),
     )
     client = RecordingFeishuClient()
-    router = FeishuMessageRouter(ProposalAssistant(proposal), client, store)
+    router = FeishuMessageRouter(
+        ProposalAssistant(proposal),
+        client,
+        store,
+        settings=_writeback_settings(),
+    )
 
     await router.handle_message(_message("om_model_planned_writeback", "请总结这个文档"))
 
@@ -181,7 +222,12 @@ async def test_router_allows_writeback_card_for_join_sheet_intent(tmp_path) -> N
         expires_at=datetime.now(UTC) + timedelta(minutes=30),
     )
     client = RecordingFeishuClient()
-    router = FeishuMessageRouter(ProposalAssistant(proposal), client, store)
+    router = FeishuMessageRouter(
+        ProposalAssistant(proposal),
+        client,
+        store,
+        settings=_writeback_settings(),
+    )
 
     await router.handle_message(
         _message("om_join_sheet_writeback", "请把“hello”加入这个表格")
@@ -206,7 +252,12 @@ async def test_router_allows_writeback_card_for_add_bitable_intent(tmp_path) -> 
         expires_at=datetime.now(UTC) + timedelta(minutes=30),
     )
     client = RecordingFeishuClient()
-    router = FeishuMessageRouter(ProposalAssistant(proposal), client, store)
+    router = FeishuMessageRouter(
+        ProposalAssistant(proposal),
+        client,
+        store,
+        settings=_writeback_settings(),
+    )
 
     await router.handle_message(
         _message("om_add_bitable_writeback", "把“测试数据”添加到这个多维表格")
@@ -231,7 +282,12 @@ async def test_router_allows_writeback_card_for_increase_bitable_intent(tmp_path
         expires_at=datetime.now(UTC) + timedelta(minutes=30),
     )
     client = RecordingFeishuClient()
-    router = FeishuMessageRouter(ProposalAssistant(proposal), client, store)
+    router = FeishuMessageRouter(
+        ProposalAssistant(proposal),
+        client,
+        store,
+        settings=_writeback_settings(),
+    )
 
     await router.handle_message(
         _message("om_increase_bitable_writeback", "把总结结果增加到测试列2的最后一行")
@@ -256,7 +312,12 @@ async def test_router_allows_writeback_card_for_replace_bitable_intent(tmp_path)
         expires_at=datetime.now(UTC) + timedelta(minutes=30),
     )
     client = RecordingFeishuClient()
-    router = FeishuMessageRouter(ProposalAssistant(proposal), client, store)
+    router = FeishuMessageRouter(
+        ProposalAssistant(proposal),
+        client,
+        store,
+        settings=_writeback_settings(),
+    )
 
     await router.handle_message(
         _message("om_replace_bitable_writeback", "把总结结果替换掉测试列2的最后一行")
@@ -378,7 +439,7 @@ async def test_router_sends_undo_card_for_latest_reversible_writeback(tmp_path) 
     )
     client = RecordingFeishuClient()
     assistant = SuccessfulAssistant()
-    router = FeishuMessageRouter(assistant, client, store)
+    router = FeishuMessageRouter(assistant, client, store, settings=_writeback_settings())
 
     await router.handle_message(_message("om_undo", "/撤回"))
 
@@ -406,7 +467,7 @@ async def test_router_replies_when_no_reversible_writeback_exists(tmp_path) -> N
     await store.init()
     client = RecordingFeishuClient()
     assistant = SuccessfulAssistant()
-    router = FeishuMessageRouter(assistant, client, store)
+    router = FeishuMessageRouter(assistant, client, store, settings=_writeback_settings())
 
     await router.handle_message(_message("om_undo_empty", "/撤回"))
 

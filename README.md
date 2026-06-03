@@ -1,6 +1,8 @@
 # FCGO
 
-FCGO 是一个 **Python 3.13 + uv 本地飞书工作助手**。它通过飞书长连接机器人接收私聊或群聊 `@机器人` 消息，调用 Gemini 生成回复，并返回飞书；后续扩展为按需读取飞书文档、电子表格、多维表格、网页链接，并通过交互卡片确认后写回。
+FCGO 是一个 **Python 3.13 + uv 本地飞书工作助手**。它通过飞书长连接机器人接收私聊或群聊 `@机器人` 消息，按用户授权读取飞书文档、电子表格、多维表格和网页链接，调用 Gemini 或其他已配置模型生成回复，并返回飞书。
+
+当前分支是 **读取优先基线**：写入、修改、删除、创建飞书内容的功能已暂停，默认不会创建写回卡片，也不会执行写入。
 
 ## 当前实现范围
 
@@ -9,8 +11,7 @@ FCGO 是一个 **Python 3.13 + uv 本地飞书工作助手**。它通过飞书�
 - 飞书消息路由、长连接 worker 骨架、消息回复客户端
 - 飞书 OAuth 回调和 token 持久化骨架
 - 飞书文档/表格/多维表格读取，以及普通网页链接正文提取
-- Gemini/模型写回提案的飞书交互卡片预览和确认/取消按钮
-- 待确认写回动作存储、过期、幂等和执行器接口
+- 写回相关代码保留为实验遗留能力，但默认关闭，不作为当前开发重点
 - pytest 单元测试与模拟集成测试基础
 
 ## 快速开始
@@ -68,10 +69,7 @@ uv run fcgo doctor
 - `FCGO_BASE_URL`
 - `FCGO_SQLITE_PATH`
 - `FCGO_MAX_MESSAGE_CHARS`，单条飞书消息进入模型前的最大字符数
-- `FCGO_MAX_WRITEBACK_CHARS`，单次写回文本/载荷的最大字符数
-- `FCGO_MAX_WRITEBACK_CELLS`，单次表格写入允许的最大单元格数量
-- `FCGO_WRITEBACK_DEDUPE_WINDOW_SECONDS`，相同用户、目标和内容的写回去重窗口，默认 600 秒
-- `FCGO_CARD_ACTION_ACK_TIMEOUT_SECONDS`，卡片确认等待写回完成的最长秒数；超时后先返回“正在执行”，后台继续写回
+- `FCGO_WRITEBACK_ENABLED`，当前分支默认 `false`；保持关闭时不会生成写回卡片或执行写入
 
 OpenAI 兼容 Provider 示例：
 
@@ -98,13 +96,13 @@ DEEPSEEK_MODEL=your-model-name
 - 用户本人对目标文档/知识库/表格有访问权限。
 - 飞书应用已在开发者后台开通对应 API 权限，并且用户通过 `/授权` 授予了这些 OAuth scope。
 
-默认 `FEISHU_OAUTH_SCOPES` 会请求读写 MVP 所需权限：
+默认 `FEISHU_OAUTH_SCOPES` 只请求读取所需权限：
 
 ```text
-auth:user.id:read docx:document:readonly docx:document wiki:node:read sheets:spreadsheet:readonly sheets:spreadsheet bitable:app:readonly bitable:app base:record:read base:record:create base:record:update base:record:delete base:field:read base:view:read
+auth:user.id:read docx:document:readonly wiki:node:read sheets:spreadsheet:readonly bitable:app:readonly base:record:read base:field:read base:view:read
 ```
 
-如果旧授权缺少新加的 scope，例如 `docx:document`、`sheets:spreadsheet`、`bitable:app`、`base:record:create`、`base:record:update` 或 `base:record:delete`，需要用户在飞书中重新发送 `/授权` 并完成授权。
+如果旧授权缺少读取 scope，例如 `docx:document:readonly`、`sheets:spreadsheet:readonly`、`bitable:app:readonly`、`base:record:read`、`base:field:read` 或 `base:view:read`，需要用户在飞书中重新发送 `/授权` 并完成授权。
 
 飞书开放平台中的 OAuth 回调地址需要配置为：
 
@@ -166,35 +164,14 @@ fcgo.help                查看帮助
 
 菜单点击会设置个人默认模型；文本命令 `/模型 使用 provider/model` 仍可设置当前会话模型。
 
-## 写回确认卡片
+## 写入功能暂停
 
-普通问答、总结、分析类任务会直接返回文本。只有当用户明确表达写入、创建、更新、追加或发送等写回意图，并且模型生成写回提案时，FCGO 才会先把提案保存为本地 `pending action`，然后向飞书发送交互卡片。卡片会展示模型回复、目标资源、拟执行动作、预览内容、动作 ID 和过期时间，并提供“确认执行”和“取消”按钮。
+当前分支先回到读取能力基线，`FCGO_WRITEBACK_ENABLED=false`。机器人不会生成写回卡片，
+也不会执行文档、电子表格、多维表格或消息写入。用户提出写入、修改、删除、创建等请求时，
+模型应返回可复制的草稿、摘要或操作建议，并说明写入功能当前暂停。
 
-如果模型在非写回任务中误生成提案，路由会抑制卡片，只返回普通文本，避免打扰用户或造成误操作。
-
-卡片回调地址：
-
-```text
-{FCGO_BASE_URL}/callbacks/feishu/card
-```
-
-飞书回调会执行操作者校验、过期校验和幂等处理。只有创建该写回提案的用户可以确认或取消；重复点击会返回“该操作已处理”。
-
-当前确认后执行器支持：
-
-- 创建飞书文档并可写入初始文本。
-- 向飞书文档末尾或指定 block 后追加文本/blocks；默认不会覆盖原文。
-- 写入飞书电子表格：默认追加到已读取内容的下一行；只有链接或请求明确指定范围时才写入指定单元格/范围。
-- 创建或更新飞书多维表格记录。
-- 向指定飞书会话发送消息。
-
-## 写回撤回
-
-FCGO 会记录已执行写回的结果。当前第一版支持撤回“多维表格新增记录”：当新增记录成功后，系统会保存飞书返回的 `record_id`。用户发送 `/撤回`、`撤回上一次写回` 或 `撤回最近写回` 时，机器人会生成一张新的确认卡片，确认后删除这条多维表格记录。
-
-撤回同样必须点击卡片确认，不会自动执行。撤回多维表新增记录需要 OAuth scope 包含 `base:record:delete`，如果旧授权缺少该权限，请重新发送 `/授权`。
-
-当前暂不自动撤回文档追加、电子表格覆盖和消息发送；这些类型需要保存更完整的旧值或插入位置，后续会逐步扩展。
+此前的写回代码保留在 `codex/feishu-doc-sheet-bitable-writeback` 分支作为实验记录；
+本分支后续优先继续开发读取、上下文、记忆、模型配置和助手体验。
 
 ## 安全默认值
 
@@ -202,6 +179,4 @@ FCGO 会记录已执行写回的结果。当前第一版支持撤回“多维表
 - 日志和错误信息会对常见密钥字段脱敏
 - 资源读取器带有大小限制和截断提示
 - 超长消息会在进入模型调用前被拒绝，并提示用户改用文档/表格链接
-- 写回执行前会检查文本长度和表格单元格数量，超限会被拦截
-- 写回失败会记录脱敏审计事件，并返回权限、授权、参数等可读错误提示
-- 写回动作必须先生成待确认动作，再由飞书交互卡片确认后执行
+- 写入功能默认关闭，避免误操作飞书资料

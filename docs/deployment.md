@@ -25,6 +25,7 @@ Copy-Item .env.example .env
 - OpenAI 兼容 Provider：如需使用 OpenAI、DeepSeek、Qwen、Doubao 或 Minimax，填入对应
   `API_KEY`、`BASE_URL`、`MODEL`
 - `FCGO_BASE_URL`
+- `FCGO_WRITEBACK_ENABLED=false`：当前读取基线分支保持关闭
 
 OpenAI 兼容 Provider 只有在同一组 `API_KEY`、`BASE_URL`、`MODEL` 都填写时才会注册。
 例如：
@@ -50,12 +51,10 @@ FCGO_OPENAI_COMPATIBLE_HTTP_PROXY=http://127.0.0.1:7890
 
 - 机器人消息事件订阅
 - 长连接事件接收
-- 应用权限管理中开通 OAuth 读写权限，例如 `docx:document:readonly`、`docx:document`、`wiki:node:read`、`sheets:spreadsheet:readonly`、`sheets:spreadsheet`、`bitable:app:readonly`、`bitable:app`、`base:record:read`、`base:record:create`、`base:record:update`、`base:record:delete`、`base:field:read`、`base:view:read`
+- 应用权限管理中开通 OAuth 读取权限，例如 `docx:document:readonly`、`wiki:node:read`、`sheets:spreadsheet:readonly`、`bitable:app:readonly`、`base:record:read`、`base:field:read`、`base:view:read`
 - OAuth 回调地址：`{FCGO_BASE_URL}/oauth/feishu/callback`
-- 交互卡片回调地址：`{FCGO_BASE_URL}/callbacks/feishu/card`
 
-交互卡片回调用于处理“确认执行”和“取消”按钮。FCGO 会校验点击人是否为创建该
-pending action 的用户，并通过飞书事件 ID 做幂等处理，避免重复点击或飞书重试导致重复执行。
+当前分支不需要配置写回交互卡片回调。即使旧卡片触发回调，FCGO 也会返回“写入功能当前已暂停”。
 
 ### 机器人自定义菜单
 
@@ -147,4 +146,4 @@ uv run ruff check .
 - 模型无法访问：先确认当前 `FCGO_DEFAULT_PROVIDER` 是否已注册；Gemini 检查 `GEMINI_API_KEY`、`GEMINI_HTTP_PROXY`、`GEMINI_BASE_URL` 和网络环境；OpenAI 兼容 Provider 检查对应 `API_KEY`、`BASE_URL`、`MODEL` 以及 `FCGO_OPENAI_COMPATIBLE_HTTP_PROXY`。
 - 飞书消息收不到：检查应用是否启用机器人和长连接事件订阅。
 - 私有文档无法读取：先确认用户本人能打开文档；再确认开发者后台已开通对应 API 权限；最后让用户重新发送 `/授权`，确保 token 包含文档读取 scope。旧 token 只包含 `auth:user.id:read` 时无法读取文档正文。
-- 写回未执行：确认动作是否过期、是否由创建人点击确认、是否已重复处理。
+- 写入请求没有卡片：当前分支默认暂停写入，这是预期行为；机器人应返回草稿或操作建议。

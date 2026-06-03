@@ -28,7 +28,11 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     oauth = FeishuOAuthService(settings, store)
     openapi = FeishuOpenAPI(settings, store)
     feishu_client = _maybe_build_feishu_client(settings)
-    writeback = WritebackService(store, FeishuWriteExecutor(openapi, feishu_client), settings)
+    writeback = (
+        WritebackService(store, FeishuWriteExecutor(openapi, feishu_client), settings)
+        if settings.writeback_enabled
+        else None
+    )
 
     @app.get("/healthz")
     async def healthz() -> dict[str, str]:
@@ -62,6 +66,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             callback = parse_card_callback(payload)
         except ValueError as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
+        if writeback is None:
+            return _card_callback_response("disabled", "写入功能当前已暂停")
         event_key = _card_callback_idempotency_key(callback.event_id, payload)
         if event_key:
             fresh = await store.remember_idempotency_key(event_key, callback.action_id)

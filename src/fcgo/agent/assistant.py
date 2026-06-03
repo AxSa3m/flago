@@ -123,10 +123,12 @@ class Assistant:
         resource_reader: ResourceReader | None = None,
         *,
         pending_action_ttl_seconds: int = 1800,
+        enable_writeback: bool = True,
     ) -> None:
         self.model_provider = model_provider
         self.resource_reader = resource_reader
         self.pending_action_ttl_seconds = pending_action_ttl_seconds
+        self.enable_writeback = enable_writeback
         self.writeback_planner = WritebackPlanner(pending_action_ttl_seconds)
 
     async def handle(self, request: AssistantRequest) -> AssistantResponse:
@@ -136,7 +138,10 @@ class Assistant:
         request.resource_results[:] = await self._read_resources(refs, request.actor_id)
         logger.info("assistant_request", extra={"request_id": request.request_id})
         response = await self.model_provider.generate(request)
-        self.writeback_planner.apply(request, response)
+        if self.enable_writeback:
+            self.writeback_planner.apply(request, response)
+        else:
+            response.action_proposals.clear()
         return response
 
     async def _read_resources(

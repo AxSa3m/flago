@@ -220,6 +220,30 @@ def test_card_callback_supports_url_verification(tmp_path) -> None:
     assert response.json() == {"challenge": "challenge-token"}
 
 
+def test_card_callback_reports_disabled_when_writeback_paused(tmp_path) -> None:
+    settings = Settings(
+        env="test",
+        sqlite_path=tmp_path / "fcgo.sqlite3",
+        feishu_app_id="cli_test",
+        feishu_app_secret="secret",
+        gemini_api_key="",
+    )
+
+    with TestClient(create_app(settings)) as client:
+        response = client.post(
+            "/callbacks/feishu/card",
+            json={
+                "actor_id": "ou_user",
+                "action": "confirm",
+                "action_id": "action-1",
+            },
+        )
+
+    assert response.status_code == 200
+    assert response.json()["status"] == "disabled"
+    assert "写入功能当前已暂停" in response.json()["message"]
+
+
 def _settings(tmp_path) -> Settings:
     return Settings(
         env="test",
@@ -230,6 +254,7 @@ def _settings(tmp_path) -> Settings:
         feishu_base_url="https://open.feishu.test",
         feishu_auth_base_url="https://accounts.feishu.test",
         gemini_api_key="",
+        writeback_enabled=True,
     )
 
 

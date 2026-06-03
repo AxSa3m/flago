@@ -668,6 +668,22 @@ async def test_assistant_infers_doc_append_proposal_for_explicit_writeback() -> 
 
 
 @pytest.mark.asyncio
+async def test_assistant_does_not_create_writeback_proposals_when_disabled() -> None:
+    provider = RecordingModelProvider()
+    assistant = Assistant(provider, enable_writeback=False)
+    request = AssistantRequest(
+        actor_id="ou_user",
+        conversation_id="chat-1",
+        conversation_type=ConversationType.PRIVATE,
+        text="请把“FCGO 写回测试成功”写入这个文档：https://docs.feishu.cn/docx/docx123",
+    )
+
+    response = await assistant.handle(request)
+
+    assert response.action_proposals == []
+
+
+@pytest.mark.asyncio
 async def test_assistant_uses_resolved_wiki_doc_token_for_writeback() -> None:
     provider = RecordingModelProvider()
     assistant = Assistant(provider, ResolvingWikiResourceReader())

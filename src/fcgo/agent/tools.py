@@ -4,7 +4,6 @@ from fcgo.models import (
     ModelToolSpec,
     ResourceReadRequest,
     ToolName,
-    WritebackProposalRequest,
 )
 
 
@@ -18,20 +17,11 @@ def model_tool_specs() -> list[ModelToolSpec]:
             ),
             parameters=_json_schema(ResourceReadRequest),
         ),
-        ModelToolSpec(
-            name=ToolName.PROPOSE_WRITEBACK,
-            description=(
-                "Create writeback proposals for user confirmation. This tool never executes "
-                "writes directly; the service stores proposals and waits for an explicit "
-                "Feishu card confirmation."
-            ),
-            parameters=_json_schema(WritebackProposalRequest),
-        ),
     ]
 
 
 def _json_schema(
-    model: type[ResourceReadRequest] | type[WritebackProposalRequest],
+    model: type[ResourceReadRequest],
 ) -> dict[str, Any]:
     schema = model.model_json_schema()
     schema.pop("title", None)

@@ -67,11 +67,16 @@ def _run_worker() -> None:
             WebResourceReader(settings),
         ),
         pending_action_ttl_seconds=settings.pending_action_ttl_seconds,
+        enable_writeback=settings.writeback_enabled,
     )
     feishu_client = FeishuClient(settings)
     oauth = FeishuOAuthService(settings, store)
     router = FeishuMessageRouter(assistant, feishu_client, store, oauth, model, settings)
-    writeback = WritebackService(store, FeishuWriteExecutor(openapi, feishu_client), settings)
+    writeback = (
+        WritebackService(store, FeishuWriteExecutor(openapi, feishu_client), settings)
+        if settings.writeback_enabled
+        else None
+    )
     logger.info("starting_feishu_long_connection_worker")
     FeishuLongConnectionWorker(settings, router, writeback).run_forever()
 

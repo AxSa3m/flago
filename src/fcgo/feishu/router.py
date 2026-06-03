@@ -77,6 +77,12 @@ class FeishuMessageRouter:
             await self._reply_oauth_link(message)
             return
         if _is_undo_command(message.text):
+            if not self.settings.writeback_enabled:
+                await self.feishu_client.reply_text(
+                    message.chat_id,
+                    "写入功能当前已暂停，因此撤回写回也暂不可用。",
+                )
+                return
             await self._reply_latest_undo_card(message)
             return
         if await self._maybe_handle_model_command(message):
@@ -128,6 +134,18 @@ class FeishuMessageRouter:
     ) -> None:
         if not response.action_proposals:
             await self.feishu_client.reply_text(message.chat_id, response.text)
+            return
+        if not self.settings.writeback_enabled:
+            logger.info(
+                "writeback_disabled_dropping_proposals message_id=%s proposal_count=%s",
+                message.message_id,
+                len(response.action_proposals),
+            )
+            response.action_proposals.clear()
+            await self.feishu_client.reply_text(
+                message.chat_id,
+                _writeback_disabled_text(response.text),
+            )
             return
         duplicate_count = 0
         for proposal in response.action_proposals:
@@ -521,6 +539,16 @@ def _has_explicit_writeback_intent(text: str) -> bool:
     has_target = any(term in normalized for term in target_terms)
     has_request_marker = any(marker in normalized for marker in request_markers)
     return has_action and has_target and has_request_marker
+
+
+def _writeback_disabled_text(text: str) -> str:
+    cleaned = text.strip()
+    notice = "写入功能当前已暂停，我不会创建写回卡片或执行写入。"
+    if not cleaned:
+        return notice
+    if "我已准备好写回预览" in cleaned or "请在卡片中确认" in cleaned:
+        return notice
+    return f"{cleaned}\n\n{notice}"
 
 
 def _should_route(message: FeishuMessage) -> bool:

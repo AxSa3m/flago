@@ -39,16 +39,10 @@ class Settings(BaseSettings):
         default=(
             "auth:user.id:read "
             "docx:document:readonly "
-            "docx:document "
             "wiki:node:read "
             "sheets:spreadsheet:readonly "
-            "sheets:spreadsheet "
             "bitable:app:readonly "
-            "bitable:app "
             "base:record:read "
-            "base:record:create "
-            "base:record:update "
-            "base:record:delete "
             "base:field:read "
             "base:view:read"
         ),
@@ -112,6 +106,7 @@ class Settings(BaseSettings):
     pending_action_ttl_seconds: int = Field(
         default=1800, alias="FCGO_PENDING_ACTION_TTL_SECONDS"
     )
+    writeback_enabled: bool = Field(default=False, alias="FCGO_WRITEBACK_ENABLED")
     writeback_dedupe_window_seconds: int = Field(
         default=600,
         alias="FCGO_WRITEBACK_DEDUPE_WINDOW_SECONDS",

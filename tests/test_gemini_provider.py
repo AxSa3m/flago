@@ -69,7 +69,7 @@ def test_prompt_prefers_bitable_records_over_metadata_warnings() -> None:
     assert "即使字段或视图元数据有警告，也应优先根据记录摘录回答" in prompt
 
 
-def test_prompt_requires_generated_writeback_content_preview() -> None:
+def test_prompt_keeps_writeback_paused_on_read_only_branch() -> None:
     request = AssistantRequest(
         actor_id="ou_user",
         conversation_id="chat-1",
@@ -79,11 +79,10 @@ def test_prompt_requires_generated_writeback_content_preview() -> None:
 
     prompt = GeminiProvider._build_prompt(request)
 
-    assert "用户输入是任务指令，不是默认写入正文" in prompt
-    assert "待写内容预览" in prompt
-    assert "不要把用户原始指令当作写入内容" in prompt
-    assert "CRUD 意图" in prompt
-    assert "fcgo_writeback" in prompt
+    assert "写入、修改、删除、创建飞书内容的功能已暂停" in prompt
+    assert "不要输出写回 JSON" in prompt
+    assert "可复制的草稿、摘要或操作建议" in prompt
+    assert "fcgo_writeback" not in prompt
 
 
 def test_gemini_provider_exposes_unified_provider_config() -> None:

@@ -14,18 +14,13 @@ from fcgo.models import (
 )
 
 
-def test_model_tool_specs_include_resource_read_and_writeback_proposal() -> None:
+def test_model_tool_specs_include_resource_read_only() -> None:
     specs = model_tool_specs()
 
     by_name = {spec.name: spec for spec in specs}
 
-    assert set(by_name) == {ToolName.READ_RESOURCE, ToolName.PROPOSE_WRITEBACK}
+    assert set(by_name) == {ToolName.READ_RESOURCE}
     assert by_name[ToolName.READ_RESOURCE].parameters["properties"]["refs"]["type"] == "array"
-    assert (
-        by_name[ToolName.PROPOSE_WRITEBACK].parameters["properties"]["proposals"]["type"]
-        == "array"
-    )
-    assert "never executes writes directly" in by_name[ToolName.PROPOSE_WRITEBACK].description
 
 
 def test_resource_read_request_validates_resource_refs() -> None:
