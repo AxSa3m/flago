@@ -1,0 +1,154 @@
+from types import SimpleNamespace
+
+import pytest
+
+from fcgo.config import Settings
+from fcgo.gemini.provider import GeminiProvider
+from fcgo.model_providers import ModelMessage, ModelMessageRole, ModelRequest, ProviderCapability
+from fcgo.models import (
+    AssistantRequest,
+    ConversationType,
+    ResourceReadResult,
+    ResourceRef,
+    ResourceType,
+)
+
+
+def test_prompt_includes_authorized_resource_content() -> None:
+    ref = ResourceRef(
+        type=ResourceType.FEISHU_DOC,
+        url="https://docs.feishu.cn/docx/docx123",
+        token="docx123",
+    )
+    request = AssistantRequest(
+        actor_id="ou_user",
+        conversation_id="chat-1",
+        conversation_type=ConversationType.PRIVATE,
+        text="总结这个文档",
+        resource_urls=[ref.url],
+        resource_refs=[ref],
+        resource_results=[
+            ResourceReadResult(
+                ref=ref,
+                title="课程大纲",
+                content="这个课程包含三个项目。",
+            )
+        ],
+    )
+
+    prompt = GeminiProvider._build_prompt(request)
+
+    assert "已按用户授权读取的资源内容" in prompt
+    assert "课程大纲" in prompt
+    assert "这个课程包含三个项目。" in prompt
+
+
+def test_prompt_warns_not_to_treat_sparse_sheet_as_empty() -> None:
+    request = AssistantRequest(
+        actor_id="ou_user",
+        conversation_id="chat-1",
+        conversation_type=ConversationType.PRIVATE,
+        text="这个表格里有什么？",
+    )
+
+    prompt = GeminiProvider._build_prompt(request)
+
+    assert "不要因为周边空白行列判断表格为空" in prompt
+
+
+def test_prompt_prefers_bitable_records_over_metadata_warnings() -> None:
+    request = AssistantRequest(
+        actor_id="ou_user",
+        conversation_id="chat-1",
+        conversation_type=ConversationType.PRIVATE,
+        text="这个多维表里有什么？",
+    )
+
+    prompt = GeminiProvider._build_prompt(request)
+
+    assert "即使字段或视图元数据有警告，也应优先根据记录摘录回答" in prompt
+
+
+def test_prompt_requires_generated_writeback_content_preview() -> None:
+    request = AssistantRequest(
+        actor_id="ou_user",
+        conversation_id="chat-1",
+        conversation_type=ConversationType.PRIVATE,
+        text="写一段自我介绍并写入文档",
+    )
+
+    prompt = GeminiProvider._build_prompt(request)
+
+    assert "用户输入是任务指令，不是默认写入正文" in prompt
+    assert "待写内容预览" in prompt
+    assert "不要把用户原始指令当作写入内容" in prompt
+    assert "CRUD 意图" in prompt
+    assert "fcgo_writeback" in prompt
+
+
+def test_gemini_provider_exposes_unified_provider_config() -> None:
+    settings = Settings(
+        env="test",
+        gemini_api_key="test-key",
+        gemini_model="gemini-test",
+        gemini_base_url="https://gemini.local",
+        gemini_http_proxy="http://127.0.0.1:7890",
+        gemini_thinking_budget=0,
+    )
+
+    provider = GeminiProvider(settings)
+
+    assert provider.name == "gemini"
+    assert provider.model == "gemini-test"
+    assert ProviderCapability.CHAT in provider.capabilities
+    assert ProviderCapability.VISION_INPUT in provider.capabilities
+    assert provider.provider_config.default_model == "gemini-test"
+    assert provider.provider_config.base_url == "https://gemini.local"
+    assert provider.provider_config.http_proxy == "http://127.0.0.1:7890"
+    assert provider.provider_config.extra["thinking_budget"] == 0
+
+
+@pytest.mark.asyncio
+async def test_gemini_provider_generates_unified_model_response() -> None:
+    settings = Settings(env="test", gemini_api_key="test-key", gemini_model="gemini-test")
+    provider = GeminiProvider(settings)
+    fake_models = _FakeGeminiModels()
+    provider.client = SimpleNamespace(models=fake_models)
+    request = ModelRequest(
+        request_id="req-1",
+        provider="gemini",
+        model="gemini-test",
+        max_output_tokens=32,
+        messages=[
+            ModelMessage(role=ModelMessageRole.SYSTEM, content="system"),
+            ModelMessage(role=ModelMessageRole.USER, content="user"),
+        ],
+    )
+
+    response = await provider.generate_model(request)
+
+    assert response.text == "模型回复"
+    assert response.provider == "gemini"
+    assert response.model == "gemini-test"
+    assert response.usage is not None
+    assert response.usage.input_tokens == 7
+    assert response.usage.output_tokens == 3
+    assert response.usage.total_tokens == 10
+    assert fake_models.calls[0]["model"] == "gemini-test"
+    assert fake_models.calls[0]["contents"] == "system\n\nuser"
+
+
+class _FakeGeminiModels:
+    def __init__(self) -> None:
+        self.calls: list[dict[str, object]] = []
+
+    def generate_content(self, **kwargs: object) -> SimpleNamespace:
+        self.calls.append(kwargs)
+        return SimpleNamespace(
+            text="模型回复",
+            usage_metadata=SimpleNamespace(
+                prompt_token_count=7,
+                candidates_token_count=3,
+                total_token_count=10,
+            ),
+        )

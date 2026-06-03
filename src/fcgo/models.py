@@ -1,0 +1,217 @@
+from datetime import UTC, datetime, timedelta
+from enum import StrEnum
+from typing import Any, Literal
+from uuid import uuid4
+
+from pydantic import BaseModel, Field
+
+
+class ConversationType(StrEnum):
+    PRIVATE = "private"
+    GROUP = "group"
+
+
+class ResourceType(StrEnum):
+    FEISHU_DOC = "feishu_doc"
+    FEISHU_SHEET = "feishu_sheet"
+    FEISHU_BITABLE = "feishu_bitable"
+    WEB = "web"
+    UNKNOWN = "unknown"
+
+
+class WriteActionType(StrEnum):
+    DOC_CREATE = "doc_create"
+    DOC_APPEND = "doc_append"
+    SHEET_WRITE_RANGE = "sheet_write_range"
+    BITABLE_CREATE_RECORD = "bitable_create_record"
+    BITABLE_UPDATE_RECORD = "bitable_update_record"
+    BITABLE_DELETE_RECORD = "bitable_delete_record"
+    MESSAGE_SEND = "message_send"
+
+
+class ToolName(StrEnum):
+    READ_RESOURCE = "read_resource"
+    PROPOSE_WRITEBACK = "propose_writeback"
+
+
+class FeishuMention(BaseModel):
+    key: str = ""
+    open_id: str = ""
+    user_id: str = ""
+    union_id: str = ""
+    name: str = ""
+
+
+class FeishuMessage(BaseModel):
+    message_id: str
+    chat_id: str
+    sender_id: str
+    text: str
+    conversation_type: ConversationType
+    conversation_key: str = ""
+    thread_id: str | None = None
+    root_id: str | None = None
+    parent_id: str | None = None
+    mentions: list[FeishuMention] = Field(default_factory=list)
+    is_bot_mentioned: bool = False
+    raw: dict[str, Any] = Field(default_factory=dict)
+
+
+class FeishuBotMenuEvent(BaseModel):
+    event_id: str = ""
+    event_key: str
+    operator_open_id: str = ""
+    operator_user_id: str = ""
+    operator_union_id: str = ""
+    operator_name: str = ""
+    timestamp: int | None = None
+    raw: dict[str, Any] = Field(default_factory=dict)
+
+
+class ResourceRef(BaseModel):
+    type: ResourceType
+    url: str
+    source_kind: str | None = None
+    token: str | None = None
+    sheet_id: str | None = None
+    table_id: str | None = None
+    view_id: str | None = None
+    range_hint: str | None = None
+
+
+class ResourceReadResult(BaseModel):
+    ref: ResourceRef
+    title: str | None = None
+    content: str = ""
+    truncated: bool = False
+    error: str | None = None
+
+
+class AssistantRequest(BaseModel):
+    request_id: str = Field(default_factory=lambda: uuid4().hex)
+    actor_id: str
+    conversation_id: str
+    conversation_type: ConversationType
+    text: str
+    model_provider: str | None = None
+    model: str | None = None
+    resource_urls: list[str] = Field(default_factory=list)
+    resource_refs: list[ResourceRef] = Field(default_factory=list)
+    resource_results: list[ResourceReadResult] = Field(default_factory=list)
+
+
+class ResourceReadRequest(BaseModel):
+    refs: list[ResourceRef]
+    reason: str = ""
+
+
+class ActionProposalDraft(BaseModel):
+    action_type: WriteActionType
+    target: dict[str, Any]
+    payload: dict[str, Any]
+    preview: str
+
+    def to_proposal(
+        self,
+        *,
+        actor_id: str,
+        ttl_seconds: int,
+        now: datetime | None = None,
+    ) -> "ActionProposal":
+        created_at = now or datetime.now(UTC)
+        return ActionProposal(
+            actor_id=actor_id,
+            action_type=self.action_type,
+            target=self.target,
+            payload=self.payload,
+            preview=self.preview,
+            created_at=created_at,
+            expires_at=created_at + timedelta(seconds=ttl_seconds),
+        )
+
+
+class WritebackProposalRequest(BaseModel):
+    proposals: list[ActionProposalDraft]
+    reason: str = ""
+
+
+class ToolCall(BaseModel):
+    id: str = Field(default_factory=lambda: uuid4().hex)
+    name: ToolName
+    arguments: dict[str, Any] = Field(default_factory=dict)
+
+
+class ToolResult(BaseModel):
+    call_id: str
+    name: ToolName
+    ok: bool
+    content: dict[str, Any] = Field(default_factory=dict)
+    error: str | None = None
+
+
+class ModelToolSpec(BaseModel):
+    name: ToolName
+    description: str
+    parameters: dict[str, Any]
+
+
+class ActionProposal(BaseModel):
+    id: str = Field(default_factory=lambda: uuid4().hex)
+    actor_id: str
+    action_type: WriteActionType
+    target: dict[str, Any]
+    payload: dict[str, Any]
+    preview: str
+    created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
+    expires_at: datetime
+
+
+class AssistantResponse(BaseModel):
+    text: str
+    tool_calls: list[ToolCall] = Field(default_factory=list)
+    action_proposals: list[ActionProposal] = Field(default_factory=list)
+
+
+class PendingActionStatus(StrEnum):
+    PENDING = "pending"
+    CONFIRMED = "confirmed"
+    EXECUTED = "executed"
+    FAILED = "failed"
+    CANCELED = "canceled"
+    EXPIRED = "expired"
+
+
+class AuditEventType(StrEnum):
+    OAUTH_STATE_CREATED = "oauth_state_created"
+    OAUTH_AUTHORIZED = "oauth_authorized"
+    OAUTH_TOKEN_REFRESHED = "oauth_token_refreshed"
+    ACTION_CREATED = "action_created"
+    ACTION_CONFIRMED = "action_confirmed"
+    ACTION_CANCELED = "action_canceled"
+    ACTION_EXPIRED = "action_expired"
+    WRITE_EXECUTED = "write_executed"
+    MODEL_PREFERENCE_SET = "model_preference_set"
+    MODEL_PREFERENCE_CLEARED = "model_preference_cleared"
+    ERROR = "error"
+
+
+class ConfirmationResult(BaseModel):
+    status: Literal[
+        "accepted",
+        "executed",
+        "canceled",
+        "expired",
+        "not_found",
+        "forbidden",
+        "duplicate",
+        "failed",
+    ]
+    message: str
+
+
+class ModelPreference(BaseModel):
+    scope: str
+    provider: str
+    model: str | None = None
+    updated_by: str
+    updated_at: str

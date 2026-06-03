@@ -1,0 +1,168 @@
+import asyncio
+import logging
+from time import perf_counter
+from typing import Any
+
+from google import genai
+from google.genai import types
+
+from fcgo.config import Settings
+from fcgo.logging import redact
+from fcgo.model_providers.echo import EchoModelProvider
+from fcgo.model_providers.prompt import (
+    build_assistant_model_request,
+    build_assistant_prompt,
+    render_text_prompt,
+)
+from fcgo.model_providers.types import (
+    ModelRequest,
+    ModelResponse,
+    ModelUsage,
+    ProviderCapability,
+    ProviderConfig,
+    ProviderKind,
+)
+from fcgo.models import AssistantRequest, AssistantResponse
+
+logger = logging.getLogger(__name__)
+
+__all__ = ["EchoModelProvider", "GeminiProvider"]
+
+
+class GeminiProvider:
+    def __init__(self, settings: Settings) -> None:
+        self.provider_config = _gemini_provider_config(settings)
+        api_key = (
+            self.provider_config.api_key.get_secret_value()
+            if self.provider_config.api_key
+            else ""
+        )
+        if not api_key:
+            raise ValueError("GEMINI_API_KEY is required")
+        http_options: dict[str, Any] = {}
+        if self.provider_config.base_url:
+            http_options["base_url"] = self.provider_config.base_url
+        if self.provider_config.http_proxy:
+            http_options["client_args"] = {"proxy": self.provider_config.http_proxy}
+        self.client = genai.Client(
+            api_key=api_key,
+            http_options=types.HttpOptions(**http_options) if http_options else None,
+        )
+        self.name = self.provider_config.name
+        self.kind = self.provider_config.kind
+        self.capabilities = list(self.provider_config.capabilities)
+        self.model = self.provider_config.default_model
+        self.timeout = self.provider_config.timeout_seconds
+        self.max_output_tokens = self.provider_config.max_output_tokens
+        self.thinking_budget = _int_or_none(self.provider_config.extra.get("thinking_budget"))
+
+    async def generate(self, request: AssistantRequest) -> AssistantResponse:
+        model_request = build_assistant_model_request(
+            request,
+            provider=self.name,
+            model=self.model,
+            max_output_tokens=self.max_output_tokens,
+        )
+        model_response = await self.generate_model(model_request)
+        return AssistantResponse(text=model_response.text)
+
+    async def generate_model(self, request: ModelRequest) -> ModelResponse:
+        model = request.model or self.model
+        prompt = render_text_prompt(request)
+        started_at = perf_counter()
+        try:
+            response = await asyncio.wait_for(
+                asyncio.to_thread(
+                    self.client.models.generate_content,
+                    model=model,
+                    contents=prompt,
+                    config=self._generate_config(request.max_output_tokens),
+                ),
+                timeout=self.timeout,
+            )
+        except Exception as exc:  # noqa: BLE001 - convert SDK-specific failures for caller
+            detail = redact(str(exc))
+            raise RuntimeError(f"Gemini request failed: {detail}") from exc
+        latency_ms = int((perf_counter() - started_at) * 1000)
+        usage = _gemini_usage(response)
+        logger.info(
+            "model_provider_response provider=%s model=%s latency_ms=%s "
+            "input_tokens=%s output_tokens=%s",
+            self.name,
+            model,
+            latency_ms,
+            usage.input_tokens if usage else None,
+            usage.output_tokens if usage else None,
+        )
+        return ModelResponse(
+            text=response.text or "",
+            provider=self.name,
+            model=model,
+            usage=usage,
+            raw={"latency_ms": latency_ms},
+        )
+
+    def _generate_config(self, max_output_tokens: int | None = None) -> types.GenerateContentConfig:
+        thinking_config = None
+        if self.thinking_budget is not None:
+            thinking_config = types.ThinkingConfig(
+                thinking_budget=self.thinking_budget,
+                include_thoughts=False,
+            )
+        return types.GenerateContentConfig(
+            max_output_tokens=max_output_tokens or self.max_output_tokens,
+            thinking_config=thinking_config,
+        )
+
+    @staticmethod
+    def _build_prompt(request: AssistantRequest) -> str:
+        return build_assistant_prompt(request)
+
+
+def _gemini_provider_config(settings: Settings) -> ProviderConfig:
+    return ProviderConfig(
+        name="gemini",
+        kind=ProviderKind.GEMINI,
+        default_model=settings.gemini_model,
+        api_key=settings.gemini_api_key,
+        base_url=settings.gemini_base_url,
+        http_proxy=settings.gemini_http_proxy,
+        timeout_seconds=settings.gemini_timeout_seconds,
+        max_output_tokens=settings.gemini_max_output_tokens,
+        capabilities=[
+            ProviderCapability.CHAT,
+            ProviderCapability.JSON_OUTPUT,
+            ProviderCapability.VISION_INPUT,
+            ProviderCapability.LONG_CONTEXT,
+        ],
+        extra={"thinking_budget": settings.gemini_thinking_budget},
+    )
+
+
+def _gemini_usage(response: Any) -> ModelUsage | None:
+    usage_metadata = getattr(response, "usage_metadata", None)
+    if usage_metadata is None:
+        return None
+    input_tokens = _int_or_none(
+        getattr(usage_metadata, "prompt_token_count", None)
+        or getattr(usage_metadata, "input_token_count", None)
+    )
+    output_tokens = _int_or_none(
+        getattr(usage_metadata, "candidates_token_count", None)
+        or getattr(usage_metadata, "output_token_count", None)
+    )
+    total_tokens = _int_or_none(getattr(usage_metadata, "total_token_count", None))
+    return ModelUsage(
+        input_tokens=input_tokens,
+        output_tokens=output_tokens,
+        total_tokens=total_tokens,
+    )
+
+
+def _int_or_none(value: Any) -> int | None:
+    if value is None:
+        return None
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return None

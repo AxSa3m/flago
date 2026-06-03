@@ -1,0 +1,58 @@
+[project]
+name = "fcgo"
+version = "0.1.0"
+description = "Gemini-powered local Feishu work assistant."
+readme = "README.md"
+requires-python = ">=3.13"
+dependencies = [
+    "aiosqlite>=0.21.0",
+    "beautifulsoup4>=4.13.0",
+    "fastapi>=0.115.0",
+    "google-genai>=1.0.0",
+    "httpx>=0.28.0",
+    "lark-oapi>=1.4.0",
+    "pydantic>=2.10.0",
+    "pydantic-settings>=2.8.0",
+    "python-dotenv>=1.0.1",
+    "uvicorn[standard]>=0.34.0",
+]
+
+[dependency-groups]
+dev = [
+    "mypy>=1.15.0",
+    "pytest>=8.3.0",
+    "pytest-asyncio>=0.25.0",
+    "respx>=0.22.0",
+    "ruff>=0.9.0",
+]
+
+[project.scripts]
+fcgo = "fcgo.cli:main"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/fcgo"]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py313"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "SIM"]
+
+[tool.mypy]
+python_version = "3.13"
+packages = ["fcgo"]
+strict = true
+warn_unused_ignores = false
+
+[[tool.mypy.overrides]]
+module = ["lark_oapi", "lark_oapi.*"]
+ignore_missing_imports = true
