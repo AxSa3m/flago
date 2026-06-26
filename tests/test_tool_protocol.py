@@ -1,8 +1,11 @@
 from datetime import UTC, datetime
 
-from fcgo.agent.tools import model_tool_specs
+import pytest
+
+from fcgo.agent.tools import ToolExecutionContext, default_tool_registry, model_tool_specs
 from fcgo.models import (
     ActionProposalDraft,
+    ConversationType,
     ResourceReadRequest,
     ResourceRef,
     ResourceType,
@@ -10,6 +13,7 @@ from fcgo.models import (
     ToolName,
     ToolResult,
     WriteActionType,
+    WritebackConfirmationMode,
     WritebackProposalRequest,
 )
 
@@ -19,8 +23,19 @@ def test_model_tool_specs_include_resource_read_only() -> None:
 
     by_name = {spec.name: spec for spec in specs}
 
-    assert set(by_name) == {ToolName.READ_RESOURCE}
+    assert {
+        ToolName.SEARCH_RESOURCES,
+        ToolName.READ_RESOURCE,
+        ToolName.INSPECT_DOC_STRUCTURE,
+        ToolName.PREPARE_WRITEBACK,
+        ToolName.GET_WRITEBACK_POLICY,
+        ToolName.LIST_MEMORY,
+        ToolName.UPSERT_MEMORY_DRAFT,
+        ToolName.GET_MODEL_STATUS,
+        ToolName.WEB_READ,
+    } <= set(by_name)
     assert by_name[ToolName.READ_RESOURCE].parameters["properties"]["refs"]["type"] == "array"
+    assert by_name[ToolName.PREPARE_WRITEBACK].read_only is False
 
 
 def test_resource_read_request_validates_resource_refs() -> None:
@@ -84,3 +99,81 @@ def test_tool_call_and_result_shapes() -> None:
     assert result.call_id == call.id
     assert result.ok is False
     assert result.error == "user confirmation required"
+
+
+@pytest.mark.asyncio
+async def test_tool_registry_rejects_unknown_tool_name() -> None:
+    registry = default_tool_registry()
+
+    result = await registry.execute(
+        call_id="call-1",
+        name=ToolName.PROPOSE_WRITEBACK,
+        arguments={},
+        context=_tool_context(writeback_enabled=True),
+    )
+
+    assert result.call_id == "call-1"
+    assert result.ok is False
+    assert "未知工具" in (result.error or "")
+
+
+@pytest.mark.asyncio
+async def test_tool_registry_rejects_write_tool_when_writeback_disabled() -> None:
+    registry = default_tool_registry()
+    request = WritebackProposalRequest(
+        proposals=[
+            ActionProposalDraft(
+                action_type=WriteActionType.DOC_APPEND,
+                target={"document_id": "docx1"},
+                payload={"content": "hello"},
+                preview="向文档追加：hello",
+            )
+        ]
+    )
+
+    result = await registry.execute(
+        call_id="call-2",
+        name=ToolName.PREPARE_WRITEBACK,
+        arguments=request.model_dump(mode="json"),
+        context=_tool_context(writeback_enabled=False),
+    )
+
+    assert result.call_id == "call-2"
+    assert result.ok is False
+    assert result.error == "writeback_disabled"
+
+
+@pytest.mark.asyncio
+async def test_prepare_writeback_rejects_document_middle_insert() -> None:
+    registry = default_tool_registry()
+    request = WritebackProposalRequest(
+        proposals=[
+            ActionProposalDraft(
+                action_type=WriteActionType.DOC_APPEND,
+                target={"document_id": "docx1", "block_id": "block-mid", "index": 1},
+                payload={"content": "hello"},
+                preview="在中间写入：hello",
+            )
+        ]
+    )
+
+    result = await registry.execute(
+        call_id="call-3",
+        name=ToolName.PREPARE_WRITEBACK,
+        arguments=request.model_dump(mode="json"),
+        context=_tool_context(writeback_enabled=True),
+    )
+
+    assert result.call_id == "call-3"
+    assert result.ok is False
+    assert result.error == "unsupported_doc_middle_insert"
+    assert "文档中间位置" in (result.user_message or "")
+
+
+def _tool_context(*, writeback_enabled: bool) -> ToolExecutionContext:
+    return ToolExecutionContext(
+        actor_id="ou_user",
+        conversation_type=ConversationType.PRIVATE,
+        writeback_enabled=writeback_enabled,
+        writeback_confirmation_mode=WritebackConfirmationMode.ALWAYS,
+    )

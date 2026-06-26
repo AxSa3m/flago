@@ -12,7 +12,8 @@ FCGO 是一个 **Python 3.13 + uv 本地飞书工作助手**。它通过飞书�
 - 飞书消息路由、长连接 worker 骨架、消息回复客户端
 - 飞书 OAuth 回调和 token 持久化骨架
 - 飞书文档/表格/多维表格读取，以及普通网页链接正文提取
-- 写回相关代码保留为实验遗留能力，但默认关闭，不作为当前开发重点
+- Agent + Tools 双轨编排基础；默认仍使用 legacy 编排，可通过配置切换到 Agent 模式
+- 确认式写回能力；默认关闭，可按策略生成确认卡片、直接执行低风险追加或只返回草稿
 - pytest 单元测试与模拟集成测试基础
 
 ## 快速开始
@@ -78,6 +79,9 @@ uv run fcgo doctor
 - `FCGO_BASE_URL`
 - `FCGO_SQLITE_PATH`
 - `FCGO_ASSISTANT_DEFAULT_NAME`，默认 `小智`；用户未设置个人助手名称时使用
+- `FCGO_AGENT_MODE`，默认 `legacy`；可设为 `agent` 启用 Agent + Tools JSON parser 编排
+- `FCGO_AGENT_MAX_STEPS`，默认 `4`；Agent 模式下单次请求最多工具轮数
+- `FCGO_AGENT_TOOL_TIMEOUT_SECONDS`，默认 `30`；Agent 工具默认超时时间
 - `FCGO_MAX_MESSAGE_CHARS`，单条飞书消息进入模型前的最大字符数
 - `FCGO_RESOURCE_SEARCH_ENABLED`，默认 `true`；私聊中按需搜索用户可见飞书资料
 - `FCGO_RESOURCE_SEARCH_RESULT_LIMIT`，默认 `5`；单次飞书资料搜索最多返回的候选数
@@ -89,7 +93,8 @@ uv run fcgo doctor
 - `FCGO_CONTEXT_INJECT_MESSAGE_LIMIT`，默认 `8`；每次模型请求最多注入的聊天摘录条数
 - `FCGO_CONTEXT_MAX_CHARS`，默认 `6000`；每次模型请求注入的聊天上下文字符预算
 - `FCGO_MEMORY_STORE_RAW_TEXT`，默认 `false`；长期记忆不得保存完整聊天或飞书资源正文
-- `FCGO_WRITEBACK_ENABLED`，当前分支默认 `false`；保持关闭时不会生成写回卡片或执行写入
+- `FCGO_WRITEBACK_ENABLED`，默认 `false`；保持关闭时不会生成写回卡片或执行写入
+- `FCGO_WRITEBACK_CONFIRMATION_MODE`，默认 `always`；可选 `always`、`low_risk_direct`、`draft_only`
 
 OpenAI 兼容 Provider 示例：
 

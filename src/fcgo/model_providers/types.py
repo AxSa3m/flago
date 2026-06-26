@@ -48,6 +48,8 @@ class ModelRequest(BaseModel):
     )
     max_output_tokens: int | None = None
     temperature: float | None = None
+    tools: list[dict[str, Any]] = Field(default_factory=list)
+    tool_choice: str | None = None
     metadata: dict[str, Any] = Field(default_factory=dict)
 
 

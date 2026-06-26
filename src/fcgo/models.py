@@ -33,6 +33,20 @@ class WriteActionType(StrEnum):
 class ToolName(StrEnum):
     READ_RESOURCE = "read_resource"
     PROPOSE_WRITEBACK = "propose_writeback"
+    SEARCH_RESOURCES = "search_resources"
+    INSPECT_DOC_STRUCTURE = "inspect_doc_structure"
+    PREPARE_WRITEBACK = "prepare_writeback"
+    GET_WRITEBACK_POLICY = "get_writeback_policy"
+    LIST_MEMORY = "list_memory"
+    UPSERT_MEMORY_DRAFT = "upsert_memory_draft"
+    GET_MODEL_STATUS = "get_model_status"
+    WEB_READ = "web_read"
+
+
+class WritebackConfirmationMode(StrEnum):
+    ALWAYS = "always"
+    LOW_RISK_DIRECT = "low_risk_direct"
+    DRAFT_ONLY = "draft_only"
 
 
 class FeishuMention(BaseModel):
@@ -156,6 +170,30 @@ class ResourceReadRequest(BaseModel):
     reason: str = ""
 
 
+class ResourceSearchRequest(BaseModel):
+    queries: list[str] = Field(default_factory=list)
+    query: str = ""
+    limit: int = 5
+    resource_types: list[str] = Field(default_factory=list)
+    reason: str = ""
+
+
+class WebReadRequest(BaseModel):
+    url: str
+    reason: str = ""
+
+
+class EmptyToolRequest(BaseModel):
+    reason: str = ""
+
+
+class MemoryDraftRequest(BaseModel):
+    key: str
+    kind: str = "记忆"
+    content: str
+    source: str = "agent.draft"
+
+
 class ActionProposalDraft(BaseModel):
     action_type: WriteActionType
     target: dict[str, Any]
@@ -174,6 +212,12 @@ class ActionProposalDraft(BaseModel):
             actor_id=actor_id,
             action_type=self.action_type,
             target=self.target,
+            target_title=_optional_string(
+                self.target.get("target_title") or self.target.get("title")
+            ),
+            target_url=_optional_string(
+                self.target.get("target_url") or self.target.get("url")
+            ),
             payload=self.payload,
             preview=self.preview,
             created_at=created_at,
@@ -198,12 +242,25 @@ class ToolResult(BaseModel):
     ok: bool
     content: dict[str, Any] = Field(default_factory=dict)
     error: str | None = None
+    user_message: str | None = None
+    audit_metadata: dict[str, Any] = Field(default_factory=dict)
 
 
 class ModelToolSpec(BaseModel):
     name: ToolName
     description: str
     parameters: dict[str, Any]
+    read_only: bool = True
+    required_permissions: list[str] = Field(default_factory=list)
+    allow_group: bool = True
+    timeout_seconds: float = 30.0
+    audit_event_type: str | None = None
+
+
+class AgentDecision(BaseModel):
+    final_response: str | None = None
+    tool_calls: list[ToolCall] = Field(default_factory=list)
+    writeback_drafts: list[ActionProposalDraft] = Field(default_factory=list)
 
 
 class ActionProposal(BaseModel):
@@ -297,3 +354,9 @@ class ContextPreference(BaseModel):
     enabled: bool
     updated_by: str
     updated_at: str
+
+
+def _optional_string(value: Any) -> str | None:
+    if isinstance(value, str) and value.strip():
+        return value.strip()
+    return None

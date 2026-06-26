@@ -50,7 +50,9 @@ Copy-Item .env.example .env
   `API_KEY`、`BASE_URL`、`MODEL`
 - `FCGO_BASE_URL`
 - `FCGO_START_LONG_CONNECTION=true`
-- `FCGO_WRITEBACK_ENABLED=false`：当前读取基线分支保持关闭
+- `FCGO_AGENT_MODE=legacy`：默认保持当前稳定编排；测试 Agent + Tools 时改为 `agent`
+- `FCGO_WRITEBACK_ENABLED=false`：默认关闭写回；测试确认式写回时改为 `true`
+- `FCGO_WRITEBACK_CONFIRMATION_MODE=always`：写回确认策略，可选 `always`、`low_risk_direct`、`draft_only`
 
 最小 Gemini 直连配置示例：
 
@@ -59,6 +61,7 @@ FCGO_ENV=prod
 FCGO_BASE_URL=https://fcgo.example.com
 FCGO_START_LONG_CONNECTION=true
 FCGO_DEFAULT_PROVIDER=gemini
+FCGO_AGENT_MODE=legacy
 
 FEISHU_APP_ID=cli_xxx
 FEISHU_APP_SECRET=xxx
@@ -69,6 +72,7 @@ GEMINI_HTTP_PROXY=
 GEMINI_BASE_URL=
 
 FCGO_WRITEBACK_ENABLED=false
+FCGO_WRITEBACK_CONFIRMATION_MODE=always
 ```
 
 `FCGO_BASE_URL` 必须填写部署服务的外部访问根地址，不要包含

@@ -8,7 +8,8 @@ import uvicorn
 from google import genai
 from google.genai import types
 
-from fcgo.agent import Assistant
+from fcgo.agent import AgentOrchestrator, Assistant, default_tool_registry
+from fcgo.agent.protocols import AssistantHandler
 from fcgo.agent.search_planner import ModelResourceSearchPlanner
 from fcgo.config import Settings, get_settings
 from fcgo.feishu.client import FeishuClient
@@ -66,22 +67,45 @@ def _run_worker() -> None:
     asyncio.run(store.init())
     model = _build_model_provider(settings, audit_recorder=store)
     openapi = FeishuOpenAPI(settings, store)
-    assistant = Assistant(
-        model,
-        CompositeResourceReader(
-            FeishuResourceReader(settings, openapi),
-            WebResourceReader(settings),
-        ),
-        FeishuResourceSearcher(settings, openapi),
-        resource_search_planner=ModelResourceSearchPlanner(model),
-        audit_recorder=store,
-        pending_action_ttl_seconds=settings.pending_action_ttl_seconds,
-        enable_writeback=settings.writeback_enabled,
-        resource_search_limit=settings.resource_search_result_limit,
-        resource_search_read_limit=settings.resource_search_read_limit,
+    resource_reader = CompositeResourceReader(
+        FeishuResourceReader(settings, openapi),
+        WebResourceReader(settings),
     )
+    resource_searcher = FeishuResourceSearcher(settings, openapi)
+    assistant: AssistantHandler
+    if settings.agent_mode == "agent":
+        assistant = AgentOrchestrator(
+            model,
+            resource_reader,
+            resource_searcher,
+            tool_registry=default_tool_registry(settings.agent_tool_timeout_seconds),
+            audit_recorder=store,
+            store=store,
+            model_router=model,
+            pending_action_ttl_seconds=settings.pending_action_ttl_seconds,
+            enable_writeback=settings.writeback_enabled,
+            writeback_confirmation_mode=settings.writeback_confirmation_mode,
+            max_steps=settings.agent_max_steps,
+        )
+    else:
+        assistant = Assistant(
+            model,
+            resource_reader,
+            resource_searcher,
+            resource_search_planner=ModelResourceSearchPlanner(model),
+            audit_recorder=store,
+            pending_action_ttl_seconds=settings.pending_action_ttl_seconds,
+            enable_writeback=settings.writeback_enabled,
+            resource_search_limit=settings.resource_search_result_limit,
+            resource_search_read_limit=settings.resource_search_read_limit,
+        )
     feishu_client = FeishuClient(settings)
     oauth = FeishuOAuthService(settings, store)
+    writeback = (
+        WritebackService(store, FeishuWriteExecutor(openapi, feishu_client), settings)
+        if settings.writeback_enabled
+        else None
+    )
     router = FeishuMessageRouter(
         assistant,
         feishu_client,
@@ -90,11 +114,7 @@ def _run_worker() -> None:
         model,
         settings,
         chat_history_api=openapi,
-    )
-    writeback = (
-        WritebackService(store, FeishuWriteExecutor(openapi, feishu_client), settings)
-        if settings.writeback_enabled
-        else None
+        writeback_service=writeback,
     )
     logger.info("starting_feishu_long_connection_worker")
     FeishuLongConnectionWorker(settings, router, writeback).run_forever()

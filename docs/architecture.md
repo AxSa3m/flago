@@ -9,9 +9,10 @@
 - `fcgo.feishu`：飞书客户端、OAuth、长连接 worker、OpenAPI 封装和消息路由。
 - `fcgo.gemini`：Gemini 模型提供方，是当前默认真实 Provider。
 - `fcgo.model_providers`：通用模型请求/响应协议、Provider 无关的提示词构建器、注册表和运行时路由。
-- `fcgo.agent`：助手编排层，连接消息、资源和模型。
+- `fcgo.agent`：助手编排层，连接消息、资源、工具和模型；当前同时保留 legacy
+  Assistant 与新 AgentOrchestrator。
 - `fcgo.resources`：飞书资源和网页链接解析/读取。
-- `fcgo.writeback`：实验性写回代码，当前分支默认关闭。
+- `fcgo.writeback`：确认式写回、待确认动作、执行与撤回记录。
 - `fcgo.server`：FastAPI 服务入口。
 
 上下文读取、用户授权和长期记忆的隐私边界见
@@ -21,16 +22,43 @@
 
 1. 飞书长连接收到消息事件。
 2. `FeishuMessageRouter` 做消息幂等检查并构造 `AssistantRequest`。
-3. `Assistant` 提取链接并调用 `ModelRouter`。
-4. `ModelRouter` 根据默认 Provider/模型配置选择具体 Provider。
-5. `GeminiProvider` 或其他 Provider 返回统一模型响应。
-6. `FeishuClient` 将模型回复发送回原飞书会话。
-7. 当前分支写入功能默认关闭；即使旧 Provider 误返回写回提案，路由也会丢弃提案并只返回文本提醒。
+3. 路由根据 `FCGO_AGENT_MODE` 选择编排层：
+   - `legacy`：使用旧 `Assistant`，保持当前线上可用行为。
+   - `agent`：使用 `AgentOrchestrator`，要求模型输出 `AgentDecision` JSON。
+4. `ModelRouter` 根据默认 Provider、用户模型偏好和请求模型配置选择具体 Provider。
+5. Agent 模式下，模型只能输出 `final_response`、`tool_calls` 或 `writeback_drafts`。
+6. 所有工具调用进入 `ToolRegistry`，先做参数校验、群聊限制、只读/写入策略和超时控制，再执行具体 Skill/资源逻辑。
+7. `FeishuClient` 将最终文本或确认卡片发送回原飞书会话。
 
-## 模型工具协议
+## Agent + Tools 双轨协议
 
-- `read_resource`：模型请求读取用户授权范围内的飞书或网页资源，返回 `ResourceReadResult`。
-- `propose_writeback` 工具暂不暴露给模型；本分支先聚焦读取和上下文。
+内部协议由 `fcgo.models` 定义：
+
+- `AgentDecision`：模型每轮只允许输出 `final_response`、`tool_calls`、`writeback_drafts`。
+- `ToolCall`：统一工具名、参数和 call id。
+- `ToolResult`：统一返回 `ok`、`content`、`error`、`user_message` 和审计元数据。
+- `ActionProposalDraft`：写回确认卡片的草案输入。
+
+第一阶段默认使用模型无关 JSON parser：所有 Provider 仍按普通聊天能力调用，模型在文本中返回 JSON。
+如果 JSON 解析或 Pydantic 校验失败，系统只允许一次 repair prompt；仍失败则返回用户可读错误，不执行工具。
+
+第二阶段可以为支持原生 function calling 的 Provider 添加 adapter。adapter 只负责把原生 tool call 转换成内部
+`ToolCall`，并把内部 `ToolResult` 转回 Provider tool result message；Agent Core、Tool Registry 和安全策略不变。
+
+当前 Tool Registry 暴露：
+
+- `search_resources`
+- `read_resource`
+- `inspect_doc_structure`
+- `prepare_writeback`
+- `get_writeback_policy`
+- `list_memory`
+- `upsert_memory_draft`
+- `get_model_status`
+- `web_read`
+
+每个工具声明参数 schema、是否只读、所需权限、是否允许群聊、超时和审计类型。未知工具、参数不合法、
+群聊禁用工具，以及只读模式下的写入工具都会被拒绝。
 
 ## 多模型 Provider
 
@@ -41,11 +69,20 @@
 [多模型 Provider 架构规划](multi-model-provider-architecture.md)，目标是支持
 Seedance、ComfyUI API 等不同类型 Provider，并通过统一能力矩阵、配置和路由层管理。
 
-## 写入暂停
+## 写回策略
 
-当前分支默认 `FCGO_WRITEBACK_ENABLED=false`。运行时不会生成写回卡片、保存待确认写回动作或执行写入。
-旧卡片回调会返回“写入功能当前已暂停”。后续如果重新设计写入能力，应从清晰的 Agent 工具调用协议开始，
-而不是继续依赖关键词和兜底解析。
+写回仍由程序执行安全校验、确认卡片、待确认动作、审计和撤回记录。Agent 只能准备草案，不能绕过执行层。
+
+环境变量：
+
+- `FCGO_WRITEBACK_ENABLED=false|true`：关闭时不会保存或执行任何写回。
+- `FCGO_WRITEBACK_CONFIRMATION_MODE=always|low_risk_direct|draft_only`
+  - `always`：默认值；所有写入、修改、删除都生成确认卡片。
+  - `low_risk_direct`：明确目标的文档开头/末尾追加可直接执行；修改、删除、表格和多维表仍需确认。
+  - `draft_only`：只返回草稿，不保存 pending action，不执行。
+
+Agent v1 只稳定支持文档开头、文档末尾、表格范围、多维表新增/更新/删除这类结构化写回草案。
+文档中间位置、附件前后位置会返回“不支持稳定写入中间位置”，不会生成可执行卡片。
 
 ## 本地存储
 

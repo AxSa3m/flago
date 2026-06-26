@@ -14,11 +14,13 @@ from fcgo.models import (
     ActionProposal,
     AssistantResponse,
     AuditEventType,
+    ConfirmationResult,
     ConversationType,
     FeishuBotMenuEvent,
     FeishuMessage,
     PendingActionStatus,
     WriteActionType,
+    WritebackConfirmationMode,
 )
 from fcgo.storage import SQLiteStore
 
@@ -46,6 +48,15 @@ class ProposalAssistant:
             text="我准备写回以下内容，请确认。",
             action_proposals=[self.proposal],
         )
+
+
+class FakeWritebackService:
+    def __init__(self) -> None:
+        self.confirmed: list[tuple[str, str]] = []
+
+    async def confirm(self, action_id: str, actor_id: str):
+        self.confirmed.append((action_id, actor_id))
+        return ConfirmationResult(status="executed", message="写回已执行")
 
 
 class RecordingChatHistoryAPI:
@@ -213,6 +224,74 @@ async def test_router_drops_writeback_proposals_when_disabled(tmp_path) -> None:
     assert await store.get_pending_action(proposal.id) is None
     assert client.cards == []
     assert "写入功能当前已暂停" in client.replies[0][1]
+
+
+@pytest.mark.asyncio
+async def test_router_draft_only_writeback_policy_does_not_save_pending_action(tmp_path) -> None:
+    store = SQLiteStore(tmp_path / "fcgo.sqlite3")
+    await store.init()
+    proposal = ActionProposal(
+        actor_id="ou_user",
+        action_type=WriteActionType.DOC_APPEND,
+        target={"document_id": "docx123"},
+        target_title="测试文档",
+        payload={"content": "hello"},
+        preview="向文档追加：hello",
+        expires_at=datetime.now(UTC) + timedelta(minutes=30),
+    )
+    client = RecordingFeishuClient()
+    router = FeishuMessageRouter(
+        ProposalAssistant(proposal),
+        client,
+        store,
+        settings=Settings(
+            env="test",
+            writeback_enabled=True,
+            writeback_confirmation_mode=WritebackConfirmationMode.DRAFT_ONLY,
+        ),
+    )
+
+    await router.handle_message(_message("om_writeback_draft_only", "帮我写回"))
+
+    assert await store.get_pending_action(proposal.id) is None
+    assert client.cards == []
+    assert "只生成草稿" in client.replies[0][1]
+    assert "向文档追加：hello" in client.replies[0][1]
+
+
+@pytest.mark.asyncio
+async def test_router_low_risk_direct_writeback_policy_executes_doc_append(tmp_path) -> None:
+    store = SQLiteStore(tmp_path / "fcgo.sqlite3")
+    await store.init()
+    proposal = ActionProposal(
+        actor_id="ou_user",
+        action_type=WriteActionType.DOC_APPEND,
+        target={"document_id": "docx123"},
+        target_title="测试文档",
+        payload={"content": "hello"},
+        preview="向文档追加：hello",
+        expires_at=datetime.now(UTC) + timedelta(minutes=30),
+    )
+    client = RecordingFeishuClient()
+    writeback_service = FakeWritebackService()
+    router = FeishuMessageRouter(
+        ProposalAssistant(proposal),
+        client,
+        store,
+        settings=Settings(
+            env="test",
+            writeback_enabled=True,
+            writeback_confirmation_mode=WritebackConfirmationMode.LOW_RISK_DIRECT,
+        ),
+        writeback_service=writeback_service,
+    )
+
+    await router.handle_message(_message("om_writeback_direct", "帮我写回"))
+
+    assert await store.get_pending_action(proposal.id) is not None
+    assert writeback_service.confirmed == [(proposal.id, "ou_user")]
+    assert client.cards == []
+    assert "写回已执行" in client.replies[0][1]
 
 
 @pytest.mark.asyncio

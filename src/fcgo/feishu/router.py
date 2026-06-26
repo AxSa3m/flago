@@ -5,7 +5,7 @@ from hashlib import sha256
 from typing import Protocol
 from uuid import uuid4
 
-from fcgo.agent import Assistant
+from fcgo.agent.protocols import AssistantHandler
 from fcgo.config import Settings
 from fcgo.feishu.client import FeishuClient
 from fcgo.feishu.context import ChatContextLoader, ChatHistoryAPI, conversation_memory_source
@@ -25,9 +25,11 @@ from fcgo.models import (
     MemoryItem,
     ModelPreference,
     WriteActionType,
+    WritebackConfirmationMode,
 )
 from fcgo.storage import SQLiteStore
 from fcgo.writeback.cards import assistant_response_card
+from fcgo.writeback.service import WritebackService
 
 logger = logging.getLogger(__name__)
 
@@ -41,13 +43,14 @@ class OAuthLinkService(Protocol):
 class FeishuMessageRouter:
     def __init__(
         self,
-        assistant: Assistant,
+        assistant: AssistantHandler,
         feishu_client: FeishuClient,
         store: SQLiteStore,
         oauth: OAuthLinkService | None = None,
         model_router: ModelRouter | None = None,
         settings: Settings | None = None,
         chat_history_api: ChatHistoryAPI | None = None,
+        writeback_service: WritebackService | None = None,
     ) -> None:
         self.assistant = assistant
         self.feishu_client = feishu_client
@@ -55,6 +58,7 @@ class FeishuMessageRouter:
         self.oauth = oauth
         self.model_router = model_router
         self.settings = settings or Settings()
+        self.writeback_service = writeback_service
         self.context_loader = (
             ChatContextLoader(settings=self.settings, store=store, api=chat_history_api)
             if chat_history_api is not None
@@ -250,6 +254,12 @@ class FeishuMessageRouter:
                 _writeback_disabled_text(response.text),
             )
             return
+        if self.settings.writeback_confirmation_mode == WritebackConfirmationMode.DRAFT_ONLY:
+            await self.feishu_client.reply_text(
+                message.chat_id,
+                _draft_only_writeback_text(response),
+            )
+            return
         duplicate_count = 0
         for proposal in response.action_proposals:
             duplicate = await self.store.find_recent_matching_action(
@@ -266,6 +276,19 @@ class FeishuMessageRouter:
                     duplicate["id"],
                     duplicate["status"],
                 )
+        if (
+            self.settings.writeback_confirmation_mode
+            == WritebackConfirmationMode.LOW_RISK_DIRECT
+            and duplicate_count == 0
+            and self.writeback_service is not None
+            and all(
+                _is_low_risk_direct_writeback(proposal)
+                for proposal in response.action_proposals
+            )
+        ):
+            await self._execute_low_risk_writebacks(message, response)
+            return
+        for proposal in response.action_proposals:
             await self.store.save_pending_action(proposal)
         card_text = response.text
         if duplicate_count:
@@ -281,6 +304,22 @@ class FeishuMessageRouter:
             assistant_name=await self._assistant_name_for_message(message),
         )
         await self.feishu_client.send_interactive_card(message.chat_id, card)
+
+    async def _execute_low_risk_writebacks(
+        self,
+        message: FeishuMessage,
+        response: AssistantResponse,
+    ) -> None:
+        if self.writeback_service is None:
+            return
+        result_lines = []
+        for proposal in response.action_proposals:
+            await self.store.save_pending_action(proposal)
+            result = await self.writeback_service.confirm(proposal.id, message.sender_id)
+            result_lines.append(f"- {proposal.target_title or '目标资源'}：{result.message}")
+        text = response.text.strip()
+        text = f"{text}\n\n" + "\n".join(result_lines) if text else "\n".join(result_lines)
+        await self.feishu_client.reply_text(message.chat_id, text)
 
     async def _handle_menu_action(self, event: FeishuBotMenuEvent) -> str:
         key = event.event_key.strip().lower()
@@ -1440,6 +1479,40 @@ def _writeback_disabled_text(text: str) -> str:
     if "我已准备好写回预览" in cleaned or "请在卡片中确认" in cleaned:
         return notice
     return f"{cleaned}\n\n{notice}"
+
+
+def _draft_only_writeback_text(response: AssistantResponse) -> str:
+    lines = []
+    if response.text.strip():
+        lines.append(response.text.strip())
+    lines.append("当前写回策略为只生成草稿，不会保存待确认动作，也不会执行写入。")
+    for proposal in response.action_proposals:
+        target = proposal.target_title or proposal.target_url or "目标资源"
+        lines.append(f"- {_write_action_label(proposal.action_type.value)} · {target}")
+        if proposal.preview.strip():
+            lines.append(proposal.preview.strip())
+    return "\n".join(lines)
+
+
+def _is_low_risk_direct_writeback(proposal: ActionProposal) -> bool:
+    if proposal.action_type != WriteActionType.DOC_APPEND:
+        return False
+    document_id = str(proposal.target.get("document_id") or "").strip()
+    block_id = str(proposal.target.get("block_id") or "").strip()
+    index = _int_or_none(proposal.target.get("index", -1))
+    if document_id and not block_id and index == -1:
+        return True
+    return bool(document_id and block_id == document_id and index == 0)
+
+
+def _int_or_none(value: object) -> int | None:
+    if isinstance(value, bool):
+        return None
+    if isinstance(value, int):
+        return value
+    if isinstance(value, str) and value.strip().lstrip("-").isdigit():
+        return int(value)
+    return None
 
 
 def _should_route(message: FeishuMessage) -> bool:

@@ -16,6 +16,11 @@ class ModelProvider(Protocol):
         """Generate an assistant response for a normalized request."""
 
 
+class AssistantHandler(Protocol):
+    async def handle(self, request: AssistantRequest) -> AssistantResponse:
+        """Handle one normalized assistant request."""
+
+
 class ResourceReader(Protocol):
     async def read(self, ref: ResourceRef, actor_id: str) -> ResourceReadResult:
         """Read a resource through the actor's authorization context."""

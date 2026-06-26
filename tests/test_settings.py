@@ -1,4 +1,5 @@
 from fcgo.config import Settings
+from fcgo.models import WritebackConfirmationMode
 
 
 def test_context_and_memory_privacy_defaults_are_conservative() -> None:
@@ -14,6 +15,9 @@ def test_context_and_memory_privacy_defaults_are_conservative() -> None:
     assert settings.memory_item_max_chars == 2000
     assert settings.memory_context_max_chars == 4000
     assert settings.assistant_default_name == "小智"
+    assert settings.agent_mode == "legacy"
+    assert settings.agent_max_steps == 4
+    assert settings.agent_tool_timeout_seconds == 30
     assert settings.doc_block_scan_limit == 1000
     assert settings.embedded_file_limit == 3
     assert settings.embedded_file_max_bytes == 20 * 1024 * 1024
@@ -26,6 +30,7 @@ def test_context_and_memory_privacy_defaults_are_conservative() -> None:
     assert "offline_access" not in settings.oauth_scope_list
     assert "base:table:read" in settings.oauth_scope_list
     assert "docs:document.media:download" in settings.oauth_scope_list
+    assert settings.writeback_confirmation_mode == WritebackConfirmationMode.ALWAYS
 
 
 def test_oauth_offline_access_is_opt_in() -> None:

@@ -5,6 +5,8 @@ from typing import Literal
 from pydantic import Field, SecretStr
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
+from fcgo.models import WritebackConfirmationMode
+
 
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(
@@ -23,6 +25,12 @@ class Settings(BaseSettings):
     sqlite_path: Path = Field(default=Path("data/fcgo.sqlite3"), alias="FCGO_SQLITE_PATH")
     start_long_connection: bool = Field(default=False, alias="FCGO_START_LONG_CONNECTION")
     assistant_default_name: str = Field(default="小智", alias="FCGO_ASSISTANT_DEFAULT_NAME")
+    agent_mode: Literal["legacy", "agent"] = Field(default="legacy", alias="FCGO_AGENT_MODE")
+    agent_max_steps: int = Field(default=4, alias="FCGO_AGENT_MAX_STEPS")
+    agent_tool_timeout_seconds: float = Field(
+        default=30.0,
+        alias="FCGO_AGENT_TOOL_TIMEOUT_SECONDS",
+    )
 
     feishu_app_id: str = Field(default="", alias="FEISHU_APP_ID")
     feishu_app_secret: SecretStr = Field(default=SecretStr(""), alias="FEISHU_APP_SECRET")
@@ -196,6 +204,10 @@ class Settings(BaseSettings):
         default=1800, alias="FCGO_PENDING_ACTION_TTL_SECONDS"
     )
     writeback_enabled: bool = Field(default=False, alias="FCGO_WRITEBACK_ENABLED")
+    writeback_confirmation_mode: WritebackConfirmationMode = Field(
+        default=WritebackConfirmationMode.ALWAYS,
+        alias="FCGO_WRITEBACK_CONFIRMATION_MODE",
+    )
     writeback_dedupe_window_seconds: int = Field(
         default=600,
         alias="FCGO_WRITEBACK_DEDUPE_WINDOW_SECONDS",
