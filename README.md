@@ -2,7 +2,8 @@
 
 FCGO 是一个 **Python 3.13 + uv 本地飞书工作助手**。它通过飞书长连接机器人接收私聊或群聊 `@机器人` 消息，按用户授权读取飞书文档、电子表格、多维表格和网页链接，调用 Gemini 或其他已配置模型生成回复，并返回飞书。
 
-当前分支是 **读取优先基线**：写入、修改、删除、创建飞书内容的功能已暂停，默认不会创建写回卡片，也不会执行写入。
+当前部署已启用确认式写回：明确写入请求会先生成预览卡片，只有用户确认后才执行。
+`FCGO_WRITEBACK_ENABLED=false` 时可切回读取优先模式。
 
 ## 当前实现范围
 
@@ -43,7 +44,12 @@ uv run fcgo doctor
 更多文档：
 
 - [产品规格](docs/product-spec.md)
+- [MVP 验收测试矩阵](docs/mvp-acceptance-tests.md)
 - [架构说明](docs/architecture.md)
+- [用户授权与隐私操作指南](docs/user-privacy-operations.md)
+- [上下文读取、用户授权和长期记忆隐私规格](docs/context-privacy-memory.md)
+- [助手命名与用户偏好记忆规格](docs/assistant-personalization-memory.md)
+- [多模型 Provider 配置模板](docs/model-provider-configuration.md)
 - [多模型 Provider 架构规划](docs/multi-model-provider-architecture.md)
 - [本地部署指南](docs/deployment.md)
 
@@ -56,7 +62,10 @@ uv run fcgo doctor
 - `FEISHU_APP_ID`
 - `FEISHU_APP_SECRET`
 - `FEISHU_OAUTH_SCOPES`，用户发送 `/授权` 时申请的飞书 OAuth scope
-- `FCGO_DEFAULT_PROVIDER`，当前可选 `gemini`、`openai`、`deepseek`、`qwen`、`doubao`、`minimax` 或本地开发用 `echo`
+- `FCGO_OAUTH_ENABLE_OFFLINE_ACCESS`，可选；飞书后台开通 `offline_access` 后设为 `true`，用于自动刷新用户 access token
+- `FEISHU_HTTP_PROXY`，可选；飞书 OpenAPI 调用遇到本地网络或 TLS 问题时填写代理
+- `FEISHU_DOCS_BASE_URL`，搜索接口没有返回可打开 URL 时用于拼接飞书资源链接；私有租户可设为 `https://my.feishu.cn`
+- `FCGO_DEFAULT_PROVIDER`，当前可选 `gemini`、`openai`、`deepseek`、`qwen`、`doubao`、`minimax`、`claude` 或本地开发用 `echo`
 - `FCGO_DEFAULT_MODEL`，可选；为空时使用 Provider 自己的默认模型
 - `GEMINI_API_KEY`
 - `GEMINI_MODEL`，Gemini Provider 的默认模型；如果设置了 `FCGO_DEFAULT_MODEL` 会被运行时路由覆盖
@@ -68,7 +77,18 @@ uv run fcgo doctor
 - `FCGO_OPENAI_COMPATIBLE_HTTP_PROXY`，可选；OpenAI 兼容 Provider 共用代理
 - `FCGO_BASE_URL`
 - `FCGO_SQLITE_PATH`
+- `FCGO_ASSISTANT_DEFAULT_NAME`，默认 `小智`；用户未设置个人助手名称时使用
 - `FCGO_MAX_MESSAGE_CHARS`，单条飞书消息进入模型前的最大字符数
+- `FCGO_RESOURCE_SEARCH_ENABLED`，默认 `true`；私聊中按需搜索用户可见飞书资料
+- `FCGO_RESOURCE_SEARCH_RESULT_LIMIT`，默认 `5`；单次飞书资料搜索最多返回的候选数
+- `FCGO_RESOURCE_SEARCH_READ_LIMIT`，默认 `3`；单次搜索后最多自动读取的候选数
+- `FCGO_CONTEXT_RECENT_MESSAGE_LIMIT`，默认 `50`；最多读取的近期聊天消息数
+- `FCGO_CONTEXT_RECENT_TIME_WINDOW_HOURS`，默认 `24`；近期聊天读取时间窗口
+- `FCGO_CONTEXT_CACHE_TTL_HOURS`，默认 `24`；聊天原文短期缓存 TTL，到期后清理
+- `FCGO_CONTEXT_CACHE_REFRESH_SECONDS`，默认 `60`；同一会话缓存刷新间隔，避免每条消息都调用飞书历史接口
+- `FCGO_CONTEXT_INJECT_MESSAGE_LIMIT`，默认 `8`；每次模型请求最多注入的聊天摘录条数
+- `FCGO_CONTEXT_MAX_CHARS`，默认 `6000`；每次模型请求注入的聊天上下文字符预算
+- `FCGO_MEMORY_STORE_RAW_TEXT`，默认 `false`；长期记忆不得保存完整聊天或飞书资源正文
 - `FCGO_WRITEBACK_ENABLED`，当前分支默认 `false`；保持关闭时不会生成写回卡片或执行写入
 
 OpenAI 兼容 Provider 示例：
@@ -80,16 +100,15 @@ DEEPSEEK_BASE_URL=https://your-openai-compatible-endpoint/v1
 DEEPSEEK_MODEL=your-model-name
 ```
 
-如果只想临时切换当前飞书会话，也可以保持部署默认不变，在飞书中发送：
-
-```text
-/模型 使用 deepseek/your-model-name
-```
+如果不想修改部署默认模型，可以在飞书机器人自定义菜单中切换个人默认模型；
+文本对话不会触发模型切换。
 
 ## 飞书用户授权
 
 用户在飞书里发送 `/授权`，机器人会返回一次性 OAuth 链接。授权成功后，FCGO
 会把用户 token 保存到本地 SQLite，用于后续按用户权限读取飞书文档、电子表格和多维表格。
+后续会自动复用 token；如果启用了 `FCGO_OAUTH_ENABLE_OFFLINE_ACCESS=true` 且飞书后台已开通
+`offline_access`，还会在 access token 过期时自动刷新。
 
 注意：飞书资源读取需要同时满足两层权限：
 
@@ -99,10 +118,23 @@ DEEPSEEK_MODEL=your-model-name
 默认 `FEISHU_OAUTH_SCOPES` 只请求读取所需权限：
 
 ```text
-auth:user.id:read docx:document:readonly wiki:node:read sheets:spreadsheet:readonly bitable:app:readonly base:record:read base:field:read base:view:read
+auth:user.id:read drive:drive.search:readonly search:docs:read docx:document:readonly docx:document docs:document.media:download wiki:node:read wiki:wiki:readonly sheets:spreadsheet:readonly sheets:spreadsheet bitable:app:readonly bitable:app base:table:read base:record:read base:record:create base:record:update base:record:delete base:field:read base:view:read
 ```
 
-如果旧授权缺少读取 scope，例如 `docx:document:readonly`、`sheets:spreadsheet:readonly`、`bitable:app:readonly`、`base:record:read`、`base:field:read` 或 `base:view:read`，需要用户在飞书中重新发送 `/授权` 并完成授权。
+如果旧授权缺少读取 scope，例如 `drive:drive.search:readonly`、`search:docs:read`、`wiki:wiki:readonly`、`docx:document:readonly`、`docs:document.media:download`、`sheets:spreadsheet:readonly`、`bitable:app:readonly`、`base:table:read`、`base:record:read`、`base:field:read` 或 `base:view:read`，需要用户在飞书中重新发送 `/授权` 并完成授权。
+
+飞书文档和知识库页面中的内嵌对象按以下规则读取：
+
+- PDF 默认提取前 2 页，也可在问题中指定“第 3 页”。
+- DOCX、XLSX、PPTX、TXT、Markdown、CSV、JSON、HTML 和常见源码文件提取可读文本。
+- 图片返回格式、尺寸和飞书文档中的图片描述；暂不执行 OCR 或视觉内容理解。
+- 音频、视频、压缩包、旧版 Office 和可执行文件只返回类型与安全说明，不执行、不解压、不转码。
+- 普通超链接、`@文档` 和内嵌网页返回飞书 blocks API 提供的显示文本、标题与 URL。
+
+飞书不会通过 blocks API 统一返回任意外链的预览正文。FCGO 不会把链接显示文本当成已经读取的网页内容，
+也不会自动递归抓取文档中的所有外链。
+
+可发送 `/授权 状态` 检查当前用户是否已授权、是否缺少 scope，以及是否需要重新授权。
 
 飞书开放平台中的 OAuth 回调地址需要配置为：
 
@@ -110,20 +142,62 @@ auth:user.id:read docx:document:readonly wiki:node:read sheets:spreadsheet:reado
 {FCGO_BASE_URL}/oauth/feishu/callback
 ```
 
+## 飞书隐私控制指令
+
+当前上下文默认开启，已支持用户可见的助手名称和记忆控制入口：
+
+- `/帮助`：查看可用命令；没有配置自定义菜单时也可使用。
+- `/助手 名称`：查看当前助手名称。
+- `/助手 命名 小飞`：设置当前用户的个人助手名称。
+- `/助手 默认名称`：恢复默认助手名称，默认是 `小智`。
+- `/上下文 查看`：查看当前上下文策略；不会读取历史、不会调用模型。
+- `/记忆 查看`：查看当前用户的长期记忆摘要和偏好。
+- `/记忆 记住 输出格式=优先表格`：新增或更新一条带 key 的偏好记忆。
+- `/记忆 记住 输出尽量用表格`：新增或更新通用偏好，可用 `/记忆 删除 偏好` 删除。
+- `/记忆 修改 语言风格=简洁中文`：修改指定偏好。
+- `/记忆 删除 语言风格`：按 key 删除一条记忆。
+- `/记忆 删除` 或 `/记忆 清空`：经确认后清空当前用户的长期记忆，记忆功能状态保持不变。
+- `/记忆 关闭`：暂停当前用户的长期记忆；已有记忆保留，但不会新增或进入模型上下文。
+- `/记忆 开启`：重新开启当前用户的长期记忆。
+
+记忆管理命令只允许在私聊中操作，避免个人记忆展示到群聊。
+普通聊天中识别到“记住我叫…”“我的项目代号是…”这类候选记忆时，FCGO 会先发送确认卡片；用户点击“保存”后才写入长期记忆。
+FCGO 默认不会保存完整聊天原文、飞书资源正文、网页正文或附件正文。隐私边界见
+[上下文读取、用户授权和长期记忆隐私规格](docs/context-privacy-memory.md)。
+
+当前会话聊天历史读取使用应用权限 `im:message:readonly` 和 tenant token，不依赖用户 OAuth。
+FCGO 会把最近聊天做短期 TTL 缓存，并在每次请求前把近期窗口内的消息按时间顺序作为
+全文上下文注入；超过近期窗口或字符预算的旧消息会压缩成当前会话滚动摘要。长期记忆开启时，
+私聊会话摘要会作为用户可查看、可删除的 `会话摘要` 记忆保存；不会保存完整聊天原文。
+
+私聊中没有显式链接、且用户明确要求搜索/读取飞书文档、表格、多维表或资料时，FCGO 会使用
+飞书“搜索云文档”和“搜索 Wiki”接口按用户 OAuth 搜索本人可见资源，只读取前几个支持的命中项进入本次模型请求。
+如果搜索响应包含可打开 URL，会直接使用飞书返回的地址；否则使用 `FEISHU_DOCS_BASE_URL`
+和资源 token 生成链接。系统不全量扫描云空间，不建立长期索引，也不会把搜索关键词正文或资源正文写入审计日志。
+
 ## 飞书模型指令
 
-当前已支持在飞书中查看和切换会话模型：
+当前模型切换以飞书机器人自定义菜单为准。文本命令只保留只读查看：
 
-- `/模型 查看`：查看部署默认模型、当前会话覆盖、个人偏好，以及所有支持 Provider 的配置状态。
-- `/模型 使用 provider/model`：设置当前会话模型，例如 `/模型 使用 gemini/gemini-2.5-flash` 或 `/模型 使用 deepseek/deepseek-chat`。
-- `/模型 默认`：清除当前会话模型覆盖，恢复部署默认。
-- `/模型 我的 使用 provider/model`：设置你的个人默认模型，只在私聊中作为默认值使用。
-- `/模型 我的 默认`：清除你的个人默认模型。
+- `/模型 查看`：查看当前实际使用的模型、可用模型，以及尚未启用的 Provider。
 
-群聊中优先使用当前群聊/话题的会话级模型配置，不会自动套用某个成员的个人偏好。
+菜单点击会设置点击者的个人默认模型；私聊会优先使用该个人偏好。文本对话中出现
+“使用某模型”等内容只会作为普通消息处理，不会触发模型切换。
 
-`/模型 查看` 会把模型分成 `[可用]` 和 `[待配置]`。待配置项会提示缺少哪些 `.env`
-字段；补齐后重启服务即可出现在可用列表，不需要把它设成默认 Provider。
+`/模型 查看` 会直接显示当前实际使用的模型。可用模型中会标记部署默认项；
+尚未启用的 Provider 只列名称，不展示密钥或环境变量细节。
+
+## 写回历史与撤回
+
+启用写回实验线后，每次成功执行都会记录操作类型、目标、执行结果和可撤回元数据：
+
+- `/查看最近写回`：查看最近 5 次写回及其“可撤回 / 已撤回 / 不可撤回”状态。
+- `/撤回`：为最近一次可安全撤回的写回生成确认卡片，不会自动执行。
+- 多维表新增记录可通过删除新记录撤回。
+- 电子表格范围写入会在写入前保存同范围旧值，撤回时恢复旧值。
+- 文档创建、文档追加、消息发送和未保存旧值的更新/删除操作会明确标记为不可安全撤回。
+
+同一写回只能撤回一次。撤回仍执行权限检查、幂等保护和审计，不会生成无限“撤回撤回”链。
 
 ## 飞书机器人菜单
 
@@ -138,7 +212,14 @@ fcgo.model.use.openai    使用 OpenAI
 fcgo.model.use.qwen      使用 Qwen
 fcgo.model.use.doubao    使用 Doubao
 fcgo.model.use.minimax   使用 Minimax
+fcgo.model.use.claude    使用 Claude
 fcgo.auth.start          发起飞书授权
+fcgo.auth.status         查看授权状态
+fcgo.context.view        查看上下文策略
+fcgo.memory.view         查看长期记忆
+fcgo.memory.delete       清空长期记忆，需要确认
+fcgo.memory.disable      关闭长期记忆
+fcgo.memory.enable       开启长期记忆
 fcgo.help                查看帮助
 ```
 
@@ -157,26 +238,37 @@ fcgo.help                查看帮助
 
 授权
 - 飞书授权
+- 授权状态
+
+上下文
+- 查看上下文
+
+记忆
+- 查看记忆
+- 删除记忆（清空全部）
+- 关闭记忆
+- 开启记忆
 
 帮助
 - 使用说明
 ```
 
-菜单点击会设置个人默认模型；文本命令 `/模型 使用 provider/model` 仍可设置当前会话模型。
+菜单点击会设置个人默认模型；文本命令不会修改模型偏好。
 
-## 写入功能暂停
+## 写入功能
 
-当前分支先回到读取能力基线，`FCGO_WRITEBACK_ENABLED=false`。机器人不会生成写回卡片，
-也不会执行文档、电子表格、多维表格或消息写入。用户提出写入、修改、删除、创建等请求时，
-模型应返回可复制的草稿、摘要或操作建议，并说明写入功能当前暂停。
+`FCGO_WRITEBACK_ENABLED=true` 时，明确指向飞书文档、电子表格、多维表格或消息的写入请求
+会生成确认卡片。模型只准备写入内容，不能直接声称已经执行；实际写入必须经过权限检查和用户确认。
 
-此前的写回代码保留在 `codex/feishu-doc-sheet-bitable-writeback` 分支作为实验记录；
-本分支后续优先继续开发读取、上下文、记忆、模型配置和助手体验。
+设置为 `false` 时，系统不会创建写回卡片或执行写入，只返回可复制草稿或操作建议。
 
 ## 安全默认值
 
 - 默认不持久化飞书正文内容
+- 默认开启当前会话上下文读取；未授权或读取失败时降级为无历史上下文继续回答
+- 默认不把完整聊天、飞书资源、网页或附件正文写入长期记忆
 - 日志和错误信息会对常见密钥字段脱敏
 - 资源读取器带有大小限制和截断提示
+- 飞书资料搜索按需触发，带候选数和读取数上限
 - 超长消息会在进入模型调用前被拒绝，并提示用户改用文档/表格链接
 - 写入功能默认关闭，避免误操作飞书资料

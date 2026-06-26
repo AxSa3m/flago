@@ -1,4 +1,5 @@
 from collections.abc import Iterable
+from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from secrets import token_urlsafe
 from typing import Any
@@ -9,6 +10,16 @@ import httpx
 from fcgo.config import Settings
 from fcgo.models import AuditEventType
 from fcgo.storage import SQLiteStore
+
+
+@dataclass(frozen=True)
+class AuthorizationStatus:
+    authorized: bool
+    usable: bool
+    missing_scopes: list[str]
+    expires_at: str = ""
+    refresh_expires_at: str = ""
+    reason: str = ""
 
 
 class FeishuOAuthService:
@@ -50,7 +61,7 @@ class FeishuOAuthService:
         token = await self.exchange_code(code)
         await self.store.save_oauth_token(subject_id, token)
         await self.store.audit(AuditEventType.OAUTH_AUTHORIZED, actor_id=subject_id)
-        return token
+        return {**token, "_subject_id": subject_id}
 
     async def exchange_code(self, code: str) -> dict[str, Any]:
         url = f"{self.settings.feishu_base_url.rstrip('/')}/open-apis/authen/v2/oauth/token"
@@ -61,7 +72,10 @@ class FeishuOAuthService:
             "client_secret": self.settings.feishu_app_secret.get_secret_value(),
             "redirect_uri": self.settings.oauth_redirect_uri,
         }
-        async with httpx.AsyncClient(timeout=20) as client:
+        async with httpx.AsyncClient(
+            timeout=20,
+            proxy=self.settings.feishu_http_proxy,
+        ) as client:
             response = await client.post(url, json=payload)
             response.raise_for_status()
         return _normalize_token_response(response.json())
@@ -82,11 +96,44 @@ class FeishuOAuthService:
         refresh_token = _token_value(token, "refresh_token")
         if not refresh_token or _is_expired(token, "refresh_expires_at"):
             return None
-        refreshed = await self.refresh_access_token(refresh_token)
+        refreshed = _merge_refreshed_token(token, await self.refresh_access_token(refresh_token))
         await self.store.save_oauth_token(subject_id, refreshed)
         await self.store.audit(AuditEventType.OAUTH_TOKEN_REFRESHED, actor_id=subject_id)
         _raise_if_missing_scopes(refreshed, required_scope_groups)
         return _token_value(refreshed, "access_token")
+
+    async def authorization_status(self, subject_id: str) -> AuthorizationStatus:
+        token = await self.store.get_oauth_token(subject_id)
+        if not token:
+            return AuthorizationStatus(
+                authorized=False,
+                usable=False,
+                missing_scopes=self.settings.oauth_required_scope_list,
+                reason="not_authorized",
+            )
+        access_token = await self.get_valid_access_token(subject_id)
+        token = await self.store.get_oauth_token(subject_id) or token
+        if not access_token:
+            return AuthorizationStatus(
+                authorized=True,
+                usable=False,
+                missing_scopes=[],
+                expires_at=str(token.get("expires_at") or ""),
+                refresh_expires_at=str(token.get("refresh_expires_at") or ""),
+                reason="expired",
+            )
+        granted = _scope_set(token)
+        missing_scopes = [
+            scope for scope in self.settings.oauth_required_scope_list if scope not in granted
+        ]
+        return AuthorizationStatus(
+            authorized=True,
+            usable=not missing_scopes,
+            missing_scopes=missing_scopes,
+            expires_at=str(token.get("expires_at") or ""),
+            refresh_expires_at=str(token.get("refresh_expires_at") or ""),
+            reason="missing_scopes" if missing_scopes else "",
+        )
 
     async def refresh_access_token(self, refresh_token: str) -> dict[str, Any]:
         url = f"{self.settings.feishu_base_url.rstrip('/')}/open-apis/authen/v2/oauth/token"
@@ -96,7 +143,10 @@ class FeishuOAuthService:
             "client_id": self.settings.feishu_app_id,
             "client_secret": self.settings.feishu_app_secret.get_secret_value(),
         }
-        async with httpx.AsyncClient(timeout=20) as client:
+        async with httpx.AsyncClient(
+            timeout=20,
+            proxy=self.settings.feishu_http_proxy,
+        ) as client:
             response = await client.post(url, json=payload)
             response.raise_for_status()
         return _normalize_token_response(response.json())
@@ -126,6 +176,25 @@ def _normalize_token_response(payload: dict[str, Any]) -> dict[str, Any]:
             now + timedelta(seconds=refresh_expires_in)
         ).isoformat()
     return normalized
+
+
+def _merge_refreshed_token(
+    previous: dict[str, Any],
+    refreshed: dict[str, Any],
+) -> dict[str, Any]:
+    merged = dict(refreshed)
+    for key in ("refresh_token", "refresh_expires_at", "scope", "token_type"):
+        if not merged.get(key) and previous.get(key):
+            merged[key] = previous[key]
+    if not _token_value(merged, "refresh_token"):
+        previous_refresh = _token_value(previous, "refresh_token")
+        if previous_refresh:
+            merged["refresh_token"] = previous_refresh
+    if not _scope_set(merged):
+        previous_scopes = _scope_set(previous)
+        if previous_scopes:
+            merged["scope"] = " ".join(sorted(previous_scopes))
+    return merged
 
 
 class MissingOAuthScopeError(RuntimeError):

@@ -15,7 +15,7 @@ SECRET_KEYS = {
 
 SECRET_PATTERN = re.compile(
     r"(?i)("
-    r"sk-[a-z0-9_-]{12,}|"
+    r"sk-[a-z0-9_-]{8,}|"
     r"lin_api_[a-z0-9_-]+|"
     r"AIza[0-9A-Za-z_-]{20,}|"
     r"Bearer\s+[a-z0-9._-]+|"

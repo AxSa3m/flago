@@ -6,13 +6,22 @@ from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
-from fcgo.agent.protocols import ModelProvider, ResourceReader
+from fcgo.agent.protocols import (
+    AuditRecorder,
+    ModelProvider,
+    ResourceReader,
+    ResourceSearcher,
+    ResourceSearchPlanner,
+)
 from fcgo.models import (
     ActionProposal,
     AssistantRequest,
     AssistantResponse,
+    AuditEventType,
+    ConversationType,
     ResourceReadResult,
     ResourceRef,
+    ResourceSearchPlan,
     ResourceType,
     WriteActionType,
 )
@@ -70,6 +79,59 @@ _MODEL_OPERATION_LABELS = (
     "CRUD 操作",
 )
 
+_RESOURCE_SEARCH_ACTION_WORDS = (
+    "找",
+    "搜索",
+    "检索",
+    "查找",
+    "找一下",
+    "查一下",
+    "找找",
+    "读取",
+    "读一下",
+    "看一下",
+    "看看",
+    "总结",
+    "分析",
+)
+
+_RESOURCE_SEARCH_OBJECT_WORDS = (
+    "飞书",
+    "云文档",
+    "文档",
+    "表格",
+    "电子表格",
+    "多维表",
+    "知识库",
+    "资料",
+    "文件",
+)
+
+_RESOURCE_SEARCH_QUERY_NOISE = re.compile(
+    r"(帮我|请|一个|一篇|一下|相关|有关|关于|飞书|云文档|文档|文章|标题|名称|名字|名为|叫做|"
+    r"应该是|应该|可能是|大概是|包含|含有|"
+    r"表格|电子表格|多维表格|多维表|"
+    r"知识库|资料|文件|搜索|检索|查找|查一下|找一下|找找|找|读取|读一下|看一下|看看|"
+    r"总结|分析|里面|中的|是个|是一个|这个|那个|的|一下|下)"
+)
+
+_RESOURCE_LINK_SUMMARY_MARKERS = (
+    "链接汇总",
+    "文档链接",
+    "相关文档",
+    "相关的文档",
+    "相关资料",
+    "链接都发",
+    "都发我",
+    "汇总发",
+    "发我一下",
+    "发链接",
+    "链接给我",
+)
+
+_MAX_RESOURCE_LINK_SUMMARY_QUERIES = 8
+_MAX_MULTI_QUERY_SEARCH_RESULTS = 20
+
 
 @dataclass(frozen=True)
 class _BitableFieldCandidate:
@@ -116,33 +178,621 @@ class _ModelWritebackPlan:
     preview: str | None = None
 
 
+def _has_resource_search_intent(text: str) -> bool:
+    normalized = text.strip()
+    if not normalized:
+        return False
+    has_action = any(word in normalized for word in _RESOURCE_SEARCH_ACTION_WORDS)
+    has_object = any(word in normalized for word in _RESOURCE_SEARCH_OBJECT_WORDS)
+    return has_action and has_object
+
+
+def _is_resource_link_summary_request(text: str) -> bool:
+    normalized = re.sub(r"\s+", "", text.strip().casefold())
+    if not normalized:
+        return False
+    return "链接" in normalized and any(
+        marker in normalized for marker in _RESOURCE_LINK_SUMMARY_MARKERS
+    )
+
+
+def _resource_search_query(text: str) -> str:
+    query = _RESOURCE_SEARCH_QUERY_NOISE.sub(" ", text)
+    query = re.sub(r"\s+", " ", query).strip(" ：:，,。？?！!；;\"'")
+    if len(query) < 2:
+        query = text.strip()
+    return query[:120]
+
+
+def _resource_link_summary_queries(request: AssistantRequest) -> list[str]:
+    if not _is_resource_link_summary_request(request.text):
+        return []
+    queries: list[str] = []
+    for text in _resource_link_summary_texts(request):
+        for query in _extract_resource_link_summary_queries(text):
+            if query not in queries:
+                queries.append(query)
+            if len(queries) >= _MAX_RESOURCE_LINK_SUMMARY_QUERIES:
+                return queries
+    return queries
+
+
+def _writeback_target_search_queries(text: str) -> list[str]:
+    if not _has_writeback_intent(text):
+        return []
+    command = _strip_quoted_content(re.sub(r"https?://\S+", " ", text))
+    candidates: list[str] = []
+    patterns = (
+        r"(?:写入|写到|写进|写回|添加到|添加进|增加到|加入到|加入进|追加到|保存到|记录到|填入|填到)\s*([^，。！？\n]{2,80})",
+        r"(?:到|进|入|在)\s*([^，。！？\n]{2,80})",
+    )
+    for pattern in patterns:
+        candidates.extend(match.group(1) for match in re.finditer(pattern, command))
+    queries: list[str] = []
+    for candidate in candidates:
+        query = _clean_writeback_target_query(candidate)
+        if query and query not in queries:
+            queries.append(query)
+    return queries[:3]
+
+
+def _clean_writeback_target_query(value: str) -> str:
+    cleaned = re.sub(r"\s+", " ", value).strip(" ：:，,。？?！!；;\"'`“”")
+    cleaned = re.sub(r"^(?:这个|该|这篇|那篇|一个|一篇|飞书|云)\s*", "", cleaned)
+    cleaned = re.split(
+        r"(?:末尾|文末|最后面|最后|最下面|开头|最开始|最前面|里面|里|中|当中|上方|下方|后面|前面)",
+        cleaned,
+        maxsplit=1,
+    )[0]
+    cleaned = cleaned.strip(" ：:，,。？?！!；;\"'`“”")
+    if len(cleaned) < 2 or _is_generic_writeback_target_query(cleaned):
+        return ""
+    return cleaned[:120]
+
+
+def _is_generic_writeback_target_query(value: str) -> bool:
+    compact = re.sub(r"\s+", "", value.casefold())
+    return compact in {
+        "文档",
+        "这个文档",
+        "该文档",
+        "飞书文档",
+        "云文档",
+        "表格",
+        "电子表格",
+        "多维表",
+        "多维表格",
+        "资料",
+        "文件",
+    }
+
+
+def _resource_link_summary_texts(request: AssistantRequest) -> list[str]:
+    texts = [request.text]
+    if request.chat_context_summary.strip():
+        texts.extend(request.chat_context_summary.splitlines())
+    texts.extend(message.text for message in request.chat_context_messages)
+    return texts
+
+
+def _extract_resource_link_summary_queries(text: str) -> list[str]:
+    candidates: list[str] = []
+    for pattern in (r"[“\"]([^”\"]{2,80})[”\"]", r"《([^》]{2,80})》"):
+        candidates.extend(match.group(1) for match in re.finditer(pattern, text))
+    candidates.extend(_resource_link_summary_fragments(text))
+    queries: list[str] = []
+    for candidate in candidates:
+        query = _clean_resource_link_summary_query(candidate)
+        if query and query not in queries:
+            queries.append(query)
+    return queries
+
+
+def _resource_link_summary_fragments(text: str) -> list[str]:
+    fragments: list[str] = []
+    for line in text.splitlines():
+        cleaned_line = line.strip()
+        if not cleaned_line:
+            continue
+        if "：" in cleaned_line or ":" in cleaned_line:
+            fragments.append(re.split(r"[:：]", cleaned_line, maxsplit=1)[0])
+            continue
+        fragments.extend(re.split(r"[，,；;\n]", cleaned_line))
+    return fragments
+
+
+def _clean_resource_link_summary_query(value: str) -> str:
+    cleaned = re.sub(r"https?://\S+", " ", value)
+    cleaned = cleaned.replace("**", "").replace("__", "")
+    cleaned = re.sub(r"^\s*[-*•]?\s*", "", cleaned)
+    cleaned = re.sub(r"^\s*[0-9一二三四五六七八九十]+[.、，,\s]*(?:是|为)?\s*", "", cleaned)
+    cleaned = re.sub(r"\s+", " ", cleaned).strip(" ：:，,。？?！!；;\"'`“”《》")
+    cleaned = re.split(r"(?:的)?链接(?:都)?(?:发|给)|如需|如果|未找到|成功|失败", cleaned)[0]
+    cleaned = re.sub(
+        r"(文档搜索|项目搜索|相关测试|相关文档|相关资料|文档|资料|搜索|链接|汇总|测试)$",
+        "",
+        cleaned,
+        flags=re.IGNORECASE,
+    )
+    cleaned = re.sub(r"^(?:把|将|请|帮我|这些|相关|有关|关于|目前确认找到的)", "", cleaned)
+    cleaned = cleaned.strip(" ：:，,。？?！!；;\"'`“”《》")
+    if len(cleaned) < 2 or _is_generic_resource_link_summary_query(cleaned):
+        return ""
+    return cleaned[:120]
+
+
+def _is_generic_resource_link_summary_query(value: str) -> bool:
+    normalized = value.strip().casefold()
+    compact = re.sub(r"\s+", "", normalized)
+    generic = {
+        "文档",
+        "相关",
+        "相关的",
+        "链接",
+        "链接读取",
+        "权限问题",
+        "今天测试的问题",
+        "以下是对今天测试问题的总结",
+        "其他搜索",
+        "目前确认找到",
+    }
+    generic_markers = ("文档链接汇总", "相关文档链接", "相关的文档链接")
+    return normalized in generic or any(marker in compact for marker in generic_markers)
+
+
+def _merge_resource_search_plan_queries(
+    plan: ResourceSearchPlan,
+    supplemental_queries: list[str],
+) -> ResourceSearchPlan:
+    queries: list[str] = []
+    for query in [*plan.queries, *supplemental_queries]:
+        normalized = query.strip()
+        if normalized and not _has_overlapping_resource_query(normalized, queries):
+            queries.append(normalized)
+        if len(queries) >= _MAX_RESOURCE_LINK_SUMMARY_QUERIES:
+            break
+    if not queries:
+        return plan
+    return plan.model_copy(update={"should_search": True, "queries": queries})
+
+
+def _has_overlapping_resource_query(query: str, existing_queries: list[str]) -> bool:
+    query_compact = re.sub(r"\s+", "", query.casefold())
+    for existing in existing_queries:
+        existing_compact = re.sub(r"\s+", "", existing.casefold())
+        if query_compact == existing_compact:
+            return True
+        if (
+            len(query_compact) >= 2
+            and len(existing_compact) >= 2
+            and (query_compact in existing_compact or existing_compact in query_compact)
+        ):
+            return True
+    return False
+
+
+def _is_search_generated_refs(refs: list[ResourceRef]) -> bool:
+    return bool(refs) and all((ref.source_kind or "").startswith("search:") for ref in refs)
+
+
+def _with_pdf_page_hint(refs: list[ResourceRef], text: str) -> list[ResourceRef]:
+    hint = _pdf_page_hint(text)
+    if not hint:
+        return refs
+    return [
+        ref.model_copy(update={"range_hint": hint})
+        if ref.type == ResourceType.FEISHU_DOC
+        else ref
+        for ref in refs
+    ]
+
+
+def _pdf_page_hint(text: str) -> str | None:
+    first_pages = re.search(r"前\s*([0-9一二两三四五六七八九十]+)\s*页", text)
+    if first_pages:
+        count = _chinese_page_number(first_pages.group(1))
+        if count is not None:
+            return f"pdf:first:{count}"
+    exact_page = re.search(r"第\s*([0-9一二两三四五六七八九十]+)\s*页", text)
+    if exact_page:
+        page = _chinese_page_number(exact_page.group(1))
+        if page is not None:
+            return f"pdf:page:{page}"
+    return None
+
+
+def _chinese_page_number(value: str) -> int | None:
+    if value.isdigit():
+        parsed = int(value)
+        return parsed if parsed > 0 else None
+    digits = {
+        "一": 1,
+        "二": 2,
+        "两": 2,
+        "三": 3,
+        "四": 4,
+        "五": 5,
+        "六": 6,
+        "七": 7,
+        "八": 8,
+        "九": 9,
+    }
+    if value == "十":
+        return 10
+    if "十" in value:
+        tens, ones = value.split("十", 1)
+        tens_value = digits.get(tens, 1) if tens else 1
+        ones_value = digits.get(ones, 0) if ones else 0
+        return tens_value * 10 + ones_value
+    return digits.get(value)
+
+
+def _resource_type_counts(refs: Iterable[ResourceRef]) -> dict[str, int]:
+    counts: dict[str, int] = {}
+    for ref in refs:
+        key = ref.type.value
+        counts[key] = counts.get(key, 0) + 1
+    return counts
+
+
+def _search_status_ref() -> ResourceRef:
+    return ResourceRef(
+        type=ResourceType.UNKNOWN,
+        url="feishu://search",
+        source_kind="search",
+    )
+
+
+def _normalize_response_resource_urls(text: str, refs: list[ResourceRef]) -> str:
+    normalized = text
+    for ref in refs:
+        if not ref.token or not ref.url.startswith(("http://", "https://")):
+            continue
+        escaped_token = re.escape(ref.token)
+        normalized = re.sub(
+            rf"https://docs\.feishu\.cn/(docx|docs|doc|sheets|sheet|base|bitable)/"
+            rf"{escaped_token}(?:[?#][^\s)\]，。；、！？]*)?",
+            ref.url,
+            normalized,
+        )
+    return normalized
+
+
+def _is_unresolved_search_request(request: AssistantRequest) -> bool:
+    if not request.resource_results:
+        return False
+    searched = any((ref.source_kind or "").startswith("search") for ref in request.resource_refs)
+    search_failed = any(result.ref.url == "feishu://search" for result in request.resource_results)
+    if search_failed and not request.resource_refs:
+        return True
+    has_readable_result = any(
+        result.content.strip() and result.error is None
+        for result in request.resource_results
+    )
+    return searched and not has_readable_result
+
+
+def _search_failure_text(results: list[ResourceReadResult]) -> str:
+    errors = [result.error for result in results if result.error]
+    if errors:
+        return errors[0]
+    return "没有搜索到匹配的飞书文档、电子表格或多维表格。"
+
+
+def _has_untrusted_feishu_url(text: str, refs: list[ResourceRef]) -> bool:
+    known_tokens = {ref.token for ref in refs if ref.token}
+    for ref in parse_resource_urls(text):
+        if ref.type in {
+            ResourceType.FEISHU_DOC,
+            ResourceType.FEISHU_SHEET,
+            ResourceType.FEISHU_BITABLE,
+        } and ref.token not in known_tokens:
+            return True
+    return False
+
+
+def _search_results_text(results: list[ResourceReadResult]) -> str:
+    readable = [result for result in results if result.error is None]
+    if not readable:
+        return _search_failure_text(results)
+    lines = ["我只找到了以下真实可读取的飞书结果："]
+    for result in readable[:5]:
+        lines.append(f"- {result.title or '未命名资源'}：{result.ref.url}")
+    return "\n".join(lines)
+
+
+def _untrusted_feishu_url_text(request: AssistantRequest) -> str:
+    if request.resource_results:
+        return _search_results_text(request.resource_results)
+    return (
+        "模型回复中包含无法确认的飞书链接，已按安全策略拦截。"
+        "请提供真实飞书链接，或让我先搜索飞书资料。"
+    )
+
+
 class Assistant:
     def __init__(
         self,
         model_provider: ModelProvider,
         resource_reader: ResourceReader | None = None,
+        resource_searcher: ResourceSearcher | None = None,
         *,
+        resource_search_planner: ResourceSearchPlanner | None = None,
+        audit_recorder: AuditRecorder | None = None,
         pending_action_ttl_seconds: int = 1800,
         enable_writeback: bool = True,
+        resource_search_limit: int = 5,
+        resource_search_read_limit: int = 3,
     ) -> None:
         self.model_provider = model_provider
         self.resource_reader = resource_reader
+        self.resource_searcher = resource_searcher
+        self.resource_search_planner = resource_search_planner
+        self.audit_recorder = audit_recorder
         self.pending_action_ttl_seconds = pending_action_ttl_seconds
         self.enable_writeback = enable_writeback
+        self.resource_search_limit = resource_search_limit
+        self.resource_search_read_limit = resource_search_read_limit
         self.writeback_planner = WritebackPlanner(pending_action_ttl_seconds)
 
     async def handle(self, request: AssistantRequest) -> AssistantResponse:
-        refs = parse_resource_urls(request.text)
+        request.writeback_enabled = self.enable_writeback
+        contextual_writeback_text = _contextual_writeback_text(request)
+        refs = parse_resource_urls(contextual_writeback_text)
+        if not refs:
+            search_request = request
+            if contextual_writeback_text != request.text:
+                search_request = request.model_copy(update={"text": contextual_writeback_text})
+            refs = await self._search_resources(search_request)
+            if search_request is not request:
+                request.resource_results.extend(search_request.resource_results)
+        refs = _with_pdf_page_hint(refs, request.text)
         request.resource_refs[:] = refs
         request.resource_urls[:] = [ref.url for ref in refs]
-        request.resource_results[:] = await self._read_resources(refs, request.actor_id)
+        read_refs = refs
+        if self.resource_searcher is not None and _is_search_generated_refs(refs):
+            read_refs = refs[: max(self.resource_search_read_limit, 0)]
+        search_status_results = list(request.resource_results)
+        request.resource_results[:] = search_status_results + await self._read_resources(
+            read_refs,
+            request.actor_id,
+        )
+        if _is_unresolved_search_request(request):
+            return AssistantResponse(text=_search_failure_text(request.resource_results))
         logger.info("assistant_request", extra={"request_id": request.request_id})
         response = await self.model_provider.generate(request)
+        response.text = _normalize_response_resource_urls(response.text, request.resource_refs)
+        if _has_untrusted_feishu_url(response.text, request.resource_refs):
+            response.text = _untrusted_feishu_url_text(request)
         if self.enable_writeback:
             self.writeback_planner.apply(request, response)
         else:
             response.action_proposals.clear()
         return response
+
+    async def _search_resources(self, request: AssistantRequest) -> list[ResourceRef]:
+        if self.resource_searcher is None:
+            return []
+        if request.conversation_type != ConversationType.PRIVATE:
+            return []
+        has_search_signal = (
+            _has_resource_search_intent(request.text)
+            or bool(_resource_link_summary_queries(request))
+            or bool(_writeback_target_search_queries(request.text))
+        )
+        plan = await self._resource_search_plan(request)
+        if plan.should_search or has_search_signal:
+            await self._audit_resource_search_plan(request, plan)
+        if not plan.should_search or not plan.queries:
+            return []
+        refs: list[ResourceRef] = []
+        seen: set[tuple[ResourceType, str, str | None]] = set()
+        max_results = self._resource_search_max_results(plan)
+        per_query_limit = self.resource_search_limit
+        error: Exception | None = None
+        try:
+            for query in plan.queries:
+                remaining = max(max_results - len(refs), 0)
+                if remaining <= 0:
+                    break
+                for ref in await self.resource_searcher.search(
+                    query,
+                    request.actor_id,
+                    limit=min(per_query_limit, remaining),
+                ):
+                    key = (ref.type, ref.url, ref.token)
+                    if key in seen:
+                        continue
+                    seen.add(key)
+                    refs.append(ref)
+                    if len(refs) >= max_results:
+                        break
+        except Exception as exc:  # noqa: BLE001 - turn search failures into model context
+            error = exc
+            await self._audit_resource_search_execution(
+                request,
+                plan,
+                refs,
+                max_results=max_results,
+                error=exc,
+            )
+            request.resource_results.append(
+                ResourceReadResult(
+                    ref=_search_status_ref(),
+                    title="飞书资料搜索",
+                    error=str(exc),
+                )
+            )
+            return []
+        await self._audit_resource_search_execution(
+            request,
+            plan,
+            refs,
+            max_results=max_results,
+            error=error,
+        )
+        if refs:
+            return refs
+        request.resource_results.append(
+            ResourceReadResult(
+                ref=_search_status_ref(),
+                title="飞书资料搜索",
+                error="没有搜索到匹配的飞书文档、电子表格或多维表格。",
+            )
+        )
+        return []
+
+    async def _resource_search_plan(self, request: AssistantRequest) -> ResourceSearchPlan:
+        supplemental_queries = _resource_link_summary_queries(request)
+        writeback_queries = _writeback_target_search_queries(request.text)
+        if self.resource_search_planner is not None:
+            try:
+                plan = await self.resource_search_planner.plan(request)
+            except Exception as exc:  # noqa: BLE001 - fall back to conservative local behavior
+                logger.info("resource_search_planner_failed", extra={"error": str(exc)})
+                await self._audit_agent_error(
+                    request,
+                    kind="resource_search_planner_failed",
+                    tool="resource_search",
+                    error=exc,
+                    fallback_used=True,
+                )
+            else:
+                if plan.should_search and not plan.queries:
+                    fallback_query = _resource_search_query(request.text)
+                    if fallback_query:
+                        plan = plan.model_copy(update={"queries": [fallback_query]})
+                if writeback_queries:
+                    return _merge_resource_search_plan_queries(
+                        plan.model_copy(
+                            update={
+                                "should_search": True,
+                                "queries": writeback_queries,
+                            }
+                        ),
+                        [*plan.queries, *supplemental_queries],
+                    )
+                if supplemental_queries:
+                    return _merge_resource_search_plan_queries(
+                        plan.model_copy(update={"should_search": True}),
+                        supplemental_queries,
+                    )
+                return plan
+        if writeback_queries:
+            return ResourceSearchPlan(
+                should_search=True,
+                queries=writeback_queries,
+                reason="writeback target fallback",
+            )
+        if supplemental_queries:
+            return ResourceSearchPlan(
+                should_search=True,
+                queries=supplemental_queries,
+                reason="link summary fallback",
+            )
+        if not _has_resource_search_intent(request.text):
+            return ResourceSearchPlan()
+        query = _resource_search_query(request.text)
+        if not query:
+            return ResourceSearchPlan()
+        return ResourceSearchPlan(
+            should_search=True,
+            queries=[query],
+            reason="local fallback",
+        )
+
+    async def _audit_resource_search_plan(
+        self,
+        request: AssistantRequest,
+        plan: ResourceSearchPlan,
+    ) -> None:
+        await self._audit_agent_event(
+            AuditEventType.AGENT_TOOL_PLANNED,
+            actor_id=request.actor_id,
+            detail={
+                "tool": "resource_search",
+                "should_search": plan.should_search,
+                "query_count": len(plan.queries),
+                "query_lengths": [len(query) for query in plan.queries],
+                "resource_types": sorted(set(plan.resource_types)),
+                "constraint_count": len(plan.constraints),
+                "reason_length": len(plan.reason),
+            },
+        )
+
+    async def _audit_resource_search_execution(
+        self,
+        request: AssistantRequest,
+        plan: ResourceSearchPlan,
+        refs: list[ResourceRef],
+        *,
+        max_results: int,
+        error: Exception | None,
+    ) -> None:
+        detail: dict[str, Any] = {
+            "tool": "resource_search",
+            "query_count": len(plan.queries),
+            "result_count": len(refs),
+            "max_results": max_results,
+            "hit_limit": len(refs) >= max_results,
+            "result_types": _resource_type_counts(refs),
+            "has_error": error is not None,
+        }
+        if error is not None:
+            detail["error_type"] = type(error).__name__
+            detail["error_length"] = len(str(error))
+        await self._audit_agent_event(
+            AuditEventType.AGENT_TOOL_EXECUTED,
+            actor_id=request.actor_id,
+            detail=detail,
+        )
+
+    async def _audit_agent_error(
+        self,
+        request: AssistantRequest,
+        *,
+        kind: str,
+        tool: str,
+        error: Exception,
+        fallback_used: bool,
+    ) -> None:
+        await self._audit_agent_event(
+            AuditEventType.ERROR,
+            actor_id=request.actor_id,
+            detail={
+                "kind": kind,
+                "tool": tool,
+                "error_type": type(error).__name__,
+                "error_length": len(str(error)),
+                "fallback_used": fallback_used,
+            },
+        )
+
+    async def _audit_agent_event(
+        self,
+        event_type: AuditEventType,
+        *,
+        actor_id: str,
+        detail: dict[str, Any],
+    ) -> None:
+        if self.audit_recorder is None:
+            return
+        try:
+            await self.audit_recorder.audit(
+                event_type,
+                actor_id=actor_id,
+                detail=detail,
+            )
+        except Exception:  # noqa: BLE001 - audit failure must not break replies
+            logger.exception("agent_audit_failed event_type=%s", event_type)
+
+    def _resource_search_max_results(self, plan: ResourceSearchPlan) -> int:
+        if len(plan.queries) <= 1:
+            return self.resource_search_limit
+        return min(
+            max(self.resource_search_limit, len(plan.queries) * self.resource_search_limit),
+            _MAX_MULTI_QUERY_SEARCH_RESULTS,
+        )
 
     async def _read_resources(
         self,
@@ -183,6 +833,13 @@ class WritebackPlanner:
                 response.action_proposals,
                 model_text=response.text,
             )
+        if response.action_proposals:
+            for proposal in response.action_proposals:
+                _enrich_proposal_display_target(request, proposal)
+        else:
+            unsupported_position_text = _doc_asset_relative_insert_unsupported_text(request)
+            if unsupported_position_text:
+                response.text = unsupported_position_text
 
     def _infer_writeback_proposals(
         self,
@@ -192,24 +849,35 @@ class WritebackPlanner:
         planned = self._proposals_from_model_plans(request, model_text)
         if planned:
             return planned
-        if not _has_writeback_intent(request.text):
+        request_text = _contextual_writeback_text(request)
+        if not _has_writeback_intent(request_text):
             return []
-        content = _writeback_content(request.text, model_text)
+        content = _writeback_content(request_text, model_text)
         if not content:
             return []
         model_operation = _model_writeback_operation(model_text)
         now = datetime.now(UTC)
         doc_ref = _first_writable_doc_ref(request)
-        if doc_ref is not None:
-            if model_operation == "delete" or _has_replacement_or_delete_intent(request.text):
+        if doc_ref is not None and doc_ref.token:
+            if model_operation == "delete" or _has_replacement_or_delete_intent(request_text):
                 return []
+            if _requested_doc_asset_relative_name(request_text):
+                return []
+            target: dict[str, Any] = {"document_id": doc_ref.token}
+            preview = (
+                f"向文档开头插入文本：\n{content}"
+                if _requests_document_start(request_text)
+                else f"向文档追加文本：\n{content}"
+            )
+            if _requests_document_start(request_text):
+                target.update({"block_id": doc_ref.token, "index": 0})
             return [
                 _proposal(
                     actor_id=request.actor_id,
                     action_type=WriteActionType.DOC_APPEND,
-                    target={"document_id": doc_ref.token},
+                    target=target,
                     payload={"content": content},
-                    preview=f"向文档追加文本：\n{content}",
+                    preview=preview,
                     now=now,
                     ttl_seconds=self.pending_action_ttl_seconds,
                 )
@@ -457,16 +1125,44 @@ class WritebackPlanner:
         *,
         model_text: str,
     ) -> None:
+        valid_proposals: list[ActionProposal] = []
         for proposal in proposals:
             self._normalize_model_generated_content(
                 request,
                 proposal,
                 model_text=model_text,
             )
+            if proposal.action_type == WriteActionType.DOC_APPEND:
+                if self._normalize_doc_write_target(request, proposal):
+                    valid_proposals.append(proposal)
+                continue
             if proposal.action_type != WriteActionType.SHEET_WRITE_RANGE:
                 self._normalize_bitable_update_target(request, proposal, model_text=model_text)
+                valid_proposals.append(proposal)
                 continue
             self._normalize_sheet_write_target(request, proposal, model_text=model_text)
+            valid_proposals.append(proposal)
+        proposals[:] = valid_proposals
+
+    def _normalize_doc_write_target(
+        self,
+        request: AssistantRequest,
+        proposal: ActionProposal,
+    ) -> bool:
+        request_text = _contextual_writeback_text(request)
+        document_id = str(proposal.target.get("document_id") or "").strip()
+        if not document_id:
+            return True
+        if _requested_doc_asset_relative_name(request_text):
+            return False
+        if not _requests_document_start(request_text):
+            return True
+        proposal.target["block_id"] = document_id
+        proposal.target["index"] = 0
+        content = str(proposal.payload.get("content") or "").strip()
+        if content:
+            proposal.preview = f"向文档开头插入文本：\n{content}"
+        return True
 
     def _normalize_model_generated_content(
         self,
@@ -475,6 +1171,12 @@ class WritebackPlanner:
         *,
         model_text: str,
     ) -> None:
+        explicit_content = _explicit_quoted_writeback_content(
+            _contextual_writeback_text(request)
+        )
+        if explicit_content:
+            _force_proposal_content(proposal, explicit_content)
+            return
         content = _model_generated_writeback_content(model_text)
         if not content:
             return
@@ -641,9 +1343,82 @@ def _proposal(
     )
 
 
+def _enrich_proposal_display_target(
+    request: AssistantRequest,
+    proposal: ActionProposal,
+) -> None:
+    ref = _proposal_resource_ref(request, proposal)
+    if ref is None:
+        return
+    title = _resource_title_for_ref(request, ref)
+    if title:
+        proposal.target_title = title
+    proposal.target_url = ref.url
+
+
+def _proposal_resource_ref(
+    request: AssistantRequest,
+    proposal: ActionProposal,
+) -> ResourceRef | None:
+    target = proposal.target
+    token_keys: tuple[str, ...]
+    resource_type: ResourceType
+    if proposal.action_type in {WriteActionType.DOC_CREATE, WriteActionType.DOC_APPEND}:
+        token_keys = ("document_id", "doc_token")
+        resource_type = ResourceType.FEISHU_DOC
+    elif proposal.action_type == WriteActionType.SHEET_WRITE_RANGE:
+        token_keys = ("spreadsheet_token",)
+        resource_type = ResourceType.FEISHU_SHEET
+    elif proposal.action_type in {
+        WriteActionType.BITABLE_CREATE_RECORD,
+        WriteActionType.BITABLE_UPDATE_RECORD,
+        WriteActionType.BITABLE_DELETE_RECORD,
+    }:
+        token_keys = ("app_token",)
+        resource_type = ResourceType.FEISHU_BITABLE
+    else:
+        return None
+    target_token = next(
+        (
+            str(target[key]).strip()
+            for key in token_keys
+            if target.get(key) and str(target[key]).strip()
+        ),
+        "",
+    )
+    if not target_token:
+        return None
+    refs = [result.ref for result in request.resource_results] + request.resource_refs
+    return next(
+        (
+            ref
+            for ref in refs
+            if ref.type == resource_type and ref.token == target_token
+        ),
+        None,
+    )
+
+
+def _resource_title_for_ref(
+    request: AssistantRequest,
+    ref: ResourceRef,
+) -> str | None:
+    for result in request.resource_results:
+        if result.ref.type == ref.type and result.ref.token == ref.token and result.title:
+            return result.title
+    for candidate in [*request.resource_refs, *(result.ref for result in request.resource_results)]:
+        if (
+            candidate.type == ref.type
+            and candidate.token == ref.token
+            and candidate.title
+        ):
+            return candidate.title
+    return None
+
+
 def _has_writeback_intent(text: str) -> bool:
     normalized = text.strip().lower()
-    return any(
+    if any(
         phrase in normalized
         for phrase in (
             "写入",
@@ -682,10 +1457,105 @@ def _has_writeback_intent(text: str) -> bool:
             "write back",
             "save to",
         )
+    ):
+        return True
+    return bool(
+        re.search(
+            r"(?:帮我|请|将|把)?写(?:一句|一段|一些|点)?"
+            r".{0,400}(?:到|进|入|在).{0,80}(?:文档|表格|多维表|飞书)",
+            normalized,
+            flags=re.DOTALL,
+        )
+    )
+
+
+def _contextual_writeback_text(request: AssistantRequest) -> str:
+    if _has_writeback_intent(request.text):
+        return request.text
+    if not _looks_like_writeback_clarification(request.text):
+        return request.text
+    for message in reversed(request.chat_context_messages):
+        if message.sender_id and message.sender_id != request.actor_id:
+            continue
+        if _has_writeback_intent(message.text):
+            return f"{message.text}\n补充要求：{request.text}"
+    return request.text
+
+
+def _looks_like_writeback_clarification(text: str) -> bool:
+    normalized = text.strip().lower()
+    return any(
+        marker in normalized
+        for marker in (
+            "文章最开始",
+            "文档最开始",
+            "文档开头",
+            "文章开头",
+            "最前面",
+            "开头",
+            "末尾",
+            "最后面",
+            "文末",
+            "第一段前",
+            "确认",
+            "就这样",
+        )
+    )
+
+
+def _requests_document_start(text: str) -> bool:
+    normalized = text.strip().lower()
+    return any(
+        marker in normalized
+        for marker in (
+            "文章最开始",
+            "文档最开始",
+            "文档开头",
+            "文章开头",
+            "最前面",
+            "第一段前",
+        )
+    )
+
+
+def _requested_doc_asset_relative_name(text: str) -> str | None:
+    patterns = (
+        r"《([^》]{1,120})》[^。！？\n]{0,40}(?:内嵌文件|文件|附件|资源)"
+        r"[^。！？\n]{0,30}(?:前面|前一行|之前|上方|后面|后一行|之后|下方)",
+        r"(?:内嵌文件|文件|附件|资源)[^《。！？\n]{0,30}《([^》]{1,120})》"
+        r"[^。！？\n]{0,30}(?:前面|前一行|之前|上方|后面|后一行|之后|下方)",
+    )
+    for pattern in patterns:
+        match = re.search(pattern, text, flags=re.IGNORECASE)
+        if match:
+            return match.group(1).strip()
+    return None
+
+
+def _doc_asset_relative_insert_unsupported_text(request: AssistantRequest) -> str | None:
+    request_text = _contextual_writeback_text(request)
+    asset_name = _requested_doc_asset_relative_name(request_text)
+    if not asset_name:
+        return None
+    doc_ref = _first_writable_doc_ref(request)
+    if doc_ref is None or not doc_ref.token:
+        return None
+    doc_title = _resource_title_for_ref(request, doc_ref) or "目标文档"
+    return (
+        f"我识别到你想把内容写到《{doc_title}》中「{asset_name}」这个文件附近。"
+        "当前版本还不能稳定写入文档中间位置；为避免写错位置，我没有生成写回卡片。"
+        "目前请改为写到文档开头或文档末尾；未指定位置时默认追加到文档末尾。"
     )
 
 
 def _extract_writeback_content(text: str) -> str:
+    quoted = _explicit_quoted_writeback_content(text)
+    if quoted:
+        return quoted
+    return _unquoted_writeback_content(text)
+
+
+def _explicit_quoted_writeback_content(text: str) -> str:
     quoted_patterns = [
         r"“([^”]{1,4000})”",
         r'"([^"]{1,4000})"',
@@ -696,6 +1566,10 @@ def _extract_writeback_content(text: str) -> str:
         match = re.search(pattern, text, flags=re.DOTALL)
         if match:
             return match.group(1).strip()
+    return ""
+
+
+def _unquoted_writeback_content(text: str) -> str:
     before_link = re.split(r"https?://", text, maxsplit=1)[0]
     for marker in (
         "写入",
@@ -760,10 +1634,13 @@ def _looks_like_generation_instruction(text: str) -> bool:
 
 
 def _writeback_content(request_text: str, model_text: str) -> str:
+    explicit_content = _explicit_quoted_writeback_content(request_text)
+    if explicit_content:
+        return explicit_content
     model_content = _model_generated_writeback_content(model_text)
     if model_content:
         return model_content
-    return _extract_writeback_content(request_text)
+    return _unquoted_writeback_content(request_text)
 
 
 def _model_writeback_operation(text: str) -> str | None:
@@ -1431,9 +2308,60 @@ def _writeback_proposal_text(original_text: str) -> str:
     prefix = "我已准备好写回预览，请在卡片中确认后执行。"
     if not original_text.strip():
         return prefix
-    if "建议操作" in original_text or "手动写入" in original_text:
+    normalized = _normalize_markdown_text(original_text)
+    if (
+        "建议操作" in original_text
+        or "手动写入" in original_text
+        or "生成确认卡片" in normalized
+        or "确认卡片" in normalized
+        or "是否生成" in normalized
+        or "需要生成" in normalized
+        or "已确认" in normalized
+        or "正在将" in normalized
+        or "准备好将" in normalized
+    ):
         return prefix
     return f"{original_text.strip()}\n\n{prefix}"
+
+
+def _force_proposal_content(proposal: ActionProposal, content: str) -> None:
+    if proposal.action_type == WriteActionType.DOC_APPEND:
+        if str(proposal.payload.get("content") or "") == content:
+            return
+        proposal.payload["content"] = content
+        proposal.preview = (
+            f"向文档开头插入文本：\n{content}"
+            if _is_document_start_target(proposal.target)
+            else f"向文档追加文本：\n{content}"
+        )
+        return
+    if proposal.action_type == WriteActionType.SHEET_WRITE_RANGE:
+        if _proposal_first_value(proposal) == content:
+            return
+        proposal.payload["values"] = [[content]]
+        range_name = str(proposal.target.get("range", ""))
+        proposal.preview = f"向电子表格 {range_name} 写入：{content}"
+        return
+    if proposal.action_type in {
+        WriteActionType.BITABLE_CREATE_RECORD,
+        WriteActionType.BITABLE_UPDATE_RECORD,
+    }:
+        fields = proposal.payload.get("fields")
+        if not isinstance(fields, dict) or len(fields) != 1:
+            return
+        field_name = next(iter(fields))
+        if str(fields[field_name]).strip() == content:
+            return
+        proposal.payload["fields"] = {field_name: content}
+        if proposal.action_type == WriteActionType.BITABLE_UPDATE_RECORD:
+            record_id = str(proposal.target.get("record_id", ""))
+            proposal.preview = f"更新多维表格记录 {record_id}：{field_name} = {content}"
+        else:
+            proposal.preview = f"向多维表格新增记录：{field_name} = {content}"
+
+
+def _is_document_start_target(target: dict[str, Any]) -> bool:
+    return int(target.get("index", -1)) == 0
 
 
 def _sheet_ref_for_proposal(

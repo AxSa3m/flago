@@ -1,6 +1,4 @@
-import json
 from datetime import UTC
-from typing import Any
 
 from fcgo.models import ActionProposal, WriteActionType
 
@@ -11,6 +9,8 @@ MAX_PREVIEW_CHARS = 4000
 def assistant_response_card(
     text: str,
     proposals: list[ActionProposal],
+    *,
+    assistant_name: str = "小智",
 ) -> dict[str, object]:
     elements: list[dict[str, object]] = []
     if text.strip():
@@ -27,14 +27,18 @@ def assistant_response_card(
         "config": {"wide_screen_mode": True},
         "header": {
             "template": "blue",
-            "title": {"tag": "plain_text", "content": "FCGO 回复"},
+            "title": {"tag": "plain_text", "content": f"{assistant_name} 回复"},
         },
         "elements": elements,
     }
 
 
-def proposal_card(proposal: ActionProposal) -> dict[str, object]:
-    return assistant_response_card("", [proposal])
+def proposal_card(
+    proposal: ActionProposal,
+    *,
+    assistant_name: str = "小智",
+) -> dict[str, object]:
+    return assistant_response_card("", [proposal], assistant_name=assistant_name)
 
 
 def _proposal_elements(
@@ -44,13 +48,13 @@ def _proposal_elements(
     total: int,
 ) -> list[dict[str, object]]:
     title = "待确认写回" if total == 1 else f"待确认写回 {index}/{total}"
-    return [
+    elements: list[dict[str, object]] = [
         {
             "tag": "markdown",
             "content": (
                 f"**{title}**\n"
                 f"- 动作：{_action_label(proposal.action_type)}\n"
-                f"- 目标：{_target_summary(proposal.target)}\n"
+                f"- 目标：{_target_summary(proposal)}\n"
                 f"- 过期：{_format_expires_at(proposal)}"
             ),
         },
@@ -58,47 +62,54 @@ def _proposal_elements(
             "tag": "markdown",
             "content": f"**预览**\n{_trim(proposal.preview, MAX_PREVIEW_CHARS)}",
         },
+    ]
+    actions: list[dict[str, object]] = [
         {
-            "tag": "note",
-            "elements": [
-                {
-                    "tag": "plain_text",
-                    "content": f"动作 ID：{proposal.id}",
-                }
-            ],
+            "tag": "button",
+            "text": {"tag": "plain_text", "content": "确认执行"},
+            "type": "primary",
+            "value": {
+                "action": "confirm",
+                "fcgo_action": "writeback.confirm",
+                "action_id": proposal.id,
+            },
         },
         {
-            "tag": "action",
-            "actions": [
-                {
-                    "tag": "button",
-                    "text": {"tag": "plain_text", "content": "确认执行"},
-                    "type": "primary",
-                    "value": {
-                        "action": "confirm",
-                        "fcgo_action": "writeback.confirm",
-                        "action_id": proposal.id,
-                    },
-                },
-                {
-                    "tag": "button",
-                    "text": {"tag": "plain_text", "content": "取消"},
-                    "type": "default",
-                    "value": {
-                        "action": "cancel",
-                        "fcgo_action": "writeback.cancel",
-                        "action_id": proposal.id,
-                    },
-                },
-            ],
+            "tag": "button",
+            "text": {"tag": "plain_text", "content": "取消"},
+            "type": "default",
+            "value": {
+                "action": "cancel",
+                "fcgo_action": "writeback.cancel",
+                "action_id": proposal.id,
+            },
         },
     ]
+    display_url = str(proposal.target_url or "").strip()
+    if display_url.startswith(("http://", "https://")):
+        actions.insert(
+            0,
+            {
+                "tag": "button",
+                "text": {"tag": "plain_text", "content": "打开目标"},
+                "type": "default",
+                "url": display_url,
+            },
+        )
+    elements.append(
+        {
+            "tag": "action",
+            "actions": actions,
+        },
+    )
+    return elements
 
 
 def _action_label(action_type: WriteActionType) -> str:
     labels = {
         WriteActionType.DOC_CREATE: "创建文档",
         WriteActionType.DOC_APPEND: "追加到文档",
+        WriteActionType.DOC_DELETE_BLOCK: "删除文档新增内容",
         WriteActionType.SHEET_WRITE_RANGE: "写入电子表格范围",
         WriteActionType.BITABLE_CREATE_RECORD: "创建多维表格记录",
         WriteActionType.BITABLE_UPDATE_RECORD: "更新多维表格记录",
@@ -108,20 +119,23 @@ def _action_label(action_type: WriteActionType) -> str:
     return labels.get(action_type, action_type.value)
 
 
-def _target_summary(target: dict[str, Any]) -> str:
+def _target_summary(proposal: ActionProposal) -> str:
+    display_title = str(proposal.target_title or "").strip()
+    display_url = str(proposal.target_url or "").strip()
+    if display_title and display_url.startswith(("http://", "https://")):
+        return f"[{display_title}]({display_url})"
+    if display_title:
+        return display_title
+    if display_url.startswith(("http://", "https://")):
+        return f"[打开目标资源]({display_url})"
     for key in (
         "title",
         "url",
-        "document_id",
-        "doc_token",
-        "spreadsheet_token",
-        "app_token",
-        "chat_id",
     ):
-        value = target.get(key)
+        value = proposal.target.get(key)
         if value:
             return str(value)
-    return _trim(json.dumps(target, ensure_ascii=False, sort_keys=True), 800)
+    return "已识别目标资源"
 
 
 def _format_expires_at(proposal: ActionProposal) -> str:

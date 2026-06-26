@@ -12,8 +12,16 @@ class FakeOpenAPI:
         self.calls.append(("create_doc", title, actor_id, folder_token, content))
         return {"document_id": "docx123"}
 
-    async def append_doc_text(self, document_id, content, actor_id, *, block_id=None):
-        self.calls.append(("append_doc_text", document_id, content, actor_id, block_id))
+    async def append_doc_text(
+        self,
+        document_id,
+        content,
+        actor_id,
+        *,
+        block_id=None,
+        index=-1,
+    ):
+        self.calls.append(("append_doc_text", document_id, content, actor_id, block_id, index))
         return {"ok": True}
 
     async def append_doc_blocks(
@@ -34,6 +42,15 @@ class FakeOpenAPI:
         self.calls.append(("write_sheet_range", spreadsheet_token, range_name, values, actor_id))
         return {"ok": True}
 
+    async def read_sheet_range(self, spreadsheet_token, range_name, actor_id):
+        self.calls.append(("read_sheet_range", spreadsheet_token, range_name, actor_id))
+        return {
+            "valueRange": {
+                "range": range_name,
+                "values": [["旧值"]],
+            }
+        }
+
     async def create_bitable_record(self, app_token, table_id, fields, actor_id):
         self.calls.append(("create_bitable_record", app_token, table_id, fields, actor_id))
         return {"ok": True}
@@ -46,6 +63,10 @@ class FakeOpenAPI:
 
     async def delete_bitable_record(self, app_token, table_id, record_id, actor_id):
         self.calls.append(("delete_bitable_record", app_token, table_id, record_id, actor_id))
+        return {"ok": True}
+
+    async def delete_doc_block(self, document_id, block_id, actor_id, *, revision_id=-1):
+        self.calls.append(("delete_doc_block", document_id, block_id, actor_id, revision_id))
         return {"ok": True}
 
 
@@ -85,7 +106,24 @@ async def test_executor_appends_doc_text() -> None:
         payload={"content": "新增内容"},
     )
 
-    assert api.calls == [("append_doc_text", "docx123", "新增内容", "ou_user", None)]
+    assert api.calls == [("append_doc_text", "docx123", "新增内容", "ou_user", None, -1)]
+
+
+@pytest.mark.asyncio
+async def test_executor_inserts_doc_text_at_document_start() -> None:
+    api = FakeOpenAPI()
+    executor = FeishuWriteExecutor(api)
+
+    await executor.execute(
+        action_type=WriteActionType.DOC_APPEND,
+        actor_id="ou_user",
+        target={"document_id": "docx123", "block_id": "docx123", "index": 0},
+        payload={"content": "开头文字"},
+    )
+
+    assert api.calls == [
+        ("append_doc_text", "docx123", "开头文字", "ou_user", "docx123", 0)
+    ]
 
 
 @pytest.mark.asyncio
@@ -105,6 +143,28 @@ async def test_executor_appends_doc_blocks() -> None:
 
 
 @pytest.mark.asyncio
+async def test_executor_deletes_doc_blocks_for_undo() -> None:
+    api = FakeOpenAPI()
+    executor = FeishuWriteExecutor(api)
+
+    result = await executor.execute(
+        action_type=WriteActionType.DOC_DELETE_BLOCK,
+        actor_id="ou_user",
+        target={"document_id": "docx123"},
+        payload={"block_ids": ["blk1", "blk2"]},
+    )
+
+    assert result == {
+        "deleted_block_ids": ["blk1", "blk2"],
+        "delete_results": [{"ok": True}, {"ok": True}],
+    }
+    assert api.calls == [
+        ("delete_doc_block", "docx123", "blk2", "ou_user", -1),
+        ("delete_doc_block", "docx123", "blk1", "ou_user", -1),
+    ]
+
+
+@pytest.mark.asyncio
 async def test_executor_writes_sheet_range() -> None:
     api = FakeOpenAPI()
     executor = FeishuWriteExecutor(api)
@@ -116,7 +176,25 @@ async def test_executor_writes_sheet_range() -> None:
         payload={"values": [["A"]]},
     )
 
-    assert api.calls == [("write_sheet_range", "sht123", "Sheet1!A1", [["A"]], "ou_user")]
+    assert api.calls == [
+        ("read_sheet_range", "sht123", "Sheet1!A1", "ou_user"),
+        ("write_sheet_range", "sht123", "Sheet1!A1", [["A"]], "ou_user"),
+    ]
+
+
+@pytest.mark.asyncio
+async def test_executor_sheet_snapshot_covers_newly_filled_empty_cells() -> None:
+    api = FakeOpenAPI()
+    executor = FeishuWriteExecutor(api)
+
+    result = await executor.execute(
+        action_type=WriteActionType.SHEET_WRITE_RANGE,
+        actor_id="ou_user",
+        target={"spreadsheet_token": "sht123", "range": "Sheet1!A1:B2"},
+        payload={"values": [["A", "B"], ["C", "D"]]},
+    )
+
+    assert result["previous_values"] == [["旧值", ""], ["", ""]]
 
 
 @pytest.mark.asyncio

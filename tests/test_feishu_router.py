@@ -1,15 +1,19 @@
+import json
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
+import aiosqlite
 import pytest
 
 from fcgo.config import Settings
+from fcgo.feishu.oauth import AuthorizationStatus
 from fcgo.feishu.router import FeishuMessageRouter
 from fcgo.model_providers.echo import EchoModelProvider
 from fcgo.model_providers.registry import ModelProviderRegistry, ModelRouter, build_model_router
 from fcgo.models import (
     ActionProposal,
     AssistantResponse,
+    AuditEventType,
     ConversationType,
     FeishuBotMenuEvent,
     FeishuMessage,
@@ -44,6 +48,32 @@ class ProposalAssistant:
         )
 
 
+class RecordingChatHistoryAPI:
+    def __init__(self, data: dict[str, Any] | None = None) -> None:
+        self.data = data or {"items": []}
+        self.calls: list[dict[str, Any]] = []
+
+    async def list_recent_messages(self, **kwargs):
+        self.calls.append(kwargs)
+        return self.data
+
+
+class SequencedChatHistoryAPI:
+    def __init__(self, payloads: list[dict[str, Any]]) -> None:
+        self.payloads = payloads
+        self.calls: list[dict[str, Any]] = []
+
+    async def list_recent_messages(self, **kwargs):
+        self.calls.append(kwargs)
+        index = min(len(self.calls) - 1, len(self.payloads) - 1)
+        return self.payloads[index]
+
+
+class FailingChatHistoryAPI:
+    async def list_recent_messages(self, **kwargs):
+        raise RuntimeError("请先在飞书中发送 /授权 完成授权后再读取聊天上下文")
+
+
 class RecordingFeishuClient:
     def __init__(self) -> None:
         self.replies: list[tuple[str, str]] = []
@@ -62,10 +92,35 @@ class RecordingFeishuClient:
     async def send_interactive_card(self, chat_id: str, card: dict[str, Any]) -> None:
         self.cards.append((chat_id, card))
 
+    async def send_interactive_card_to_open_id(
+        self,
+        open_id: str,
+        card: dict[str, Any],
+    ) -> None:
+        self.cards.append((open_id, card))
+
+    async def send_interactive_card_to_user_id(
+        self,
+        user_id: str,
+        card: dict[str, Any],
+    ) -> None:
+        self.cards.append((user_id, card))
+
 
 class StubOAuth:
+    def __init__(self, status: AuthorizationStatus | None = None) -> None:
+        self.status = status or AuthorizationStatus(
+            authorized=False,
+            usable=False,
+            missing_scopes=["docx:document:readonly"],
+            reason="not_authorized",
+        )
+
     async def create_authorization_url(self, subject_id: str):
         return f"https://auth.example.test/?subject_id={subject_id}", "state-1"
+
+    async def authorization_status(self, subject_id: str):
+        return self.status
 
 
 def _writeback_settings() -> Settings:
@@ -89,12 +144,19 @@ async def test_router_replies_with_model_response(tmp_path) -> None:
 async def test_router_sends_writeback_proposal_card_and_saves_pending_action(tmp_path) -> None:
     store = SQLiteStore(tmp_path / "fcgo.sqlite3")
     await store.init()
+    await store.save_assistant_name_preference(
+        subject_id="ou_user",
+        assistant_name="小飞",
+        updated_by="ou_user",
+    )
     proposal = ActionProposal(
         actor_id="ou_user",
-        action_type=WriteActionType.MESSAGE_SEND,
-        target={"chat_id": "oc_chat"},
-        payload={"text": "hello"},
-        preview="向当前会话发送：hello",
+        action_type=WriteActionType.DOC_APPEND,
+        target={"document_id": "docx123"},
+        target_title="测试文档",
+        target_url="https://my.feishu.cn/docx/docx123",
+        payload={"content": "hello"},
+        preview="向文档追加：hello",
         expires_at=datetime.now(UTC) + timedelta(minutes=30),
     )
     client = RecordingFeishuClient()
@@ -114,9 +176,13 @@ async def test_router_sends_writeback_proposal_card_and_saves_pending_action(tmp
     assert len(client.cards) == 1
     chat_id, card = client.cards[0]
     assert chat_id == "oc_chat"
-    assert card["header"]["title"]["content"] == "FCGO 回复"
+    assert card["header"]["title"]["content"] == "小飞 回复"
     assert "我准备写回以下内容" in card["elements"][0]["content"]
     card_text = str(card)
+    assert "测试文档" in card_text
+    assert "https://my.feishu.cn/docx/docx123" in card_text
+    assert "打开目标" in card_text
+    assert "- 目标：docx123" not in card["elements"][2]["content"]
     assert "确认执行" in card_text
     assert "writeback.confirm" in card_text
     assert proposal.id in card_text
@@ -135,7 +201,12 @@ async def test_router_drops_writeback_proposals_when_disabled(tmp_path) -> None:
         expires_at=datetime.now(UTC) + timedelta(minutes=30),
     )
     client = RecordingFeishuClient()
-    router = FeishuMessageRouter(ProposalAssistant(proposal), client, store)
+    router = FeishuMessageRouter(
+        ProposalAssistant(proposal),
+        client,
+        store,
+        settings=Settings(env="test", writeback_enabled=False),
+    )
 
     await router.handle_message(_message("om_writeback_disabled", "帮我写回"))
 
@@ -416,9 +487,660 @@ async def test_router_replies_to_authorization_command(tmp_path) -> None:
 
     await router.handle_message(_message("om_auth", "/授权"))
 
-    assert len(client.replies) == 1
-    assert "https://auth.example.test/?subject_id=ou_user" in client.replies[0][1]
+    assert client.replies == []
+    assert len(client.cards) == 1
+    card = client.cards[0][1]
+    assert "点击授权" in str(card)
+    assert "https://auth.example.test/?subject_id=ou_user" in str(card)
     assert assistant.requests == []
+
+
+@pytest.mark.asyncio
+async def test_router_replies_to_authorization_status_command(tmp_path) -> None:
+    store = SQLiteStore(tmp_path / "fcgo.sqlite3")
+    await store.init()
+    client = RecordingFeishuClient()
+    assistant = SuccessfulAssistant()
+    router = FeishuMessageRouter(assistant, client, store, StubOAuth())
+
+    await router.handle_message(_message("om_auth_status", "/授权 状态"))
+
+    assert client.replies == []
+    assert len(client.cards) == 1
+    card_text = str(client.cards[0][1])
+    assert "需要飞书授权" in card_text
+    assert "点击授权" in card_text
+    assert "https://auth.example.test/?subject_id=ou_user" in card_text
+    assert assistant.requests == []
+
+
+@pytest.mark.asyncio
+async def test_router_reports_usable_authorization_status(tmp_path) -> None:
+    store = SQLiteStore(tmp_path / "fcgo.sqlite3")
+    await store.init()
+    client = RecordingFeishuClient()
+    assistant = SuccessfulAssistant()
+    router = FeishuMessageRouter(
+        assistant,
+        client,
+        store,
+        StubOAuth(
+            AuthorizationStatus(
+                authorized=True,
+                usable=True,
+                missing_scopes=[],
+                expires_at="2026-06-12T00:00:00+08:00",
+            )
+        ),
+    )
+
+    await router.handle_message(_message("om_auth_status_ok", "/授权 状态"))
+
+    assert client.replies == []
+    assert len(client.cards) == 1
+    card_text = str(client.cards[0][1])
+    assert "飞书授权可用" in card_text
+    assert "点击授权" not in card_text
+    assert assistant.requests == []
+
+
+@pytest.mark.asyncio
+async def test_router_context_command_reports_default_policy(tmp_path) -> None:
+    store = SQLiteStore(tmp_path / "fcgo.sqlite3")
+    await store.init()
+    client = RecordingFeishuClient()
+    assistant = SuccessfulAssistant()
+    router = FeishuMessageRouter(assistant, client, store, StubOAuth())
+
+    await router.handle_message(_message("om_context_auth_required", "/上下文 开启"))
+    await router.handle_message(_message("om_context_status", "/上下文 查看"))
+    await router.handle_message(_message("om_context_disable", "/上下文 关闭"))
+
+    assert all("上下文默认开启" in reply for _, reply in client.replies)
+    assert all("不会保存完整聊天原文" in reply for _, reply in client.replies)
+    assert all("不会出现在“查看记忆”" not in reply for _, reply in client.replies)
+    assert await store.get_context_preference("conversation:private:oc_chat") is None
+    assert assistant.requests == []
+
+
+@pytest.mark.asyncio
+async def test_router_reads_chat_history_by_default(tmp_path) -> None:
+    store = SQLiteStore(tmp_path / "fcgo.sqlite3")
+    await store.init()
+    history = RecordingChatHistoryAPI(_chat_history_payload())
+    client = RecordingFeishuClient()
+    assistant = SuccessfulAssistant()
+    router = FeishuMessageRouter(
+        assistant,
+        client,
+        store,
+        chat_history_api=history,
+        settings=Settings(env="test"),
+    )
+
+    await router.handle_message(_message("om_context_default", "结合上文回答"))
+
+    assert len(history.calls) == 1
+    assert assistant.requests[0].chat_context_messages != []
+
+
+@pytest.mark.asyncio
+async def test_router_reads_and_injects_recent_full_chat_context(tmp_path) -> None:
+    store = SQLiteStore(tmp_path / "fcgo.sqlite3")
+    await store.init()
+    history = RecordingChatHistoryAPI(_chat_history_payload())
+    client = RecordingFeishuClient()
+    assistant = SuccessfulAssistant()
+    router = FeishuMessageRouter(
+        assistant,
+        client,
+        store,
+        chat_history_api=history,
+        settings=Settings(
+            env="test",
+            context_inject_message_limit=2,
+            context_max_chars=500,
+        ),
+    )
+
+    await router.handle_message(_message("om_context_enabled", "项目进度如何"))
+
+    assert history.calls[0]["container_id_type"] == "chat"
+    assert history.calls[0]["container_id"] == "oc_chat"
+    injected = assistant.requests[0].chat_context_messages
+    assert [item.message_id for item in injected] == ["om_old_1", "om_old_2"]
+    assert "项目进度" in injected[0].text
+    assert assistant.requests[0].chat_context_omitted_count == 0
+
+
+@pytest.mark.asyncio
+async def test_router_summarizes_messages_outside_recent_full_window(tmp_path) -> None:
+    store = SQLiteStore(tmp_path / "fcgo.sqlite3")
+    await store.init()
+    history = RecordingChatHistoryAPI(
+        {
+            "items": [
+                {
+                    "message_id": "om_old_1",
+                    "sender": {"id": {"open_id": "ou_user"}},
+                    "create_time": "1791359900000",
+                    "body": {"content": "{\"text\":\"旧消息里说测试关键词是蓝色火箭\"}"},
+                },
+                {
+                    "message_id": "om_old_2",
+                    "sender": {"id": {"open_id": "ou_user"}},
+                    "create_time": "1791359960000",
+                    "body": {"content": "{\"text\":\"旧消息里又补充项目叫 FCGO\"}"},
+                },
+                {
+                    "message_id": "om_recent",
+                    "sender": {"id": {"open_id": "ou_user"}},
+                    "create_time": "1791360020000",
+                    "body": {"content": "{\"text\":\"最近消息说继续测试\"}"},
+                },
+            ]
+        }
+    )
+    client = RecordingFeishuClient()
+    assistant = SuccessfulAssistant()
+    router = FeishuMessageRouter(
+        assistant,
+        client,
+        store,
+        chat_history_api=history,
+        settings=Settings(env="test", context_inject_message_limit=1),
+    )
+
+    await router.handle_message(_message("om_context_summary", "刚才说什么？"))
+
+    request = assistant.requests[0]
+    assert [item.message_id for item in request.chat_context_messages] == ["om_recent"]
+    assert "测试关键词是蓝色火箭" in request.chat_context_summary
+    assert "项目叫 FCGO" in request.chat_context_summary
+    assert request.chat_context_omitted_count == 2
+    assert request.memory_items == []
+
+    memory_items = await store.list_memory_items("ou_user")
+    assert len(memory_items) == 1
+    assert memory_items[0].kind == "会话摘要"
+    assert memory_items[0].source == "fcgo.context.summary:conversation:private:oc_chat"
+    assert "测试关键词是蓝色火箭" in memory_items[0].content
+    assert "项目叫 FCGO" in memory_items[0].content
+    assert "om_old_1" not in memory_items[0].content
+    assert "ou_user:" not in memory_items[0].content
+    assert "1791359900" not in memory_items[0].content
+
+
+@pytest.mark.asyncio
+async def test_router_uses_cached_chat_context_within_refresh_window(tmp_path) -> None:
+    store = SQLiteStore(tmp_path / "fcgo.sqlite3")
+    await store.init()
+    history = RecordingChatHistoryAPI(_chat_history_payload())
+    client = RecordingFeishuClient()
+    assistant = SuccessfulAssistant()
+    router = FeishuMessageRouter(
+        assistant,
+        client,
+        store,
+        chat_history_api=history,
+        settings=Settings(env="test", context_cache_refresh_seconds=3600),
+    )
+
+    await router.handle_message(_message("om_context_cache_1", "项目进度如何"))
+    await router.handle_message(_message("om_context_cache_2", "继续"))
+
+    assert len(history.calls) == 1
+    assert assistant.requests[1].chat_context_messages != []
+
+
+@pytest.mark.asyncio
+async def test_router_refreshes_chat_context_for_context_dependent_query(tmp_path) -> None:
+    store = SQLiteStore(tmp_path / "fcgo.sqlite3")
+    await store.init()
+    history = SequencedChatHistoryAPI(
+        [
+            {"items": []},
+            {
+                "items": [
+                    {
+                        "message_id": "om_keyword",
+                        "sender": {"id": {"open_id": "ou_user"}},
+                        "create_time": "1791359900000",
+                        "body": {"content": "{\"text\":\"我们的测试关键词是蓝色火箭\"}"},
+                    }
+                ]
+            },
+        ]
+    )
+    client = RecordingFeishuClient()
+    assistant = SuccessfulAssistant()
+    router = FeishuMessageRouter(
+        assistant,
+        client,
+        store,
+        chat_history_api=history,
+        settings=Settings(env="test", context_cache_refresh_seconds=3600),
+    )
+
+    await router.handle_message(_message("om_context_cache_first", "继续"))
+    await router.handle_message(_message("om_context_cache_second", "刚才的测试关键词是什么？"))
+
+    assert len(history.calls) == 2
+    injected = assistant.requests[1].chat_context_messages
+    assert [item.message_id for item in injected] == ["om_keyword"]
+
+
+@pytest.mark.asyncio
+async def test_router_refreshes_chat_context_for_document_reference_query(tmp_path) -> None:
+    store = SQLiteStore(tmp_path / "fcgo.sqlite3")
+    await store.init()
+    history = SequencedChatHistoryAPI(
+        [
+            {"items": []},
+            {
+                "items": [
+                    {
+                        "message_id": "om_user_lookup",
+                        "sender": {"id": {"open_id": "ou_user"}},
+                        "create_time": "1791359900000",
+                        "body": {
+                            "content": (
+                                '{"text":"帮我某一篇飞书文档里 有个 蓝色火箭测试 的编码是多少"}'
+                            )
+                        },
+                    },
+                    {
+                        "message_id": "om_bot_answer",
+                        "sender": {"id": {"open_id": "ou_bot"}},
+                        "create_time": "1791359960000",
+                        "body": {
+                            "content": (
+                                '{"text":"在已读取的测试文档中，蓝色火箭测试的编码是 FCGOHJ123。"}'
+                            )
+                        },
+                    },
+                ]
+            },
+        ]
+    )
+    client = RecordingFeishuClient()
+    assistant = SuccessfulAssistant()
+    router = FeishuMessageRouter(
+        assistant,
+        client,
+        store,
+        chat_history_api=history,
+        settings=Settings(
+            env="test",
+            feishu_bot_open_id="ou_bot",
+            context_cache_refresh_seconds=3600,
+        ),
+    )
+
+    await router.handle_message(_message("om_first", "继续"))
+    await router.handle_message(_message("om_second", "帮我找到这篇文档 发链接给我"))
+
+    assert len(history.calls) == 2
+    injected = assistant.requests[1].chat_context_messages
+    assert [item.message_id for item in injected] == ["om_user_lookup", "om_bot_answer"]
+    assert "蓝色火箭测试的编码" in injected[1].text
+
+
+@pytest.mark.asyncio
+async def test_router_parses_nested_post_text_for_chat_context(tmp_path) -> None:
+    store = SQLiteStore(tmp_path / "fcgo.sqlite3")
+    await store.init()
+    history = RecordingChatHistoryAPI(
+        {
+            "items": [
+                {
+                    "message_id": "om_post_context",
+                    "sender": {"id": {"open_id": "ou_user"}},
+                    "create_time": "1791359900000",
+                    "body": {
+                        "content": (
+                            '{"content":[[{"tag":"text","text":"帮我搜索飞书文档 "},'
+                            '{"tag":"text","text":"蓝色火箭资料测试"}]]}'
+                        )
+                    },
+                }
+            ]
+        }
+    )
+    client = RecordingFeishuClient()
+    assistant = SuccessfulAssistant()
+    router = FeishuMessageRouter(
+        assistant,
+        client,
+        store,
+        chat_history_api=history,
+        settings=Settings(env="test"),
+    )
+
+    await router.handle_message(_message("om_nested_context", "结合上文回答"))
+
+    injected = assistant.requests[0].chat_context_messages
+    assert injected[0].text == "帮我搜索飞书文档 蓝色火箭资料测试"
+
+
+@pytest.mark.asyncio
+async def test_router_degrades_when_chat_context_read_fails(tmp_path) -> None:
+    store = SQLiteStore(tmp_path / "fcgo.sqlite3")
+    await store.init()
+    client = RecordingFeishuClient()
+    assistant = SuccessfulAssistant()
+    router = FeishuMessageRouter(
+        assistant,
+        client,
+        store,
+        chat_history_api=FailingChatHistoryAPI(),
+        settings=Settings(env="test"),
+    )
+
+    await router.handle_message(_message("om_context_auth_failure", "结合上文回答"))
+
+    assert client.replies == [("oc_chat", "ok: 结合上文回答")]
+    assert assistant.requests[0].chat_context_messages == []
+    audit_details = await _audit_details(store, AuditEventType.ERROR.value)
+    assert len(audit_details) == 1
+    assert audit_details[0]["kind"] == "chat_context_load_failed"
+    assert audit_details[0]["message_id"] == "om_context_auth_failure"
+    assert audit_details[0]["conversation_type"] == "private"
+    assert "结合上文回答" not in str(audit_details[0])
+
+
+@pytest.mark.asyncio
+async def test_router_memory_view_delete_and_disable(tmp_path) -> None:
+    store = SQLiteStore(tmp_path / "fcgo.sqlite3")
+    await store.init()
+    await store.save_memory_item(
+        id="memory-1",
+        subject_id="ou_user",
+        kind="偏好",
+        content="输出尽量用表格",
+        source="user",
+    )
+    client = RecordingFeishuClient()
+    assistant = SuccessfulAssistant()
+    router = FeishuMessageRouter(assistant, client, store)
+
+    await router.handle_message(_message("om_memory_view", "/记忆 查看"))
+    await router.handle_message(_message("om_memory_delete", "/记忆 删除"))
+    await router.confirm_memory_delete("ou_user")
+    await router.handle_message(_message("om_memory_empty", "/记忆 查看"))
+    await store.save_memory_item(
+        id="memory-2",
+        subject_id="ou_user",
+        kind="称呼",
+        content="称呼我为 Alex",
+        source="user",
+    )
+    await router.handle_message(_message("om_memory_disable", "/记忆 关闭"))
+    await router.handle_message(_message("om_memory_disabled", "/记忆 查看"))
+    await router.handle_message(_message("om_memory_enable", "/记忆 开启"))
+    await router.handle_message(_message("om_memory_enabled", "/记忆 查看"))
+
+    assert "输出尽量用表格" in client.replies[0][1]
+    assert len(client.cards) == 1
+    assert "确认删除长期记忆" in str(client.cards[0][1])
+    assert "暂时没有保存你的长期记忆" in client.replies[1][1]
+    assert "已关闭长期记忆" in client.replies[2][1]
+    assert "长期记忆已关闭" in client.replies[3][1]
+    assert "已开启长期记忆" in client.replies[4][1]
+    assert "称呼我为 Alex" in client.replies[5][1]
+    assert len(await store.list_memory_items("ou_user")) == 1
+    assert await store.is_memory_enabled("ou_user") is True
+    assert assistant.requests == []
+
+
+@pytest.mark.asyncio
+async def test_router_memory_command_crud_by_key(tmp_path) -> None:
+    store = SQLiteStore(tmp_path / "fcgo.sqlite3")
+    await store.init()
+    client = RecordingFeishuClient()
+    assistant = SuccessfulAssistant()
+    router = FeishuMessageRouter(assistant, client, store)
+
+    await router.handle_message(_message("om_memory_remember", "/记忆 记住 输出格式=优先表格"))
+    await router.handle_message(_message("om_memory_update", "/记忆 修改 语言风格=简洁中文"))
+    await router.handle_message(_message("om_memory_view_after_crud", "/记忆 查看"))
+    await router.handle_message(_message("om_memory_delete_one", "/记忆 删除 语言风格"))
+    await router.handle_message(_message("om_memory_view_after_delete_one", "/记忆 查看"))
+
+    assert "已记录：输出格式：优先表格" in client.replies[0][1]
+    assert "已修改：语言风格：简洁中文" in client.replies[1][1]
+    assert "- 语言风格：简洁中文" in client.replies[2][1]
+    assert "- 输出格式：优先表格" in client.replies[2][1]
+    assert "已删除记忆：语言风格" in client.replies[3][1]
+    assert "语言风格：简洁中文" not in client.replies[4][1]
+    assert "输出格式：优先表格" in client.replies[4][1]
+    assert assistant.requests == []
+
+
+@pytest.mark.asyncio
+async def test_router_memory_command_generic_preference_can_be_deleted(tmp_path) -> None:
+    store = SQLiteStore(tmp_path / "fcgo.sqlite3")
+    await store.init()
+    client = RecordingFeishuClient()
+    assistant = SuccessfulAssistant()
+    router = FeishuMessageRouter(assistant, client, store)
+
+    await router.handle_message(_message("om_memory_generic", "/记忆 记住 输出尽量用表格"))
+    await router.handle_message(_message("om_memory_generic_view", "/记忆 查看"))
+    await router.handle_message(_message("om_memory_generic_delete", "/记忆 删除 偏好"))
+    await router.handle_message(_message("om_memory_generic_empty", "/记忆 查看"))
+
+    assert "已记录：偏好：输出尽量用表格。" in client.replies[0][1]
+    assert "- 偏好：输出尽量用表格。" in client.replies[1][1]
+    assert "已删除记忆：偏好" in client.replies[2][1]
+    assert "暂时没有保存你的长期记忆" in client.replies[3][1]
+    assert assistant.requests == []
+
+
+@pytest.mark.asyncio
+async def test_router_memory_command_rejects_write_when_disabled_and_group_management(
+    tmp_path,
+) -> None:
+    store = SQLiteStore(tmp_path / "fcgo.sqlite3")
+    await store.init()
+    await store.set_memory_enabled(subject_id="ou_user", enabled=False, updated_by="ou_user")
+    client = RecordingFeishuClient()
+    assistant = SuccessfulAssistant()
+    router = FeishuMessageRouter(assistant, client, store)
+
+    await router.handle_message(_message("om_memory_disabled_write", "/记忆 记住 输出格式=表格"))
+    await store.set_memory_enabled(subject_id="ou_user", enabled=True, updated_by="ou_user")
+    await router.handle_message(
+        _message(
+            "om_memory_group_view",
+            "/记忆 查看",
+            conversation_type=ConversationType.GROUP,
+            conversation_key="group:oc_group",
+            is_bot_mentioned=True,
+        )
+    )
+
+    assert "长期记忆已关闭，未保存这条内容" in client.replies[0][1]
+    assert "记忆管理请在私聊中操作" in client.replies[1][1]
+    assert await store.list_memory_items("ou_user") == []
+    assert assistant.requests == []
+
+
+@pytest.mark.asyncio
+async def test_router_injects_enabled_private_user_memory(tmp_path) -> None:
+    store = SQLiteStore(tmp_path / "fcgo.sqlite3")
+    await store.init()
+    await store.save_memory_item(
+        id="memory-1",
+        subject_id="ou_user",
+        kind="偏好",
+        content="输出尽量用表格",
+        source="user",
+    )
+    client = RecordingFeishuClient()
+    assistant = SuccessfulAssistant()
+    router = FeishuMessageRouter(assistant, client, store)
+
+    await router.handle_message(_message("om_memory_context", "总结一下"))
+
+    assert len(assistant.requests[0].memory_items) == 1
+    assert assistant.requests[0].memory_items[0].content == "输出尽量用表格"
+
+
+@pytest.mark.asyncio
+async def test_router_requires_confirmation_for_explicit_memory_statement(tmp_path) -> None:
+    store = SQLiteStore(tmp_path / "fcgo.sqlite3")
+    await store.init()
+    client = RecordingFeishuClient()
+    assistant = SuccessfulAssistant()
+    router = FeishuMessageRouter(assistant, client, store)
+
+    await router.handle_message(_message("om_memory_name", "记住我叫Sa3m"))
+    await router.handle_message(_message("om_memory_project", "我的项目代号是：空杯"))
+    await router.handle_message(_message("om_memory_preference", "输出偏好是简短直接"))
+
+    assert await store.list_memory_items("ou_user") == []
+    assert len(client.cards) == 3
+    for _, card in client.cards:
+        assert card["header"]["title"]["content"] == "确认保存长期记忆"
+
+    for _, card in client.cards:
+        value = _card_action_values(card)[0]
+        await router.confirm_memory_save(
+            "ou_user",
+            key=str(value["memory_key"]),
+            kind=str(value["memory_kind"]),
+            content=str(value["memory_content"]),
+        )
+
+    await router.handle_bot_menu(_menu_event("evt_memory_view_after_explicit", "fcgo.memory.view"))
+
+    items = await store.list_memory_items("ou_user")
+    contents = {item.content for item in items}
+    assert "你叫Sa3m。" in contents
+    assert "你的项目代号是“空杯”。" in contents
+    assert "输出偏好是简短直接。" in contents
+    assert assistant.requests == []
+    assert "你叫Sa3m。" in client.sent_texts[0][2]
+    assert "你的项目代号是“空杯”。" in client.sent_texts[0][2]
+    assert "输出偏好是简短直接。" in client.sent_texts[0][2]
+
+
+@pytest.mark.asyncio
+async def test_router_limits_explicit_memory_item_length(tmp_path) -> None:
+    store = SQLiteStore(tmp_path / "fcgo.sqlite3")
+    await store.init()
+    client = RecordingFeishuClient()
+    assistant = SuccessfulAssistant()
+    router = FeishuMessageRouter(
+        assistant,
+        client,
+        store,
+        settings=Settings(env="test", memory_item_max_chars=24),
+    )
+
+    await router.handle_message(_message("om_memory_long", "记住：" + "很长" * 30))
+
+    assert await store.list_memory_items("ou_user") == []
+    assert len(client.cards) == 1
+    value = _card_action_values(client.cards[0][1])[0]
+    assert len(value["memory_content"]) <= 24
+    assert value["memory_content"].endswith("...")
+
+    await router.confirm_memory_save(
+        "ou_user",
+        key=str(value["memory_key"]),
+        kind=str(value["memory_kind"]),
+        content=str(value["memory_content"]),
+    )
+
+    items = await store.list_memory_items("ou_user")
+    assert len(items) == 1
+    assert len(items[0].content) <= 24
+    assert items[0].content.endswith("...")
+    assert assistant.requests == []
+
+
+@pytest.mark.asyncio
+async def test_router_limits_memory_context_budget(tmp_path) -> None:
+    store = SQLiteStore(tmp_path / "fcgo.sqlite3")
+    await store.init()
+    await store.save_memory_item(
+        id="memory-1",
+        subject_id="ou_user",
+        kind="偏好",
+        content="输出偏好是简短直接",
+        source="user",
+    )
+    await store.save_memory_item(
+        id="memory-2",
+        subject_id="ou_user",
+        kind="项目",
+        content="项目代号是空杯",
+        source="user",
+    )
+    client = RecordingFeishuClient()
+    assistant = SuccessfulAssistant()
+    router = FeishuMessageRouter(
+        assistant,
+        client,
+        store,
+        settings=Settings(env="test", memory_context_max_chars=10),
+    )
+
+    await router.handle_message(_message("om_memory_budget", "按记忆回答"))
+
+    assert len(assistant.requests[0].memory_items) == 1
+    assert len(assistant.requests[0].memory_items[0].content) <= 5
+    assert assistant.requests[0].memory_items[0].content.endswith("...")
+
+
+@pytest.mark.asyncio
+async def test_router_does_not_persist_explicit_memory_when_disabled(tmp_path) -> None:
+    store = SQLiteStore(tmp_path / "fcgo.sqlite3")
+    await store.init()
+    await store.set_memory_enabled(subject_id="ou_user", enabled=False, updated_by="ou_user")
+    client = RecordingFeishuClient()
+    assistant = SuccessfulAssistant()
+    router = FeishuMessageRouter(assistant, client, store)
+
+    await router.handle_message(_message("om_memory_disabled_explicit", "记住我叫Sa3m"))
+
+    assert await store.list_memory_items("ou_user") == []
+    assert assistant.requests == []
+    assert "长期记忆已关闭" in client.replies[0][1]
+
+
+@pytest.mark.asyncio
+async def test_router_does_not_inject_disabled_or_group_user_memory(tmp_path) -> None:
+    store = SQLiteStore(tmp_path / "fcgo.sqlite3")
+    await store.init()
+    await store.save_memory_item(
+        id="memory-1",
+        subject_id="ou_user",
+        kind="偏好",
+        content="输出尽量用表格",
+        source="user",
+    )
+    await store.set_memory_enabled(subject_id="ou_user", enabled=False, updated_by="ou_user")
+    client = RecordingFeishuClient()
+    assistant = SuccessfulAssistant()
+    router = FeishuMessageRouter(assistant, client, store)
+
+    await router.handle_message(_message("om_memory_disabled_context", "总结一下"))
+    await store.set_memory_enabled(subject_id="ou_user", enabled=True, updated_by="ou_user")
+    await router.handle_message(
+        _message(
+            "om_group_memory_context",
+            "总结一下",
+            conversation_type=ConversationType.GROUP,
+            conversation_key="group:oc_chat",
+            is_bot_mentioned=True,
+        )
+    )
+
+    assert assistant.requests[0].memory_items == []
+    assert assistant.requests[1].memory_items == []
 
 
 @pytest.mark.asyncio
@@ -462,6 +1184,54 @@ async def test_router_sends_undo_card_for_latest_reversible_writeback(tmp_path) 
 
 
 @pytest.mark.asyncio
+async def test_router_undo_prefers_latest_doc_append_over_older_bitable(tmp_path) -> None:
+    store = SQLiteStore(tmp_path / "fcgo.sqlite3")
+    await store.init()
+    await store.save_writeback_execution(
+        action_id="older-bitable",
+        actor_id="ou_user",
+        action_type=WriteActionType.BITABLE_CREATE_RECORD.value,
+        target={"app_token": "app1", "table_id": "tbl1"},
+        payload={"fields": {"内容": "旧记录"}},
+        result={"record": {"record_id": "rec1"}},
+        undo_action_type=WriteActionType.BITABLE_DELETE_RECORD.value,
+        undo_target={"app_token": "app1", "table_id": "tbl1", "record_id": "rec1"},
+        undo_payload={"undo_of_action_id": "older-bitable"},
+        undo_preview="撤回旧多维表记录",
+    )
+    await store.save_writeback_execution(
+        action_id="latest-doc",
+        actor_id="ou_user",
+        action_type=WriteActionType.DOC_APPEND.value,
+        target={"document_id": "docx123"},
+        payload={"content": "卡片测试成功"},
+        result={"children": [{"block_id": "blk1"}]},
+        undo_action_type=WriteActionType.DOC_DELETE_BLOCK.value,
+        undo_target={"document_id": "docx123"},
+        undo_payload={"block_ids": ["blk1"], "undo_of_action_id": "latest-doc"},
+        undo_preview="撤回上一次写回：删除文档中新追加的 1 个内容块",
+    )
+    client = RecordingFeishuClient()
+    assistant = SuccessfulAssistant()
+    router = FeishuMessageRouter(assistant, client, store, settings=_writeback_settings())
+
+    await router.handle_message(_message("om_undo_latest_doc", "/撤回"))
+
+    assert len(client.cards) == 1
+    saved_actions = [
+        await store.get_pending_action(value["action_id"])
+        for value in _card_action_values(client.cards[0][1])
+        if value.get("fcgo_action") == "writeback.confirm"
+    ]
+    assert saved_actions[0] is not None
+    assert saved_actions[0]["action_type"] == WriteActionType.DOC_DELETE_BLOCK.value
+    assert saved_actions[0]["target"] == {"document_id": "docx123"}
+    assert saved_actions[0]["payload"]["block_ids"] == ["blk1"]
+    assert "删除文档中新追加" in str(client.cards[0][1])
+    assert "多维表" not in str(client.cards[0][1])
+
+
+@pytest.mark.asyncio
 async def test_router_replies_when_no_reversible_writeback_exists(tmp_path) -> None:
     store = SQLiteStore(tmp_path / "fcgo.sqlite3")
     await store.init()
@@ -477,6 +1247,44 @@ async def test_router_replies_when_no_reversible_writeback_exists(tmp_path) -> N
 
 
 @pytest.mark.asyncio
+async def test_router_lists_recent_writeback_statuses(tmp_path) -> None:
+    store = SQLiteStore(tmp_path / "fcgo.sqlite3")
+    await store.init()
+    await store.save_writeback_execution(
+        action_id="sheet-action",
+        actor_id="ou_user",
+        action_type=WriteActionType.SHEET_WRITE_RANGE.value,
+        target={"spreadsheet_token": "sht1", "range": "Sheet1!A1:B2"},
+        payload={"values": [["A"]]},
+        result={"previous_values": [["旧值"]]},
+        undo_action_type=WriteActionType.SHEET_WRITE_RANGE.value,
+        undo_target={"spreadsheet_token": "sht1", "range": "Sheet1!A1:B2"},
+        undo_payload={"values": [["旧值"]], "undo_of_action_id": "sheet-action"},
+        undo_preview="restore sheet",
+    )
+    await store.save_writeback_execution(
+        action_id="message-action",
+        actor_id="ou_user",
+        action_type=WriteActionType.MESSAGE_SEND.value,
+        target={"chat_id": "oc_chat"},
+        payload={"text": "hello"},
+        result={"ok": True},
+    )
+    client = RecordingFeishuClient()
+    assistant = SuccessfulAssistant()
+    router = FeishuMessageRouter(assistant, client, store)
+
+    await router.handle_message(_message("om_write_history", "/查看最近写回"))
+
+    reply = client.replies[0][1]
+    assert "最近写回" in reply
+    assert "写入电子表格 · 电子表格 Sheet1!A1:B2 · 可撤回" in reply
+    assert "发送消息 · 飞书消息 · 不可撤回" in reply
+    assert "飞书消息默认不自动撤回" in reply
+    assert assistant.requests == []
+
+
+@pytest.mark.asyncio
 async def test_router_replies_to_model_status_command(tmp_path) -> None:
     store = SQLiteStore(tmp_path / "fcgo.sqlite3")
     await store.init()
@@ -487,7 +1295,7 @@ async def test_router_replies_to_model_status_command(tmp_path) -> None:
     await router.handle_message(_message("om_model_status", "/模型 查看"))
 
     assert len(client.replies) == 1
-    assert "当前模型配置" in client.replies[0][1]
+    assert "当前使用的模型：echo/echo" in client.replies[0][1]
     assert "echo/echo" in client.replies[0][1]
     assert assistant.requests == []
 
@@ -513,13 +1321,15 @@ async def test_router_model_status_shows_supported_unconfigured_providers(tmp_pa
     await router.handle_message(_message("om_model_catalog", "/模型 查看"))
 
     reply = client.replies[0][1]
-    assert "[可用] echo/echo" in reply
-    assert "[待配置] deepseek/deepseek-chat：缺少 DEEPSEEK_API_KEY" in reply
-    assert "[待配置] openai/未设置模型" in reply
+    assert "- echo/echo（默认）" in reply
+    assert "未启用：" in reply
+    assert "deepseek" in reply
+    assert "缺少 DEEPSEEK_API_KEY" not in reply
+    assert "未设置模型" not in reply
 
 
 @pytest.mark.asyncio
-async def test_router_explains_supported_but_unconfigured_provider(tmp_path) -> None:
+async def test_router_declines_text_model_switching(tmp_path) -> None:
     store = SQLiteStore(tmp_path / "fcgo.sqlite3")
     await store.init()
     client = RecordingFeishuClient()
@@ -540,12 +1350,12 @@ async def test_router_explains_supported_but_unconfigured_provider(tmp_path) -> 
         _message("om_model_unconfigured", "/模型 使用 deepseek/deepseek-chat")
     )
 
-    assert "deepseek 支持但尚未配置完整" in client.replies[0][1]
-    assert "DEEPSEEK_API_KEY" in client.replies[0][1]
+    assert "模型切换请通过飞书机器人自定义菜单操作" in client.replies[0][1]
+    assert assistant.requests == []
 
 
 @pytest.mark.asyncio
-async def test_router_applies_conversation_model_preference(tmp_path) -> None:
+async def test_router_does_not_set_conversation_model_from_text_command(tmp_path) -> None:
     store = SQLiteStore(tmp_path / "fcgo.sqlite3")
     await store.init()
     client = RecordingFeishuClient()
@@ -555,9 +1365,59 @@ async def test_router_applies_conversation_model_preference(tmp_path) -> None:
     await router.handle_message(_message("om_model_set", "/模型 使用 echo/custom-model"))
     await router.handle_message(_message("om_after_model_set", "hello"))
 
-    assert "已将当前会话模型设置为：echo/custom-model" in client.replies[0][1]
+    assert "模型切换请通过飞书机器人自定义菜单操作" in client.replies[0][1]
+    assert await store.get_model_preference("conversation:private:oc_chat") is None
+    assert assistant.requests[0].model_provider is None
+    assert assistant.requests[0].model is None
+
+
+@pytest.mark.asyncio
+async def test_router_treats_inline_model_words_as_normal_message(tmp_path) -> None:
+    store = SQLiteStore(tmp_path / "fcgo.sqlite3")
+    await store.init()
+    await store.save_model_preference(
+        scope="conversation:private:oc_chat",
+        provider="echo",
+        model="conversation-model",
+        updated_by="ou_user",
+    )
+    client = RecordingFeishuClient()
+    assistant = SuccessfulAssistant()
+    router = FeishuMessageRouter(assistant, client, store, model_router=_model_router())
+
+    await router.handle_message(_message("om_inline_model_words", "本次用 echo/inline-model 回答"))
+
+    assert assistant.requests[0].text == "本次用 echo/inline-model 回答"
     assert assistant.requests[0].model_provider == "echo"
-    assert assistant.requests[0].model == "custom-model"
+    assert assistant.requests[0].model == "conversation-model"
+
+
+@pytest.mark.asyncio
+async def test_router_private_user_model_preference_overrides_legacy_conversation_preference(
+    tmp_path,
+) -> None:
+    store = SQLiteStore(tmp_path / "fcgo.sqlite3")
+    await store.init()
+    await store.save_model_preference(
+        scope="conversation:private:oc_chat",
+        provider="echo",
+        model="legacy-conversation-model",
+        updated_by="ou_user",
+    )
+    await store.save_model_preference(
+        scope="user:ou_user",
+        provider="echo",
+        model="menu-selected-model",
+        updated_by="ou_user",
+    )
+    client = RecordingFeishuClient()
+    assistant = SuccessfulAssistant()
+    router = FeishuMessageRouter(assistant, client, store, model_router=_model_router())
+
+    await router.handle_message(_message("om_user_pref_overrides_legacy_conversation", "hello"))
+
+    assert assistant.requests[0].model_provider == "echo"
+    assert assistant.requests[0].model == "menu-selected-model"
 
 
 @pytest.mark.asyncio
@@ -631,7 +1491,305 @@ async def test_router_replies_to_auth_menu(tmp_path) -> None:
 
     await router.handle_bot_menu(_menu_event("evt_menu_auth", "fcgo.auth.start"))
 
-    assert "https://auth.example.test/?subject_id=ou_user" in client.sent_texts[0][2]
+    assert client.sent_texts == []
+    assert len(client.cards) == 1
+    assert client.cards[0][0] == "ou_user"
+    assert "点击授权" in str(client.cards[0][1])
+
+
+@pytest.mark.asyncio
+async def test_router_replies_to_auth_status_menu(tmp_path) -> None:
+    store = SQLiteStore(tmp_path / "fcgo.sqlite3")
+    await store.init()
+    client = RecordingFeishuClient()
+    assistant = SuccessfulAssistant()
+    router = FeishuMessageRouter(assistant, client, store, StubOAuth(), _model_router())
+
+    await router.handle_bot_menu(_menu_event("evt_menu_auth_status", "fcgo.auth.status"))
+
+    assert client.sent_texts == []
+    assert len(client.cards) == 1
+    assert "需要飞书授权" in str(client.cards[0][1])
+    assert "点击授权" in str(client.cards[0][1])
+
+
+@pytest.mark.asyncio
+async def test_router_context_menu_reports_default_policy(tmp_path) -> None:
+    store = SQLiteStore(tmp_path / "fcgo.sqlite3")
+    await store.init()
+    await store.save_oauth_token("ou_user", {"access_token": "token"})
+    history = RecordingChatHistoryAPI(_chat_history_payload())
+    client = RecordingFeishuClient()
+    assistant = SuccessfulAssistant()
+    router = FeishuMessageRouter(
+        assistant,
+        client,
+        store,
+        StubOAuth(),
+        _model_router(),
+        chat_history_api=history,
+        settings=Settings(env="test"),
+    )
+
+    await router.handle_bot_menu(_menu_event("evt_menu_context_enable", "fcgo.context.enable"))
+    await router.handle_bot_menu(_menu_event("evt_menu_context_view", "fcgo.context.view"))
+    await router.handle_message(_message("om_menu_context_enabled", "项目进度如何"))
+
+    preference = await store.get_context_preference("user:ou_user")
+    assert preference is None
+    assert "上下文默认开启" in client.sent_texts[0][2]
+    assert "会话摘要" in client.sent_texts[1][2]
+    assert "不会保存完整聊天原文" in client.sent_texts[1][2]
+    assert len(history.calls) == 1
+    assert assistant.requests[0].chat_context_messages != []
+
+
+@pytest.mark.asyncio
+async def test_router_context_disable_menu_no_longer_disables_context(tmp_path) -> None:
+    store = SQLiteStore(tmp_path / "fcgo.sqlite3")
+    await store.init()
+    await store.set_context_preference(
+        scope="user:ou_user",
+        enabled=True,
+        updated_by="ou_user",
+    )
+    history = RecordingChatHistoryAPI(_chat_history_payload())
+    client = RecordingFeishuClient()
+    assistant = SuccessfulAssistant()
+    router = FeishuMessageRouter(
+        assistant,
+        client,
+        store,
+        StubOAuth(),
+        _model_router(),
+        chat_history_api=history,
+        settings=Settings(env="test"),
+    )
+
+    await router.handle_bot_menu(_menu_event("evt_menu_context_disable", "fcgo.context.disable"))
+    await router.handle_message(_message("om_menu_context_disabled", "项目进度如何"))
+
+    preference = await store.get_context_preference("user:ou_user")
+    assert preference is not None
+    assert preference.enabled is True
+    assert "上下文默认开启" in client.sent_texts[0][2]
+    assert len(history.calls) == 1
+    assert assistant.requests[0].chat_context_messages != []
+
+
+@pytest.mark.asyncio
+async def test_router_replies_to_memory_view_menu(tmp_path) -> None:
+    store = SQLiteStore(tmp_path / "fcgo.sqlite3")
+    await store.init()
+    await store.save_memory_item(
+        id="memory-1",
+        subject_id="ou_user",
+        kind="偏好",
+        content="输出尽量用表格",
+        source="user",
+    )
+    client = RecordingFeishuClient()
+    assistant = SuccessfulAssistant()
+    router = FeishuMessageRouter(assistant, client, store)
+
+    await router.handle_bot_menu(_menu_event("evt_menu_memory_view", "fcgo.memory.view"))
+
+    assert len(client.sent_texts) == 1
+    assert client.sent_texts[0][0] == "open_id"
+    assert client.sent_texts[0][1] == "ou_user"
+    assert "输出尽量用表格" in client.sent_texts[0][2]
+    assert await store.is_memory_enabled("ou_user") is True
+
+
+@pytest.mark.asyncio
+async def test_router_deletes_memory_from_menu(tmp_path) -> None:
+    store = SQLiteStore(tmp_path / "fcgo.sqlite3")
+    await store.init()
+    await store.save_memory_item(
+        id="memory-1",
+        subject_id="ou_user",
+        kind="偏好",
+        content="输出尽量用表格",
+        source="user",
+    )
+    client = RecordingFeishuClient()
+    assistant = SuccessfulAssistant()
+    router = FeishuMessageRouter(assistant, client, store)
+
+    await router.handle_bot_menu(_menu_event("evt_menu_memory_delete", "fcgo.memory.delete"))
+
+    assert client.sent_texts == []
+    assert len(client.cards) == 1
+    assert client.cards[0][0] == "ou_user"
+    assert "确认删除长期记忆" in str(client.cards[0][1])
+    assert await store.list_memory_items("ou_user") != []
+    assert await store.is_memory_enabled("ou_user") is True
+
+
+@pytest.mark.asyncio
+async def test_router_disables_memory_from_menu(tmp_path) -> None:
+    store = SQLiteStore(tmp_path / "fcgo.sqlite3")
+    await store.init()
+    await store.save_memory_item(
+        id="memory-1",
+        subject_id="ou_user",
+        kind="偏好",
+        content="输出尽量用表格",
+        source="user",
+    )
+    client = RecordingFeishuClient()
+    assistant = SuccessfulAssistant()
+    router = FeishuMessageRouter(assistant, client, store)
+
+    await router.handle_bot_menu(_menu_event("evt_menu_memory_disable", "fcgo.memory.disable"))
+
+    assert "已关闭长期记忆" in client.sent_texts[0][2]
+    assert len(await store.list_memory_items("ou_user")) == 1
+    assert await store.is_memory_enabled("ou_user") is False
+
+
+@pytest.mark.asyncio
+async def test_router_enables_memory_from_menu(tmp_path) -> None:
+    store = SQLiteStore(tmp_path / "fcgo.sqlite3")
+    await store.init()
+    await store.set_memory_enabled(subject_id="ou_user", enabled=False, updated_by="ou_user")
+    client = RecordingFeishuClient()
+    assistant = SuccessfulAssistant()
+    router = FeishuMessageRouter(assistant, client, store)
+
+    await router.handle_bot_menu(_menu_event("evt_menu_memory_enable", "fcgo.memory.enable"))
+
+    assert "已开启长期记忆" in client.sent_texts[0][2]
+    assert await store.is_memory_enabled("ou_user") is True
+
+
+@pytest.mark.asyncio
+async def test_router_assistant_name_commands_roundtrip(tmp_path) -> None:
+    store = SQLiteStore(tmp_path / "fcgo.sqlite3")
+    await store.init()
+    client = RecordingFeishuClient()
+    assistant = SuccessfulAssistant()
+    router = FeishuMessageRouter(assistant, client, store)
+
+    await router.handle_message(_message("om_assistant_default", "/助手 名称"))
+    await router.handle_message(_message("om_assistant_set", "/助手 命名 小智"))
+    await router.handle_message(_message("om_assistant_view", "/助手 名称"))
+    await router.handle_message(_message("om_assistant_reset", "/助手 默认名称"))
+    await router.handle_message(_message("om_assistant_view_reset", "/助手 名称"))
+
+    assert "当前助手名称：小智（默认）" in client.replies[0][1]
+    assert "已将你的助手名称设置为：小智" in client.replies[1][1]
+    assert "当前助手名称：小智（你的个人设置）" in client.replies[2][1]
+    assert "已恢复默认助手名称：小智" in client.replies[3][1]
+    assert "当前助手名称：小智（默认）" in client.replies[4][1]
+    assert await store.get_assistant_name_preference("ou_user") is None
+
+    audit_set = await _audit_details(store, AuditEventType.ASSISTANT_NAME_SET.value)
+    audit_cleared = await _audit_details(
+        store,
+        AuditEventType.ASSISTANT_NAME_CLEARED.value,
+    )
+    assert audit_set == [{"subject_id": "ou_user", "assistant_name_length": 2}]
+    assert audit_cleared == [{"subject_id": "ou_user"}]
+
+
+@pytest.mark.asyncio
+async def test_router_rejects_invalid_assistant_name(tmp_path) -> None:
+    store = SQLiteStore(tmp_path / "fcgo.sqlite3")
+    await store.init()
+    client = RecordingFeishuClient()
+    assistant = SuccessfulAssistant()
+    router = FeishuMessageRouter(assistant, client, store)
+
+    await router.handle_message(_message("om_assistant_empty", "/助手 命名"))
+    await router.handle_message(
+        _message("om_assistant_long", "/助手 命名 " + "很长" * 20)
+    )
+
+    assert "助手名称不能为空" in client.replies[0][1]
+    assert "助手名称太长了" in client.replies[1][1]
+    assert await store.get_assistant_name_preference("ou_user") is None
+
+
+@pytest.mark.asyncio
+async def test_router_injects_assistant_name_without_leaking_to_group_chat(tmp_path) -> None:
+    store = SQLiteStore(tmp_path / "fcgo.sqlite3")
+    await store.init()
+    await store.save_assistant_name_preference(
+        subject_id="ou_user",
+        assistant_name="小飞",
+        updated_by="ou_user",
+    )
+    client = RecordingFeishuClient()
+    assistant = SuccessfulAssistant()
+    router = FeishuMessageRouter(assistant, client, store, settings=Settings(env="test"))
+
+    await router.handle_message(_message("om_private_named", "你好"))
+    await router.handle_message(
+        _message(
+            "om_group_named",
+            "群里也问一下",
+            conversation_type=ConversationType.GROUP,
+            conversation_key="group:oc_group",
+            is_bot_mentioned=True,
+        )
+    )
+
+    assert assistant.requests[0].assistant_name == "小飞"
+    assert assistant.requests[1].assistant_name == "小智"
+
+
+@pytest.mark.asyncio
+async def test_router_uses_assistant_name_in_menu_model_and_auth_text(tmp_path) -> None:
+    store = SQLiteStore(tmp_path / "fcgo.sqlite3")
+    await store.init()
+    await store.save_assistant_name_preference(
+        subject_id="ou_user",
+        assistant_name="小飞",
+        updated_by="ou_user",
+    )
+    client = RecordingFeishuClient()
+    assistant = SuccessfulAssistant()
+    router = FeishuMessageRouter(assistant, client, store, StubOAuth(), _model_router())
+
+    await router.handle_bot_menu(_menu_event("evt_named_help", "fcgo.help"))
+    await router.handle_bot_menu(_menu_event("evt_named_model", "fcgo.model.view"))
+    await router.handle_bot_menu(_menu_event("evt_named_auth", "fcgo.auth.status"))
+
+    assert "小飞 菜单入口" in client.sent_texts[0][2]
+    assert "小飞 当前使用的模型" in client.sent_texts[1][2]
+    assert "小飞 才能按你的权限读取飞书文档" in str(client.cards[0][1])
+
+
+@pytest.mark.asyncio
+async def test_router_help_command_uses_assistant_name_without_group_leak(tmp_path) -> None:
+    store = SQLiteStore(tmp_path / "fcgo.sqlite3")
+    await store.init()
+    await store.save_assistant_name_preference(
+        subject_id="ou_user",
+        assistant_name="小飞",
+        updated_by="ou_user",
+    )
+    client = RecordingFeishuClient()
+    assistant = SuccessfulAssistant()
+    router = FeishuMessageRouter(assistant, client, store, settings=Settings(env="test"))
+
+    await router.handle_message(_message("om_help_private", "/帮助"))
+    await router.handle_message(
+        _message(
+            "om_help_group",
+            "/帮助",
+            conversation_type=ConversationType.GROUP,
+            conversation_key="group:oc_group",
+            is_bot_mentioned=True,
+        )
+    )
+
+    assert "小飞 菜单入口" in client.replies[0][1]
+    assert "/助手 名称" in client.replies[0][1]
+    assert "小智 菜单入口" in client.replies[1][1]
+    assert "小飞 菜单入口" not in client.replies[1][1]
+    assert assistant.requests == []
 
 
 @pytest.mark.asyncio
@@ -674,6 +1832,34 @@ def _menu_event(event_id: str, event_key: str) -> FeishuBotMenuEvent:
         event_key=event_key,
         operator_open_id="ou_user",
     )
+
+
+def _chat_history_payload() -> dict[str, Any]:
+    return {
+        "items": [
+            {
+                "message_id": "om_old_1",
+                "sender": {"id": {"open_id": "ou_user"}},
+                "create_time": "1791359900000",
+                "body": {"content": "{\"text\":\"昨天讨论的项目进度是上下文读取先做。\"}"},
+            },
+            {
+                "message_id": "om_old_2",
+                "sender": {"id": {"open_id": "ou_other"}},
+                "create_time": "1791359960000",
+                "body": {"content": "{\"text\":\"下一步需要减少 token 消耗。\"}"},
+            },
+        ]
+    }
+
+
+async def _audit_details(store: SQLiteStore, event_type: str) -> list[dict[str, Any]]:
+    async with aiosqlite.connect(store.path) as db:
+        rows = await db.execute_fetchall(
+            "SELECT detail_json FROM audit_events WHERE event_type = ? ORDER BY id",
+            (event_type,),
+        )
+    return [json.loads(str(row[0])) for row in rows]
 
 
 def _model_router() -> ModelRouter:

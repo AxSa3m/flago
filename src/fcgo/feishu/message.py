@@ -21,7 +21,7 @@ def parse_text_message(
     message = _get(event_obj, "message", {})
     sender = _get(event_obj, "sender", {})
     message_type = _get(message, "message_type") or _get(message, "msg_type")
-    if message_type != "text":
+    if message_type not in {"text", "post"}:
         return None
 
     content = _get(message, "content") or "{}"
@@ -29,7 +29,7 @@ def parse_text_message(
         content_obj = json.loads(content) if isinstance(content, str) else content
     except json.JSONDecodeError:
         content_obj = {"text": str(content)}
-    text = _get(content_obj, "text", "")
+    text = _message_text(content_obj)
     chat_type = _get(message, "chat_type") or _get(message, "conversation_type")
     if str(chat_type).lower() in {"group", "p2p_group"}:
         conversation_type = ConversationType.GROUP
@@ -95,6 +95,42 @@ def _strip_mentions(text: str, mentions: list[FeishuMention]) -> str:
         if mention.name:
             cleaned = cleaned.replace(f"@{mention.name}", " ")
     return " ".join(part for part in cleaned.strip().split() if not part.startswith("@_user_"))
+
+
+def _message_text(content_obj: Any) -> str:
+    parts: list[str] = []
+    _collect_text_parts(content_obj, parts)
+    deduped: list[str] = []
+    seen: set[str] = set()
+    for part in parts:
+        text = part.strip()
+        if text and text not in seen:
+            seen.add(text)
+            deduped.append(text)
+    return " ".join(deduped)
+
+
+def _collect_text_parts(value: Any, parts: list[str]) -> None:
+    if isinstance(value, str):
+        if value.startswith(("http://", "https://")):
+            parts.append(value)
+        return
+    if isinstance(value, list):
+        for item in value:
+            _collect_text_parts(item, parts)
+        return
+    if not isinstance(value, Mapping):
+        return
+
+    for key in ("text", "content", "href", "url", "link", "preview_url"):
+        item = value.get(key)
+        if isinstance(item, str) and item:
+            parts.append(item)
+    for key in ("elements", "children", "items", "tag_content"):
+        _collect_text_parts(value.get(key), parts)
+    for item in value.values():
+        if isinstance(item, list | Mapping):
+            _collect_text_parts(item, parts)
 
 
 def _is_bot_mentioned(

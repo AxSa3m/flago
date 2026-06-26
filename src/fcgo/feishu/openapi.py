@@ -1,12 +1,22 @@
+import re
+from dataclasses import dataclass
 from time import monotonic
 from typing import Any, cast
-from urllib.parse import quote
+from urllib.parse import quote, unquote
 
 import httpx
 
 from fcgo.config import Settings
 from fcgo.feishu.oauth import FeishuOAuthService, MissingOAuthScopeError
+from fcgo.models import AuditEventType
 from fcgo.storage import SQLiteStore
+
+
+@dataclass(frozen=True)
+class DownloadedFile:
+    content: bytes
+    content_type: str
+    filename: str | None
 
 
 class FeishuOpenAPI:
@@ -23,6 +33,63 @@ class FeishuOpenAPI:
             require_user_token=True,
             required_scope_groups=(
                 ("docx:document:readonly", "docx:document"),
+            ),
+        )
+
+    async def list_doc_blocks(
+        self,
+        document_id: str,
+        actor_id: str,
+        *,
+        max_items: int,
+    ) -> list[dict[str, Any]]:
+        items: list[dict[str, Any]] = []
+        page_token: str | None = None
+        while len(items) < max(max_items, 0):
+            params: dict[str, Any] = {
+                "page_size": min(500, max(max_items - len(items), 1)),
+                "document_revision_id": -1,
+            }
+            if page_token:
+                params["page_token"] = page_token
+            data = await self.get(
+                f"/open-apis/docx/v1/documents/{document_id}/blocks",
+                actor_id=actor_id,
+                params=params,
+                require_user_token=True,
+                required_scope_groups=(
+                    ("docx:document:readonly", "docx:document"),
+                ),
+            )
+            page_items = data.get("items")
+            if not isinstance(page_items, list):
+                break
+            items.extend(item for item in page_items if isinstance(item, dict))
+            if not data.get("has_more"):
+                break
+            next_page_token = data.get("page_token")
+            if not next_page_token:
+                break
+            page_token = str(next_page_token)
+        return items[: max(max_items, 0)]
+
+    async def download_doc_media(
+        self,
+        file_token: str,
+        actor_id: str,
+        *,
+        max_bytes: int,
+    ) -> DownloadedFile:
+        return await self._download_binary(
+            f"/open-apis/drive/v1/medias/{file_token}/download",
+            actor_id=actor_id,
+            max_bytes=max_bytes,
+            required_scope_groups=(
+                (
+                    "docs:document.media:download",
+                    "drive:drive:readonly",
+                    "drive:drive",
+                ),
             ),
         )
 
@@ -72,12 +139,12 @@ class FeishuOpenAPI:
         limit: int = 200,
     ) -> dict[str, Any]:
         return await self.get(
-            f"/open-apis/base/v3/bases/{app_token}/tables",
+            f"/open-apis/bitable/v1/apps/{app_token}/tables",
             actor_id=actor_id,
-            params={"limit": limit, "offset": 0},
+            params={"page_size": min(max(limit, 1), 100)},
             require_user_token=True,
             required_scope_groups=(
-                ("bitable:app:readonly", "bitable:app"),
+                ("base:table:read", "bitable:app:readonly", "bitable:app"),
             ),
         )
 
@@ -90,13 +157,12 @@ class FeishuOpenAPI:
         limit: int = 100,
     ) -> dict[str, Any]:
         return await self.get(
-            f"/open-apis/base/v3/bases/{app_token}/tables/{table_id}/views",
+            f"/open-apis/bitable/v1/apps/{app_token}/tables/{table_id}/views",
             actor_id=actor_id,
-            params={"limit": limit, "offset": 0},
+            params={"page_size": min(max(limit, 1), 100)},
             require_user_token=True,
             required_scope_groups=(
-                ("bitable:app:readonly", "bitable:app"),
-                ("base:view:read",),
+                ("base:view:read", "bitable:app:readonly", "bitable:app"),
             ),
         )
 
@@ -109,13 +175,12 @@ class FeishuOpenAPI:
         limit: int = 100,
     ) -> dict[str, Any]:
         return await self.get(
-            f"/open-apis/base/v3/bases/{app_token}/tables/{table_id}/fields",
+            f"/open-apis/bitable/v1/apps/{app_token}/tables/{table_id}/fields",
             actor_id=actor_id,
-            params={"limit": limit, "offset": 0},
+            params={"page_size": min(max(limit, 1), 100)},
             require_user_token=True,
             required_scope_groups=(
-                ("bitable:app:readonly", "bitable:app"),
-                ("base:field:read",),
+                ("base:field:read", "bitable:app:readonly", "bitable:app"),
             ),
         )
 
@@ -128,17 +193,16 @@ class FeishuOpenAPI:
         limit: int,
         view_id: str | None = None,
     ) -> dict[str, Any]:
-        params: dict[str, Any] = {"limit": limit, "offset": 0}
+        params: dict[str, Any] = {"page_size": min(max(limit, 1), 500)}
         if view_id:
             params["view_id"] = view_id
         return await self.get(
-            f"/open-apis/base/v3/bases/{app_token}/tables/{table_id}/records",
+            f"/open-apis/bitable/v1/apps/{app_token}/tables/{table_id}/records",
             actor_id=actor_id,
             params=params,
             require_user_token=True,
             required_scope_groups=(
-                ("bitable:app:readonly", "bitable:app"),
-                ("base:record:read",),
+                ("base:record:read", "bitable:app:readonly", "bitable:app"),
             ),
         )
 
@@ -165,6 +229,110 @@ class FeishuOpenAPI:
                 ("bitable:app:readonly", "bitable:app"),
                 ("base:record:read",),
             ),
+        )
+
+    async def search_docs(
+        self,
+        query: str,
+        actor_id: str,
+        *,
+        count: int,
+        offset: int = 0,
+        docs_types: list[str] | None = None,
+    ) -> dict[str, Any]:
+        body: dict[str, Any] = {
+            "search_key": query,
+            "count": min(max(count, 1), 50),
+            "offset": max(offset, 0),
+            "docs_types": docs_types or ["doc", "sheet", "bitable"],
+        }
+        data = await self.post(
+            "/open-apis/suite/docs-api/search/object",
+            actor_id=actor_id,
+            json_body=body,
+            require_user_token=True,
+            required_scope_groups=(
+                (
+                    "drive:drive.search:readonly",
+                    "search:docs:read",
+                    "drive:drive:readonly",
+                    "drive:drive",
+                ),
+            ),
+        )
+        entities = data.get("docs_entities")
+        result_count = len(entities) if isinstance(entities, list) else 0
+        await self.store.audit(
+            AuditEventType.RESOURCE_SEARCHED,
+            actor_id=actor_id,
+            detail={
+                "query_length": len(query),
+                "count": body["count"],
+                "offset": body["offset"],
+                "docs_types": body["docs_types"],
+                "result_count": result_count,
+                "has_more": bool(data.get("has_more")),
+            },
+        )
+        return data
+
+    async def search_wiki_nodes(
+        self,
+        query: str,
+        actor_id: str,
+        *,
+        page_size: int,
+        page_token: str | None = None,
+    ) -> dict[str, Any]:
+        params: dict[str, Any] = {"page_size": min(max(page_size, 1), 50)}
+        if page_token:
+            params["page_token"] = page_token
+        data = await self.post(
+            "/open-apis/wiki/v2/nodes/search",
+            actor_id=actor_id,
+            params=params,
+            json_body={"query": query[:50]},
+            require_user_token=True,
+            required_scope_groups=(
+                ("wiki:wiki:readonly", "wiki:wiki", "wiki:node:read"),
+            ),
+        )
+        items = data.get("items")
+        await self.store.audit(
+            AuditEventType.RESOURCE_SEARCHED,
+            actor_id=actor_id,
+            detail={
+                "source": "wiki",
+                "query_length": len(query),
+                "page_size": params["page_size"],
+                "result_count": len(items) if isinstance(items, list) else 0,
+                "has_more": bool(data.get("has_more")),
+            },
+        )
+        return data
+
+    async def list_recent_messages(
+        self,
+        *,
+        actor_id: str,
+        container_id_type: str,
+        container_id: str,
+        start_time: Any,
+        end_time: Any,
+        page_size: int,
+    ) -> dict[str, Any]:
+        return await self.get(
+            "/open-apis/im/v1/messages",
+            actor_id="",
+            params={
+                "container_id_type": container_id_type,
+                "container_id": container_id,
+                "start_time": _unix_seconds(start_time),
+                "end_time": _unix_seconds(end_time),
+                "sort_type": "ByCreateTimeDesc",
+                "page_size": min(max(page_size, 1), 50),
+            },
+            require_user_token=False,
         )
 
     async def write_sheet_range(
@@ -217,12 +385,14 @@ class FeishuOpenAPI:
         actor_id: str,
         *,
         block_id: str | None = None,
+        index: int = -1,
     ) -> dict[str, Any]:
         return await self.append_doc_blocks(
             document_id,
             _plain_text_blocks(content),
             actor_id,
             block_id=block_id,
+            index=index,
         )
 
     async def append_doc_blocks(
@@ -241,6 +411,22 @@ class FeishuOpenAPI:
             actor_id=actor_id,
             params={"document_revision_id": revision_id},
             json_body={"index": index, "children": blocks},
+            require_user_token=True,
+            required_scope_groups=(("docx:document", "docx:document:write"),),
+        )
+
+    async def delete_doc_block(
+        self,
+        document_id: str,
+        block_id: str,
+        actor_id: str,
+        *,
+        revision_id: int = -1,
+    ) -> dict[str, Any]:
+        return await self.delete(
+            f"/open-apis/docx/v1/documents/{document_id}/blocks/{block_id}",
+            actor_id=actor_id,
+            params={"document_revision_id": revision_id},
             require_user_token=True,
             required_scope_groups=(("docx:document", "docx:document:write"),),
         )
@@ -392,7 +578,10 @@ class FeishuOpenAPI:
             required_scope_groups=required_scope_groups,
         )
         url = f"{self.settings.feishu_base_url.rstrip('/')}{path}"
-        async with httpx.AsyncClient(timeout=30) as client:
+        async with httpx.AsyncClient(
+            timeout=30,
+            proxy=self.settings.feishu_http_proxy,
+        ) as client:
             response = await client.request(
                 method,
                 url,
@@ -411,6 +600,62 @@ class FeishuOpenAPI:
             raise RuntimeError(f"Feishu API error {data.get('code')}: {data.get('msg')}")
         response_data = data.get("data", data)
         return cast(dict[str, Any], response_data)
+
+    async def _download_binary(
+        self,
+        path: str,
+        *,
+        actor_id: str,
+        max_bytes: int,
+        required_scope_groups: tuple[tuple[str, ...], ...],
+    ) -> DownloadedFile:
+        token = await self._access_token(
+            actor_id,
+            require_user_token=True,
+            required_scope_groups=required_scope_groups,
+        )
+        url = f"{self.settings.feishu_base_url.rstrip('/')}{path}"
+        async with (
+            httpx.AsyncClient(
+                timeout=30,
+                proxy=self.settings.feishu_http_proxy,
+            ) as client,
+            client.stream(
+                "GET",
+                url,
+                headers={"Authorization": f"Bearer {token}"},
+            ) as response,
+        ):
+            if response.is_error:
+                body = await response.aread()
+                detail = _binary_error_detail(body)
+                raise RuntimeError(
+                    f"Feishu API error HTTP {response.status_code}: {detail}"
+                )
+            content_length = _int_or_none(response.headers.get("content-length"))
+            if content_length is not None and content_length > max_bytes:
+                raise RuntimeError(
+                    f"飞书附件大小 {content_length} 字节，超过读取上限 {max_bytes} 字节"
+                )
+            chunks: list[bytes] = []
+            downloaded = 0
+            async for chunk in response.aiter_bytes():
+                downloaded += len(chunk)
+                if downloaded > max_bytes:
+                    raise RuntimeError(
+                        f"飞书附件超过读取上限 {max_bytes} 字节"
+                    )
+                chunks.append(chunk)
+            return DownloadedFile(
+                content=b"".join(chunks),
+                content_type=response.headers.get("content-type", "")
+                .split(";", 1)[0]
+                .strip()
+                .lower(),
+                filename=_content_disposition_filename(
+                    response.headers.get("content-disposition", "")
+                ),
+            )
 
     async def _access_token(
         self,
@@ -438,6 +683,28 @@ class FeishuOpenAPI:
             raise RuntimeError("请先在飞书中发送 /授权 完成授权后再读取该资源")
         return await self._tenant_access_token()
 
+    async def require_user_authorization(
+        self,
+        actor_id: str,
+        *,
+        required_scope_groups: tuple[tuple[str, ...], ...] | None = None,
+    ) -> None:
+        try:
+            access_token = await FeishuOAuthService(
+                self.settings,
+                self.store,
+            ).get_valid_access_token(
+                actor_id,
+                required_scope_groups=required_scope_groups,
+            )
+        except MissingOAuthScopeError as exc:
+            raise RuntimeError(
+                "当前飞书授权缺少所需权限："
+                f"{', '.join(exc.missing_scopes)}。请在飞书中重新发送 /授权 并完成授权。"
+            ) from exc
+        if not access_token:
+            raise RuntimeError("请先在飞书中发送 /授权 完成授权后再读取聊天上下文")
+
     async def _tenant_access_token(self) -> str:
         if self._tenant_token and monotonic() < self._tenant_token_expires_at - 60:
             return self._tenant_token
@@ -449,7 +716,10 @@ class FeishuOpenAPI:
             "app_id": self.settings.feishu_app_id,
             "app_secret": self.settings.feishu_app_secret.get_secret_value(),
         }
-        async with httpx.AsyncClient(timeout=20) as client:
+        async with httpx.AsyncClient(
+            timeout=20,
+            proxy=self.settings.feishu_http_proxy,
+        ) as client:
             response = await client.post(url, json=payload)
         response.raise_for_status()
         data = cast(dict[str, Any], response.json())
@@ -464,6 +734,35 @@ def _response_json(response: httpx.Response) -> Any:
     try:
         return response.json()
     except ValueError:
+        return None
+
+
+def _binary_error_detail(body: bytes) -> str:
+    try:
+        data = cast(dict[str, Any], httpx.Response(200, content=body).json())
+    except (ValueError, TypeError):
+        return body.decode("utf-8", errors="replace")[:500] or "下载失败"
+    code = data.get("code")
+    message = data.get("msg") or data.get("message") or "下载失败"
+    return f"{code}: {message}" if code is not None else str(message)
+
+
+def _content_disposition_filename(value: str) -> str | None:
+    encoded = re.search(r"filename\*=UTF-8''([^;]+)", value, flags=re.IGNORECASE)
+    if encoded:
+        return unquote(encoded.group(1)).strip().strip('"') or None
+    plain = re.search(r'filename="?([^";]+)"?', value, flags=re.IGNORECASE)
+    if plain:
+        return plain.group(1).strip() or None
+    return None
+
+
+def _int_or_none(value: Any) -> int | None:
+    if value is None:
+        return None
+    try:
+        return int(value)
+    except (TypeError, ValueError):
         return None
 
 
@@ -487,3 +786,9 @@ def _plain_text_blocks(content: str) -> list[dict[str, Any]]:
         }
         for line in non_empty_lines
     ]
+
+
+def _unix_seconds(value: Any) -> int:
+    if hasattr(value, "timestamp"):
+        return int(value.timestamp())
+    return int(value)

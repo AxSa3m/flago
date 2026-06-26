@@ -1,5 +1,7 @@
+import json
 from datetime import UTC, datetime, timedelta
 
+import aiosqlite
 import pytest
 import respx
 from httpx import Response
@@ -70,6 +72,243 @@ async def test_doc_read_reports_missing_oauth_scope(tmp_path) -> None:
 
     with pytest.raises(RuntimeError, match="docx:document:readonly"):
         await api.get_doc_raw_content("docx123", "ou_user")
+
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_list_doc_blocks_paginates_with_user_token(tmp_path) -> None:
+    store = SQLiteStore(tmp_path / "fcgo.sqlite3")
+    await store.init()
+    await store.save_oauth_token(
+        "ou_user",
+        {
+            "access_token": "u-access",
+            "expires_at": (datetime.now(UTC) + timedelta(hours=1)).isoformat(),
+            "scope": "auth:user.id:read docx:document:readonly",
+        },
+    )
+    api = FeishuOpenAPI(_settings(tmp_path), store)
+    route = respx.get(
+        "https://open.feishu.test/open-apis/docx/v1/documents/docx123/blocks"
+    ).mock(
+        side_effect=[
+            Response(
+                200,
+                json={
+                    "code": 0,
+                    "data": {
+                        "items": [{"block_id": "block-1", "block_type": 2}],
+                        "has_more": True,
+                        "page_token": "next-page",
+                    },
+                },
+            ),
+            Response(
+                200,
+                json={
+                    "code": 0,
+                    "data": {
+                        "items": [
+                            {
+                                "block_id": "block-2",
+                                "block_type": 23,
+                                "file": {"token": "file-1", "name": "附件.pdf"},
+                            }
+                        ],
+                        "has_more": False,
+                    },
+                },
+            ),
+        ]
+    )
+
+    blocks = await api.list_doc_blocks("docx123", "ou_user", max_items=10)
+
+    assert [block["block_id"] for block in blocks] == ["block-1", "block-2"]
+    assert len(route.calls) == 2
+    assert route.calls[1].request.url.params["page_token"] == "next-page"
+    assert route.calls[0].request.headers["authorization"] == "Bearer u-access"
+
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_download_doc_media_returns_binary_metadata(tmp_path) -> None:
+    store = SQLiteStore(tmp_path / "fcgo.sqlite3")
+    await store.init()
+    await store.save_oauth_token(
+        "ou_user",
+        {
+            "access_token": "u-access",
+            "expires_at": (datetime.now(UTC) + timedelta(hours=1)).isoformat(),
+            "scope": "auth:user.id:read docs:document.media:download",
+        },
+    )
+    api = FeishuOpenAPI(_settings(tmp_path), store)
+    route = respx.get(
+        "https://open.feishu.test/open-apis/drive/v1/medias/file-1/download"
+    ).mock(
+        return_value=Response(
+            200,
+            headers={
+                "content-type": "application/pdf",
+                "content-disposition": "attachment; filename*=UTF-8''%E6%B5%8B%E8%AF%95.pdf",
+            },
+            content=b"%PDF-test",
+        )
+    )
+
+    downloaded = await api.download_doc_media(
+        "file-1",
+        "ou_user",
+        max_bytes=1024,
+    )
+
+    assert downloaded.content == b"%PDF-test"
+    assert downloaded.content_type == "application/pdf"
+    assert downloaded.filename == "测试.pdf"
+    assert route.calls.last.request.headers["authorization"] == "Bearer u-access"
+
+
+@pytest.mark.asyncio
+async def test_download_doc_media_reports_missing_scope(tmp_path) -> None:
+    store = SQLiteStore(tmp_path / "fcgo.sqlite3")
+    await store.init()
+    await store.save_oauth_token(
+        "ou_user",
+        {
+            "access_token": "u-access",
+            "expires_at": (datetime.now(UTC) + timedelta(hours=1)).isoformat(),
+            "scope": "auth:user.id:read docx:document:readonly",
+        },
+    )
+    api = FeishuOpenAPI(_settings(tmp_path), store)
+
+    with pytest.raises(RuntimeError, match="docs:document.media:download"):
+        await api.download_doc_media("file-1", "ou_user", max_bytes=1024)
+
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_download_doc_media_rejects_oversized_file(tmp_path) -> None:
+    store = SQLiteStore(tmp_path / "fcgo.sqlite3")
+    await store.init()
+    await store.save_oauth_token(
+        "ou_user",
+        {
+            "access_token": "u-access",
+            "expires_at": (datetime.now(UTC) + timedelta(hours=1)).isoformat(),
+            "scope": "auth:user.id:read docs:document.media:download",
+        },
+    )
+    api = FeishuOpenAPI(_settings(tmp_path), store)
+    respx.get(
+        "https://open.feishu.test/open-apis/drive/v1/medias/file-1/download"
+    ).mock(
+        return_value=Response(
+            200,
+            headers={"content-type": "application/pdf", "content-length": "2048"},
+            content=b"x",
+        )
+    )
+
+    with pytest.raises(RuntimeError, match="超过读取上限"):
+        await api.download_doc_media("file-1", "ou_user", max_bytes=1024)
+
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_search_docs_uses_user_token_and_audits_without_query_body(tmp_path) -> None:
+    store = SQLiteStore(tmp_path / "fcgo.sqlite3")
+    await store.init()
+    await store.save_oauth_token(
+        "ou_user",
+        {
+            "access_token": "u-access",
+            "expires_at": (datetime.now(UTC) + timedelta(hours=1)).isoformat(),
+            "scope": "auth:user.id:read search:docs:read",
+        },
+    )
+    api = FeishuOpenAPI(_settings(tmp_path), store)
+    route = respx.post(
+        "https://open.feishu.test/open-apis/suite/docs-api/search/object"
+    ).mock(
+        return_value=Response(
+            200,
+            json={
+                "code": 0,
+                "data": {
+                    "docs_entities": [
+                        {
+                            "docs_token": "docx123",
+                            "docs_type": "doc",
+                            "title": "项目计划",
+                        }
+                    ],
+                    "has_more": False,
+                    "total": 1,
+                },
+            },
+        )
+    )
+
+    data = await api.search_docs("项目计划", "ou_user", count=5)
+
+    request = route.calls.last.request
+    request_body = json.loads(request.content)
+    assert data["docs_entities"][0]["docs_token"] == "docx123"
+    assert request.headers["authorization"] == "Bearer u-access"
+    assert request_body["search_key"] == "项目计划"
+    assert request_body["count"] == 5
+    async with aiosqlite.connect(store.path) as db:
+        rows = await db.execute_fetchall(
+            "SELECT detail_json FROM audit_events WHERE event_type = 'resource_searched'"
+        )
+    assert '"query_length":4' in rows[0][0].replace(" ", "")
+    assert "项目计划" not in rows[0][0]
+
+
+@pytest.mark.asyncio
+async def test_search_docs_requires_user_oauth_scope(tmp_path) -> None:
+    store = SQLiteStore(tmp_path / "fcgo.sqlite3")
+    await store.init()
+    await store.save_oauth_token(
+        "ou_user",
+        {
+            "access_token": "u-access",
+            "expires_at": (datetime.now(UTC) + timedelta(hours=1)).isoformat(),
+            "scope": "auth:user.id:read",
+        },
+    )
+    api = FeishuOpenAPI(_settings(tmp_path), store)
+
+    with pytest.raises(RuntimeError, match="drive:drive.search:readonly"):
+        await api.search_docs("项目计划", "ou_user", count=5)
+
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_search_docs_accepts_drive_search_scope(tmp_path) -> None:
+    store = SQLiteStore(tmp_path / "fcgo.sqlite3")
+    await store.init()
+    await store.save_oauth_token(
+        "ou_user",
+        {
+            "access_token": "u-access",
+            "expires_at": (datetime.now(UTC) + timedelta(hours=1)).isoformat(),
+            "scope": "auth:user.id:read drive:drive.search:readonly",
+        },
+    )
+    api = FeishuOpenAPI(_settings(tmp_path), store)
+    respx.post("https://open.feishu.test/open-apis/suite/docs-api/search/object").mock(
+        return_value=Response(
+            200,
+            json={"code": 0, "data": {"docs_entities": [], "has_more": False, "total": 0}},
+        )
+    )
+
+    data = await api.search_docs("项目计划", "ou_user", count=5)
+
+    assert data["docs_entities"] == []
 
 
 @pytest.mark.asyncio
@@ -157,7 +396,7 @@ async def test_sheet_metadata_query_uses_user_token(tmp_path) -> None:
 
 @pytest.mark.asyncio
 @respx.mock
-async def test_bitable_table_list_uses_base_v3_and_user_token(tmp_path) -> None:
+async def test_bitable_table_list_uses_bitable_v1_and_user_token(tmp_path) -> None:
     store = SQLiteStore(tmp_path / "fcgo.sqlite3")
     await store.init()
     await store.save_oauth_token(
@@ -165,11 +404,13 @@ async def test_bitable_table_list_uses_base_v3_and_user_token(tmp_path) -> None:
         {
             "access_token": "u-access",
             "expires_at": (datetime.now(UTC) + timedelta(hours=1)).isoformat(),
-            "scope": "auth:user.id:read bitable:app:readonly",
+            "scope": "auth:user.id:read bitable:app:readonly base:table:read",
         },
     )
     api = FeishuOpenAPI(_settings(tmp_path), store)
-    route = respx.get("https://open.feishu.test/open-apis/base/v3/bases/app123/tables").mock(
+    route = respx.get(
+        "https://open.feishu.test/open-apis/bitable/v1/apps/app123/tables"
+    ).mock(
         return_value=Response(
             200,
             json={"code": 0, "data": {"items": [{"table_id": "tbl1"}]}},
@@ -181,13 +422,36 @@ async def test_bitable_table_list_uses_base_v3_and_user_token(tmp_path) -> None:
     request = route.calls.last.request
     assert data == {"items": [{"table_id": "tbl1"}]}
     assert request.headers["authorization"] == "Bearer u-access"
-    assert request.url.params["limit"] == "200"
-    assert request.url.params["offset"] == "0"
+    assert request.url.params["page_size"] == "100"
 
 
 @pytest.mark.asyncio
 @respx.mock
-async def test_bitable_field_and_view_lists_use_base_v3(tmp_path) -> None:
+async def test_bitable_table_list_accepts_bitable_readonly_scope(tmp_path) -> None:
+    store = SQLiteStore(tmp_path / "fcgo.sqlite3")
+    await store.init()
+    await store.save_oauth_token(
+        "ou_user",
+        {
+            "access_token": "u-access",
+            "expires_at": (datetime.now(UTC) + timedelta(hours=1)).isoformat(),
+            "scope": "auth:user.id:read bitable:app:readonly",
+        },
+    )
+    api = FeishuOpenAPI(_settings(tmp_path), store)
+    route = respx.get(
+        "https://open.feishu.test/open-apis/bitable/v1/apps/app123/tables"
+    ).mock(return_value=Response(200, json={"code": 0, "data": {"items": []}}))
+
+    data = await api.list_bitable_tables("app123", "ou_user", limit=200)
+
+    assert data == {"items": []}
+    assert route.called
+
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_bitable_field_and_view_lists_use_bitable_v1(tmp_path) -> None:
     store = SQLiteStore(tmp_path / "fcgo.sqlite3")
     await store.init()
     await store.save_oauth_token(
@@ -202,10 +466,10 @@ async def test_bitable_field_and_view_lists_use_base_v3(tmp_path) -> None:
     )
     api = FeishuOpenAPI(_settings(tmp_path), store)
     fields_route = respx.get(
-        "https://open.feishu.test/open-apis/base/v3/bases/app123/tables/tbl1/fields"
+        "https://open.feishu.test/open-apis/bitable/v1/apps/app123/tables/tbl1/fields"
     ).mock(return_value=Response(200, json={"code": 0, "data": {"items": [{"name": "关键词"}]}}))
     views_route = respx.get(
-        "https://open.feishu.test/open-apis/base/v3/bases/app123/tables/tbl1/views"
+        "https://open.feishu.test/open-apis/bitable/v1/apps/app123/tables/tbl1/views"
     ).mock(return_value=Response(200, json={"code": 0, "data": {"items": [{"name": "表格"}]}}))
 
     fields = await api.list_bitable_fields("app123", "tbl1", "ou_user")
@@ -219,7 +483,7 @@ async def test_bitable_field_and_view_lists_use_base_v3(tmp_path) -> None:
 
 @pytest.mark.asyncio
 @respx.mock
-async def test_bitable_record_list_passes_limit_offset_and_view_id(tmp_path) -> None:
+async def test_bitable_record_list_passes_page_size_and_view_id(tmp_path) -> None:
     store = SQLiteStore(tmp_path / "fcgo.sqlite3")
     await store.init()
     await store.save_oauth_token(
@@ -232,7 +496,7 @@ async def test_bitable_record_list_passes_limit_offset_and_view_id(tmp_path) -> 
     )
     api = FeishuOpenAPI(_settings(tmp_path), store)
     route = respx.get(
-        "https://open.feishu.test/open-apis/base/v3/bases/app123/tables/tbl1/records"
+        "https://open.feishu.test/open-apis/bitable/v1/apps/app123/tables/tbl1/records"
     ).mock(
         return_value=Response(
             200,
@@ -251,9 +515,47 @@ async def test_bitable_record_list_passes_limit_offset_and_view_id(tmp_path) -> 
     request = route.calls.last.request
     assert data == {"items": [{"fields": {"关键词": "A"}}]}
     assert request.headers["authorization"] == "Bearer u-access"
-    assert request.url.params["limit"] == "50"
-    assert request.url.params["offset"] == "0"
+    assert request.url.params["page_size"] == "50"
     assert request.url.params["view_id"] == "vew1"
+
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_list_recent_messages_uses_tenant_token_without_user_oauth(
+    tmp_path,
+) -> None:
+    store = SQLiteStore(tmp_path / "fcgo.sqlite3")
+    await store.init()
+    settings = _settings(tmp_path)
+    api = FeishuOpenAPI(settings, store)
+    token_route = respx.post(
+        "https://open.feishu.test/open-apis/auth/v3/tenant_access_token/internal"
+    ).mock(
+        return_value=Response(
+            200,
+            json={"code": 0, "tenant_access_token": "tenant-token", "expire": 7200},
+        )
+    )
+    messages_route = respx.get("https://open.feishu.test/open-apis/im/v1/messages").mock(
+        return_value=Response(200, json={"code": 0, "data": {"items": []}})
+    )
+
+    data = await api.list_recent_messages(
+        actor_id="ou_user",
+        container_id_type="chat",
+        container_id="oc_chat",
+        start_time=datetime(2026, 6, 10, tzinfo=UTC),
+        end_time=datetime(2026, 6, 11, tzinfo=UTC),
+        page_size=50,
+    )
+
+    assert data == {"items": []}
+    assert token_route.called
+    request = messages_route.calls.last.request
+    assert request.headers["authorization"] == "Bearer tenant-token"
+    assert request.url.params["container_id_type"] == "chat"
+    assert request.url.params["container_id"] == "oc_chat"
+    assert request.url.params["page_size"] == "50"
 
 
 @pytest.mark.asyncio
@@ -338,6 +640,61 @@ async def test_append_doc_text_converts_to_children_blocks(tmp_path) -> None:
     assert request.headers["authorization"] == "Bearer u-access"
     assert b'"index":-1' in request.content
     assert b"children" in request.content
+
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_append_doc_text_supports_document_start_index(tmp_path) -> None:
+    store = SQLiteStore(tmp_path / "fcgo.sqlite3")
+    await store.init()
+    await store.save_oauth_token(
+        "ou_user",
+        {
+            "access_token": "u-access",
+            "expires_at": (datetime.now(UTC) + timedelta(hours=1)).isoformat(),
+            "scope": "auth:user.id:read docx:document",
+        },
+    )
+    api = FeishuOpenAPI(_settings(tmp_path), store)
+    route = respx.post(
+        "https://open.feishu.test/open-apis/docx/v1/documents/docx123/blocks/docx123/children"
+    ).mock(return_value=Response(200, json={"code": 0, "data": {"revision_id": 2}}))
+
+    await api.append_doc_text(
+        "docx123",
+        "开头文字",
+        "ou_user",
+        block_id="docx123",
+        index=0,
+    )
+
+    assert b'"index":0' in route.calls.last.request.content
+
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_delete_doc_block_uses_user_write_scope(tmp_path) -> None:
+    store = SQLiteStore(tmp_path / "fcgo.sqlite3")
+    await store.init()
+    await store.save_oauth_token(
+        "ou_user",
+        {
+            "access_token": "u-access",
+            "expires_at": (datetime.now(UTC) + timedelta(hours=1)).isoformat(),
+            "scope": "auth:user.id:read docx:document",
+        },
+    )
+    api = FeishuOpenAPI(_settings(tmp_path), store)
+    route = respx.delete(
+        "https://open.feishu.test/open-apis/docx/v1/documents/docx123/blocks/blk1"
+    ).mock(return_value=Response(200, json={"code": 0, "data": {"revision_id": 3}}))
+
+    data = await api.delete_doc_block("docx123", "blk1", "ou_user")
+
+    request = route.calls.last.request
+    assert data == {"revision_id": 3}
+    assert request.headers["authorization"] == "Bearer u-access"
+    assert request.url.params["document_revision_id"] == "-1"
 
 
 @pytest.mark.asyncio

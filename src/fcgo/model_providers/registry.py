@@ -1,8 +1,12 @@
+import asyncio
 import logging
-from typing import Protocol
+from time import perf_counter
+from typing import Any, Protocol
 
 from fcgo.config import Settings
+from fcgo.logging import redact
 from fcgo.model_providers.catalog import ModelCatalogItem, build_model_catalog
+from fcgo.model_providers.claude import ClaudeProvider, claude_provider_config
 from fcgo.model_providers.echo import EchoModelProvider
 from fcgo.model_providers.openai_compatible import (
     OpenAICompatibleProvider,
@@ -15,9 +19,21 @@ from fcgo.model_providers.types import (
     ProviderCapability,
     ProviderConfig,
 )
-from fcgo.models import AssistantRequest, AssistantResponse
+from fcgo.models import AssistantRequest, AssistantResponse, AuditEventType
 
 logger = logging.getLogger(__name__)
+
+
+class ModelAuditRecorder(Protocol):
+    async def audit(
+        self,
+        event_type: AuditEventType,
+        *,
+        actor_id: str | None = None,
+        action_id: str | None = None,
+        detail: dict[str, Any] | None = None,
+    ) -> None:
+        """Persist metadata-only model audit events."""
 
 
 class UnifiedModelProvider(Protocol):
@@ -80,10 +96,19 @@ class ModelRouter:
         default_provider: str,
         default_model: str | None = None,
         catalog: list[ModelCatalogItem] | None = None,
+        audit_recorder: ModelAuditRecorder | None = None,
+        provider_concurrency_limit: int = 0,
     ) -> None:
         self.registry = registry
         self.default_provider = normalize_provider_name(default_provider)
         self.default_model = normalize_model_name(default_model)
+        self.audit_recorder = audit_recorder
+        self.provider_concurrency_limit = max(provider_concurrency_limit, 0)
+        self._provider_semaphores: dict[str, asyncio.Semaphore] = {
+            name: asyncio.Semaphore(self.provider_concurrency_limit)
+            for name in registry.names()
+            if self.provider_concurrency_limit > 0
+        }
         self.catalog = catalog or [
             ModelCatalogItem(
                 provider=config.name,
@@ -114,12 +139,85 @@ class ModelRouter:
                 "model": request.model or self._default_model_for(provider),
             }
         )
-        return await provider.generate_model(resolved_request)
+        return await self._generate_with_guards(provider, resolved_request)
 
     def _default_model_for(self, provider: UnifiedModelProvider) -> str:
         if normalize_provider_name(provider.name) == self.default_provider and self.default_model:
             return self.default_model
         return provider.provider_config.default_model
+
+    async def _generate_with_guards(
+        self,
+        provider: UnifiedModelProvider,
+        request: ModelRequest,
+    ) -> ModelResponse:
+        started_at = perf_counter()
+        try:
+            semaphore = self._provider_semaphores.get(provider.name)
+            if semaphore is None:
+                response = await asyncio.wait_for(
+                    provider.generate_model(request),
+                    timeout=provider.provider_config.timeout_seconds,
+                )
+            else:
+                async with semaphore:
+                    response = await asyncio.wait_for(
+                        provider.generate_model(request),
+                        timeout=provider.provider_config.timeout_seconds,
+                    )
+        except Exception as exc:
+            await self._audit_model_failure(provider, request, exc)
+            raise
+        latency_ms = _response_latency_ms(response, started_at)
+        await self._audit_model_success(provider, request, response, latency_ms)
+        return response
+
+    async def _audit_model_success(
+        self,
+        provider: UnifiedModelProvider,
+        request: ModelRequest,
+        response: ModelResponse,
+        latency_ms: int,
+    ) -> None:
+        if self.audit_recorder is None:
+            return
+        detail: dict[str, Any] = {
+            "provider": provider.name,
+            "model": request.model,
+            "latency_ms": latency_ms,
+            "message_count": len(request.messages),
+            "max_output_tokens": request.max_output_tokens,
+            "required_capabilities": [
+                capability.value for capability in request.required_capabilities
+            ],
+        }
+        if response.usage is not None:
+            detail["usage"] = response.usage.model_dump(exclude_none=True)
+        await self.audit_recorder.audit(
+            AuditEventType.MODEL_GENERATED,
+            actor_id=_request_actor_id(request),
+            detail=detail,
+        )
+
+    async def _audit_model_failure(
+        self,
+        provider: UnifiedModelProvider,
+        request: ModelRequest,
+        exc: Exception,
+    ) -> None:
+        if self.audit_recorder is None:
+            return
+        await self.audit_recorder.audit(
+            AuditEventType.ERROR,
+            actor_id=_request_actor_id(request),
+            detail={
+                "kind": "model_provider_failed",
+                "provider": provider.name,
+                "model": request.model,
+                "error_type": type(exc).__name__,
+                "error": redact(str(exc)),
+            },
+        )
 
 
 def build_provider_registry(settings: Settings) -> ModelProviderRegistry:
@@ -130,11 +228,17 @@ def build_provider_registry(settings: Settings) -> ModelProviderRegistry:
         registry.register(GeminiProvider(settings))
     for config in openai_compatible_provider_configs(settings):
         registry.register(OpenAICompatibleProvider(config))
+    claude_config = claude_provider_config(settings)
+    if claude_config is not None:
+        registry.register(ClaudeProvider(claude_config))
     registry.register(EchoModelProvider())
     return registry
 
 
-def build_model_router(settings: Settings) -> ModelRouter:
+def build_model_router(
+    settings: Settings,
+    audit_recorder: ModelAuditRecorder | None = None,
+) -> ModelRouter:
     registry = build_provider_registry(settings)
     default_provider = normalize_provider_name(settings.default_provider)
     if not registry.has(default_provider):
@@ -156,6 +260,8 @@ def build_model_router(settings: Settings) -> ModelRouter:
         default_provider=default_provider,
         default_model=settings.default_model,
         catalog=build_model_catalog(settings),
+        audit_recorder=audit_recorder,
+        provider_concurrency_limit=settings.model_provider_concurrency_limit,
     )
 
 
@@ -168,3 +274,20 @@ def normalize_model_name(value: str | None) -> str | None:
         return None
     stripped = value.strip()
     return stripped or None
+
+
+def _response_latency_ms(response: ModelResponse, started_at: float) -> int:
+    raw_latency = response.raw.get("latency_ms")
+    if isinstance(raw_latency, int):
+        return raw_latency
+    if isinstance(raw_latency, str):
+        try:
+            return int(raw_latency)
+        except ValueError:
+            pass
+    return int((perf_counter() - started_at) * 1000)
+
+
+def _request_actor_id(request: ModelRequest) -> str | None:
+    actor_id = request.metadata.get("actor_id")
+    return str(actor_id) if actor_id else None

@@ -26,6 +26,13 @@ def test_parse_feishu_wiki_url() -> None:
     assert ref.token == "wikcnxxx"
 
 
+def test_parse_tenant_feishu_wiki_url_with_query() -> None:
+    ref = parse_resource_url("https://my.feishu.cn/wiki/AiDzwcQLli2EQYkaKyWckTPAnjj?from=navigation")
+    assert ref.type == ResourceType.FEISHU_DOC
+    assert ref.source_kind == "wiki"
+    assert ref.token == "AiDzwcQLli2EQYkaKyWckTPAnjj"
+
+
 def test_parse_larksuite_doc_url() -> None:
     ref = parse_resource_url("https://example.larksuite.com/docs/doccnxxx")
     assert ref.type == ResourceType.FEISHU_DOC

@@ -4,7 +4,7 @@ from typing import Any
 
 import respx
 from fastapi.testclient import TestClient
-from httpx import Response
+from httpx import ConnectError, Response
 
 from fcgo.config import Settings
 from fcgo.models import ActionProposal, PendingActionStatus, WriteActionType
@@ -68,6 +68,43 @@ def test_oauth_callback_consumes_state_and_saves_token(tmp_path) -> None:
 
     assert response.status_code == 200
     assert "授权成功" in response.text
+    assert "小智 已保存你的飞书授权" in response.text
+    assert "<title>小智 授权成功</title>" in response.text
+    assert "5 秒后尝试自动关闭" in response.text
+    assert "关闭页面" in response.text
+    assert "window.close()" in response.text
+
+
+@respx.mock
+def test_oauth_callback_returns_readable_failure_page(tmp_path) -> None:
+    settings = _settings(tmp_path)
+    respx.post("https://open.feishu.test/open-apis/authen/v2/oauth/token").mock(
+        side_effect=ConnectError("connect failed")
+    )
+    with TestClient(create_app(settings)) as client:
+        start = client.get("/oauth/feishu/start", params={"subject_id": "ou_user"})
+        state = start.json()["state"]
+        response = client.get(
+            "/oauth/feishu/callback",
+            params={"code": "code-1", "state": state},
+        )
+
+    assert response.status_code == 502
+    assert "授权失败" in response.text
+    assert "ConnectError" in response.text
+    assert "重新发送 /授权" in response.text
+    assert "本页面不会自动关闭" in response.text
+
+
+def test_oauth_callback_returns_failure_page_for_missing_params(tmp_path) -> None:
+    settings = _settings(tmp_path)
+    with TestClient(create_app(settings)) as client:
+        response = client.get("/oauth/feishu/callback")
+
+    assert response.status_code == 400
+    assert "授权失败" in response.text
+    assert "缺少必要参数" in response.text
+    assert "关闭页面" in response.text
 
 
 def test_card_callback_confirms_pending_action(tmp_path, monkeypatch) -> None:
@@ -227,6 +264,7 @@ def test_card_callback_reports_disabled_when_writeback_paused(tmp_path) -> None:
         feishu_app_id="cli_test",
         feishu_app_secret="secret",
         gemini_api_key="",
+        writeback_enabled=False,
     )
 
     with TestClient(create_app(settings)) as client:

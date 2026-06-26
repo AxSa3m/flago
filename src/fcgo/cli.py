@@ -9,6 +9,7 @@ from google import genai
 from google.genai import types
 
 from fcgo.agent import Assistant
+from fcgo.agent.search_planner import ModelResourceSearchPlanner
 from fcgo.config import Settings, get_settings
 from fcgo.feishu.client import FeishuClient
 from fcgo.feishu.oauth import FeishuOAuthService
@@ -17,7 +18,12 @@ from fcgo.feishu.router import FeishuMessageRouter
 from fcgo.feishu.worker import FeishuLongConnectionWorker
 from fcgo.logging import configure_logging
 from fcgo.model_providers.registry import ModelRouter, build_model_router
-from fcgo.resources.reader import CompositeResourceReader, FeishuResourceReader, WebResourceReader
+from fcgo.resources.reader import (
+    CompositeResourceReader,
+    FeishuResourceReader,
+    FeishuResourceSearcher,
+    WebResourceReader,
+)
 from fcgo.storage import SQLiteStore
 from fcgo.writeback.executor import FeishuWriteExecutor
 from fcgo.writeback.service import WritebackService
@@ -58,7 +64,7 @@ def _run_worker() -> None:
     settings = get_settings()
     store = SQLiteStore(settings.sqlite_path)
     asyncio.run(store.init())
-    model = _build_model_provider(settings)
+    model = _build_model_provider(settings, audit_recorder=store)
     openapi = FeishuOpenAPI(settings, store)
     assistant = Assistant(
         model,
@@ -66,12 +72,25 @@ def _run_worker() -> None:
             FeishuResourceReader(settings, openapi),
             WebResourceReader(settings),
         ),
+        FeishuResourceSearcher(settings, openapi),
+        resource_search_planner=ModelResourceSearchPlanner(model),
+        audit_recorder=store,
         pending_action_ttl_seconds=settings.pending_action_ttl_seconds,
         enable_writeback=settings.writeback_enabled,
+        resource_search_limit=settings.resource_search_result_limit,
+        resource_search_read_limit=settings.resource_search_read_limit,
     )
     feishu_client = FeishuClient(settings)
     oauth = FeishuOAuthService(settings, store)
-    router = FeishuMessageRouter(assistant, feishu_client, store, oauth, model, settings)
+    router = FeishuMessageRouter(
+        assistant,
+        feishu_client,
+        store,
+        oauth,
+        model,
+        settings,
+        chat_history_api=openapi,
+    )
     writeback = (
         WritebackService(store, FeishuWriteExecutor(openapi, feishu_client), settings)
         if settings.writeback_enabled
@@ -182,8 +201,12 @@ async def _check_gemini_lightweight(settings: Settings) -> str:
     return response.text or ""
 
 
-def _build_model_provider(settings: Settings) -> ModelRouter:
-    return build_model_router(settings)
+def _build_model_provider(
+    settings: Settings,
+    *,
+    audit_recorder: SQLiteStore | None = None,
+) -> ModelRouter:
+    return build_model_router(settings, audit_recorder=audit_recorder)
 
 
 if __name__ == "__main__":

@@ -6,7 +6,16 @@ from typing import Any, cast
 import aiosqlite
 
 from fcgo.logging import redact
-from fcgo.models import ActionProposal, AuditEventType, ModelPreference, PendingActionStatus
+from fcgo.models import (
+    ActionProposal,
+    AssistantNamePreference,
+    AuditEventType,
+    ChatContextMessage,
+    ContextPreference,
+    MemoryItem,
+    ModelPreference,
+    PendingActionStatus,
+)
 
 
 class SQLiteStore:
@@ -61,6 +70,52 @@ class SQLiteStore:
                     provider TEXT NOT NULL,
                     model TEXT,
                     updated_by TEXT NOT NULL,
+                    updated_at TEXT NOT NULL
+                );
+                CREATE TABLE IF NOT EXISTS assistant_name_preferences (
+                    subject_id TEXT PRIMARY KEY,
+                    assistant_name TEXT NOT NULL,
+                    updated_by TEXT NOT NULL,
+                    updated_at TEXT NOT NULL
+                );
+                CREATE TABLE IF NOT EXISTS context_preferences (
+                    scope TEXT PRIMARY KEY,
+                    enabled INTEGER NOT NULL,
+                    updated_by TEXT NOT NULL,
+                    updated_at TEXT NOT NULL
+                );
+                CREATE TABLE IF NOT EXISTS memory_preferences (
+                    subject_id TEXT PRIMARY KEY,
+                    enabled INTEGER NOT NULL,
+                    updated_by TEXT NOT NULL,
+                    updated_at TEXT NOT NULL
+                );
+                CREATE TABLE IF NOT EXISTS memory_items (
+                    id TEXT PRIMARY KEY,
+                    subject_id TEXT NOT NULL,
+                    kind TEXT NOT NULL,
+                    content TEXT NOT NULL,
+                    source TEXT NOT NULL,
+                    created_at TEXT NOT NULL,
+                    updated_at TEXT NOT NULL
+                );
+                CREATE TABLE IF NOT EXISTS context_message_cache (
+                    scope TEXT NOT NULL,
+                    message_id TEXT NOT NULL,
+                    sender_id TEXT NOT NULL,
+                    text TEXT NOT NULL,
+                    created_at TEXT NOT NULL,
+                    cached_at TEXT NOT NULL,
+                    PRIMARY KEY(scope, message_id)
+                );
+                CREATE INDEX IF NOT EXISTS idx_context_message_cache_scope_created
+                    ON context_message_cache(scope, created_at);
+                CREATE INDEX IF NOT EXISTS idx_context_message_cache_cached_at
+                    ON context_message_cache(cached_at);
+                CREATE TABLE IF NOT EXISTS conversation_summaries (
+                    scope TEXT PRIMARY KEY,
+                    summary TEXT NOT NULL,
+                    source_message_count INTEGER NOT NULL,
                     updated_at TEXT NOT NULL
                 );
                 CREATE TABLE IF NOT EXISTS writeback_executions (
@@ -388,6 +443,384 @@ class SQLiteStore:
             detail={"scope": scope},
         )
 
+    async def save_assistant_name_preference(
+        self,
+        *,
+        subject_id: str,
+        assistant_name: str,
+        updated_by: str,
+    ) -> None:
+        now = _now_iso()
+        async with aiosqlite.connect(self.path) as db:
+            await db.execute(
+                """
+                INSERT INTO assistant_name_preferences(
+                    subject_id, assistant_name, updated_by, updated_at
+                )
+                VALUES (?, ?, ?, ?)
+                ON CONFLICT(subject_id) DO UPDATE SET
+                    assistant_name = excluded.assistant_name,
+                    updated_by = excluded.updated_by,
+                    updated_at = excluded.updated_at
+                """,
+                (subject_id, assistant_name, updated_by, now),
+            )
+            await db.commit()
+        await self.audit(
+            AuditEventType.ASSISTANT_NAME_SET,
+            actor_id=updated_by,
+            detail={"subject_id": subject_id, "assistant_name_length": len(assistant_name)},
+        )
+
+    async def get_assistant_name_preference(
+        self,
+        subject_id: str,
+    ) -> AssistantNamePreference | None:
+        async with aiosqlite.connect(self.path) as db:
+            rows = await db.execute_fetchall(
+                """
+                SELECT subject_id, assistant_name, updated_by, updated_at
+                FROM assistant_name_preferences
+                WHERE subject_id = ?
+                """,
+                (subject_id,),
+            )
+        rows_list = list(rows)
+        if not rows_list:
+            return None
+        row = rows_list[0]
+        return AssistantNamePreference(
+            subject_id=str(row[0]),
+            assistant_name=str(row[1]),
+            updated_by=str(row[2]),
+            updated_at=str(row[3]),
+        )
+
+    async def clear_assistant_name_preference(
+        self,
+        subject_id: str,
+        *,
+        updated_by: str,
+    ) -> None:
+        async with aiosqlite.connect(self.path) as db:
+            await db.execute(
+                "DELETE FROM assistant_name_preferences WHERE subject_id = ?",
+                (subject_id,),
+            )
+            await db.commit()
+        await self.audit(
+            AuditEventType.ASSISTANT_NAME_CLEARED,
+            actor_id=updated_by,
+            detail={"subject_id": subject_id},
+        )
+
+    async def set_context_preference(
+        self,
+        *,
+        scope: str,
+        enabled: bool,
+        updated_by: str,
+    ) -> None:
+        now = _now_iso()
+        async with aiosqlite.connect(self.path) as db:
+            await db.execute(
+                """
+                INSERT INTO context_preferences(scope, enabled, updated_by, updated_at)
+                VALUES (?, ?, ?, ?)
+                ON CONFLICT(scope) DO UPDATE SET
+                    enabled = excluded.enabled,
+                    updated_by = excluded.updated_by,
+                    updated_at = excluded.updated_at
+                """,
+                (scope, int(enabled), updated_by, now),
+            )
+            await db.commit()
+        await self.audit(
+            AuditEventType.CONTEXT_ENABLED if enabled else AuditEventType.CONTEXT_DISABLED,
+            actor_id=updated_by,
+            detail={"scope": scope},
+        )
+
+    async def get_context_preference(self, scope: str) -> ContextPreference | None:
+        async with aiosqlite.connect(self.path) as db:
+            rows = await db.execute_fetchall(
+                """
+                SELECT scope, enabled, updated_by, updated_at
+                FROM context_preferences
+                WHERE scope = ?
+                """,
+                (scope,),
+            )
+        rows_list = list(rows)
+        if not rows_list:
+            return None
+        row = rows_list[0]
+        return ContextPreference(
+            scope=str(row[0]),
+            enabled=bool(row[1]),
+            updated_by=str(row[2]),
+            updated_at=str(row[3]),
+        )
+
+    async def upsert_context_messages(
+        self,
+        *,
+        scope: str,
+        messages: list[ChatContextMessage],
+    ) -> None:
+        if not messages:
+            return
+        now = _now_iso()
+        async with aiosqlite.connect(self.path) as db:
+            await db.executemany(
+                """
+                INSERT INTO context_message_cache(
+                    scope, message_id, sender_id, text, created_at, cached_at
+                )
+                VALUES (?, ?, ?, ?, ?, ?)
+                ON CONFLICT(scope, message_id) DO UPDATE SET
+                    sender_id = excluded.sender_id,
+                    text = excluded.text,
+                    created_at = excluded.created_at,
+                    cached_at = excluded.cached_at
+                """,
+                [
+                    (
+                        scope,
+                        message.message_id,
+                        message.sender_id,
+                        message.text,
+                        message.created_at,
+                        now,
+                    )
+                    for message in messages
+                ],
+            )
+            await db.commit()
+
+    async def list_context_messages(
+        self,
+        *,
+        scope: str,
+        since: str,
+        limit: int,
+    ) -> list[ChatContextMessage]:
+        async with aiosqlite.connect(self.path) as db:
+            rows = await db.execute_fetchall(
+                """
+                SELECT message_id, sender_id, text, created_at
+                FROM context_message_cache
+                WHERE scope = ? AND created_at >= ?
+                ORDER BY created_at DESC, message_id DESC
+                LIMIT ?
+                """,
+                (scope, since, limit),
+            )
+        messages = [
+            ChatContextMessage(
+                message_id=str(row[0]),
+                sender_id=str(row[1]),
+                text=str(row[2]),
+                created_at=str(row[3]),
+            )
+            for row in rows
+        ]
+        return list(reversed(messages))
+
+    async def latest_context_cache_time(self, scope: str) -> str | None:
+        async with aiosqlite.connect(self.path) as db:
+            rows = await db.execute_fetchall(
+                "SELECT MAX(cached_at) FROM context_message_cache WHERE scope = ?",
+                (scope,),
+            )
+        rows_list = list(rows)
+        if not rows_list or rows_list[0][0] is None:
+            return None
+        return str(rows_list[0][0])
+
+    async def prune_context_message_cache(self, *, older_than: str) -> int:
+        async with aiosqlite.connect(self.path) as db:
+            cursor = await db.execute(
+                "DELETE FROM context_message_cache WHERE cached_at < ?",
+                (older_than,),
+            )
+            await db.commit()
+            return cursor.rowcount
+
+    async def save_conversation_summary(
+        self,
+        *,
+        scope: str,
+        summary: str,
+        source_message_count: int,
+    ) -> None:
+        now = _now_iso()
+        async with aiosqlite.connect(self.path) as db:
+            await db.execute(
+                """
+                INSERT INTO conversation_summaries(
+                    scope, summary, source_message_count, updated_at
+                )
+                VALUES (?, ?, ?, ?)
+                ON CONFLICT(scope) DO UPDATE SET
+                    summary = excluded.summary,
+                    source_message_count = excluded.source_message_count,
+                    updated_at = excluded.updated_at
+                """,
+                (scope, summary, source_message_count, now),
+            )
+            await db.commit()
+
+    async def get_conversation_summary(self, scope: str) -> str:
+        async with aiosqlite.connect(self.path) as db:
+            rows = await db.execute_fetchall(
+                "SELECT summary FROM conversation_summaries WHERE scope = ?",
+                (scope,),
+            )
+        rows_list = list(rows)
+        if not rows_list:
+            return ""
+        return str(rows_list[0][0])
+
+    async def save_memory_item(
+        self,
+        *,
+        id: str,
+        subject_id: str,
+        kind: str,
+        content: str,
+        source: str,
+    ) -> None:
+        now = _now_iso()
+        async with aiosqlite.connect(self.path) as db:
+            await db.execute(
+                """
+                INSERT INTO memory_items(
+                    id, subject_id, kind, content, source, created_at, updated_at
+                )
+                VALUES (?, ?, ?, ?, ?, ?, ?)
+                ON CONFLICT(id) DO UPDATE SET
+                    kind = excluded.kind,
+                    content = excluded.content,
+                    source = excluded.source,
+                    updated_at = excluded.updated_at
+                """,
+                (id, subject_id, kind, content, source, now, now),
+            )
+            await db.commit()
+        await self.audit(
+            AuditEventType.MEMORY_UPDATED,
+            actor_id=subject_id,
+            detail={
+                "subject_id": subject_id,
+                "kind": kind,
+                "source": source,
+                "content_length": len(content),
+            },
+        )
+
+    async def list_memory_items(self, subject_id: str) -> list[MemoryItem]:
+        async with aiosqlite.connect(self.path) as db:
+            rows = await db.execute_fetchall(
+                """
+                SELECT id, subject_id, kind, content, source, created_at, updated_at
+                FROM memory_items
+                WHERE subject_id = ?
+                ORDER BY updated_at DESC, id ASC
+                """,
+                (subject_id,),
+            )
+        return [
+            MemoryItem(
+                id=str(row[0]),
+                subject_id=str(row[1]),
+                kind=str(row[2]),
+                content=str(row[3]),
+                source=str(row[4]),
+                created_at=str(row[5]),
+                updated_at=str(row[6]),
+            )
+            for row in rows
+        ]
+
+    async def clear_memory_items(self, subject_id: str, *, updated_by: str) -> int:
+        async with aiosqlite.connect(self.path) as db:
+            cursor = await db.execute(
+                "DELETE FROM memory_items WHERE subject_id = ?",
+                (subject_id,),
+            )
+            await db.commit()
+            deleted_count = cursor.rowcount
+        await self.audit(
+            AuditEventType.MEMORY_DELETED,
+            actor_id=updated_by,
+            detail={"subject_id": subject_id, "deleted_count": deleted_count},
+        )
+        return deleted_count
+
+    async def delete_memory_item(
+        self,
+        *,
+        subject_id: str,
+        item_id: str,
+        updated_by: str,
+    ) -> int:
+        async with aiosqlite.connect(self.path) as db:
+            cursor = await db.execute(
+                "DELETE FROM memory_items WHERE subject_id = ? AND id = ?",
+                (subject_id, item_id),
+            )
+            await db.commit()
+            deleted_count = cursor.rowcount
+        await self.audit(
+            AuditEventType.MEMORY_DELETED,
+            actor_id=updated_by,
+            detail={
+                "subject_id": subject_id,
+                "item_id": item_id,
+                "deleted_count": deleted_count,
+            },
+        )
+        return deleted_count
+
+    async def set_memory_enabled(
+        self,
+        *,
+        subject_id: str,
+        enabled: bool,
+        updated_by: str,
+    ) -> None:
+        now = _now_iso()
+        async with aiosqlite.connect(self.path) as db:
+            await db.execute(
+                """
+                INSERT INTO memory_preferences(subject_id, enabled, updated_by, updated_at)
+                VALUES (?, ?, ?, ?)
+                ON CONFLICT(subject_id) DO UPDATE SET
+                    enabled = excluded.enabled,
+                    updated_by = excluded.updated_by,
+                    updated_at = excluded.updated_at
+                """,
+                (subject_id, int(enabled), updated_by, now),
+            )
+            await db.commit()
+        await self.audit(
+            AuditEventType.MEMORY_ENABLED if enabled else AuditEventType.MEMORY_DISABLED,
+            actor_id=updated_by,
+            detail={"subject_id": subject_id},
+        )
+
+    async def is_memory_enabled(self, subject_id: str) -> bool:
+        async with aiosqlite.connect(self.path) as db:
+            rows = await db.execute_fetchall(
+                "SELECT enabled FROM memory_preferences WHERE subject_id = ?",
+                (subject_id,),
+            )
+        rows_list = list(rows)
+        if not rows_list:
+            return True
+        return bool(rows_list[0][0])
+
     async def save_writeback_execution(
         self,
         *,
@@ -471,6 +904,37 @@ class SQLiteStore:
             "undo_preview": row[9],
             "executed_at": row[10],
         }
+
+    async def list_recent_writeback_executions(
+        self,
+        actor_id: str,
+        *,
+        limit: int = 10,
+    ) -> list[dict[str, Any]]:
+        async with aiosqlite.connect(self.path) as db:
+            rows = await db.execute_fetchall(
+                """
+                SELECT action_id, action_type, target_json, result_json,
+                       undo_action_type, executed_at, reverted_at
+                FROM writeback_executions
+                WHERE actor_id = ?
+                ORDER BY executed_at DESC
+                LIMIT ?
+                """,
+                (actor_id, max(limit, 0)),
+            )
+        return [
+            {
+                "action_id": row[0],
+                "action_type": row[1],
+                "target": json.loads(row[2]),
+                "result": json.loads(row[3]),
+                "reversible": row[4] is not None and row[6] is None,
+                "executed_at": row[5],
+                "reverted_at": row[6],
+            }
+            for row in rows
+        ]
 
     async def mark_writeback_reverted(self, action_id: str) -> None:
         async with aiosqlite.connect(self.path) as db:

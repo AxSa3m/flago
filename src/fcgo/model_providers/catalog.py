@@ -70,6 +70,16 @@ def build_model_catalog(settings: Settings) -> list[ModelCatalogItem]:
                 "MINIMAX_MODEL": settings.minimax_model,
             },
         ),
+        _item(
+            provider="claude",
+            model=settings.anthropic_model,
+            required={
+                "ANTHROPIC_API_KEY": settings.anthropic_api_key.get_secret_value(),
+                "ANTHROPIC_BASE_URL": settings.anthropic_base_url,
+                "ANTHROPIC_MODEL": settings.anthropic_model,
+                "ANTHROPIC_VERSION": settings.anthropic_version,
+            },
+        ),
         ModelCatalogItem(provider="echo", model="echo", configured=True),
     ]
     return items

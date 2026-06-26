@@ -115,8 +115,17 @@ class WritebackService:
             undo_preview=undo.get("preview"),
         )
         undo_of_action_id = _optional_text(action["payload"].get("undo_of_action_id"))
-        if action_type == WriteActionType.BITABLE_DELETE_RECORD and undo_of_action_id:
+        if undo_of_action_id:
             await self.store.mark_writeback_reverted(undo_of_action_id)
+            await self.store.audit(
+                AuditEventType.WRITE_REVERTED,
+                actor_id=actor_id,
+                action_id=undo_of_action_id,
+                detail={
+                    "undo_action_id": action_id,
+                    "undo_action_type": action["action_type"],
+                },
+            )
         await self.store.audit(
             AuditEventType.WRITE_EXECUTED,
             actor_id=actor_id,
@@ -176,6 +185,10 @@ def _validate_writeback_limits(
         text = _optional_text(payload.get("text"))
         if text and len(text) > settings.max_writeback_chars:
             return f"消息文本过长，限制 {settings.max_writeback_chars} 字符"
+    if action_type == WriteActionType.DOC_DELETE_BLOCK:
+        block_ids = payload.get("block_ids")
+        if not isinstance(block_ids, list) or not block_ids:
+            return "文档撤回缺少新增块信息"
     return None
 
 
@@ -231,25 +244,59 @@ def _undo_metadata(
     payload: dict[str, Any],  # noqa: ARG001 - future undo metadata may need payload snapshots
     result: dict[str, Any],
 ) -> dict[str, Any]:
-    if action_type != WriteActionType.BITABLE_CREATE_RECORD:
+    if _optional_text(payload.get("undo_of_action_id")):
         return {}
-    record_id = _bitable_record_id(result)
-    if not record_id:
-        return {}
-    app_token = _optional_text(target.get("app_token"))
-    table_id = _optional_text(target.get("table_id"))
-    if not app_token or not table_id:
-        return {}
-    return {
-        "action_type": WriteActionType.BITABLE_DELETE_RECORD.value,
-        "target": {
-            "app_token": app_token,
-            "table_id": table_id,
-            "record_id": record_id,
-        },
-        "payload": {"undo_of_action_id": action_id},
-        "preview": f"撤回上一次写回：删除多维表格记录 {record_id}",
-    }
+    if action_type == WriteActionType.DOC_APPEND:
+        document_id = _optional_text(target.get("document_id"))
+        block_ids = _doc_created_block_ids(result)
+        if not document_id or not block_ids:
+            return {}
+        return {
+            "action_type": WriteActionType.DOC_DELETE_BLOCK.value,
+            "target": {"document_id": document_id},
+            "payload": {
+                "block_ids": block_ids,
+                "undo_of_action_id": action_id,
+            },
+            "preview": f"撤回上一次写回：删除文档中新追加的 {len(block_ids)} 个内容块",
+        }
+    if action_type == WriteActionType.BITABLE_CREATE_RECORD:
+        record_id = _bitable_record_id(result)
+        if not record_id:
+            return {}
+        app_token = _optional_text(target.get("app_token"))
+        table_id = _optional_text(target.get("table_id"))
+        if not app_token or not table_id:
+            return {}
+        return {
+            "action_type": WriteActionType.BITABLE_DELETE_RECORD.value,
+            "target": {
+                "app_token": app_token,
+                "table_id": table_id,
+                "record_id": record_id,
+            },
+            "payload": {"undo_of_action_id": action_id},
+            "preview": f"撤回上一次写回：删除多维表格记录 {record_id}",
+        }
+    if action_type == WriteActionType.SHEET_WRITE_RANGE:
+        previous_values = result.get("previous_values")
+        spreadsheet_token = _optional_text(target.get("spreadsheet_token"))
+        range_name = _optional_text(target.get("range"))
+        if not isinstance(previous_values, list) or not spreadsheet_token or not range_name:
+            return {}
+        return {
+            "action_type": WriteActionType.SHEET_WRITE_RANGE.value,
+            "target": {
+                "spreadsheet_token": spreadsheet_token,
+                "range": range_name,
+            },
+            "payload": {
+                "values": previous_values,
+                "undo_of_action_id": action_id,
+            },
+            "preview": f"撤回上一次写回：恢复电子表格范围 {range_name}",
+        }
+    return {}
 
 
 def _bitable_record_id(result: dict[str, Any]) -> str | None:
@@ -263,6 +310,29 @@ def _bitable_record_id(result: dict[str, Any]) -> str | None:
         if isinstance(candidate, str) and candidate.strip():
             return candidate
     return None
+
+
+def _doc_created_block_ids(result: dict[str, Any]) -> list[str]:
+    ids: list[str] = []
+    for item in _doc_created_block_candidates(result):
+        if not isinstance(item, dict):
+            continue
+        block_id = item.get("block_id") or item.get("id")
+        if isinstance(block_id, str) and block_id.strip() and block_id not in ids:
+            ids.append(block_id.strip())
+    return ids
+
+
+def _doc_created_block_candidates(result: dict[str, Any]) -> list[Any]:
+    candidates: list[Any] = []
+    for key in ("children", "items", "blocks"):
+        value = result.get(key)
+        if isinstance(value, list):
+            candidates.extend(value)
+    children = _nested(result, "block", "children")
+    if isinstance(children, list):
+        candidates.extend(children)
+    return candidates
 
 
 def _nested(data: dict[str, Any], *keys: str) -> Any:

@@ -38,7 +38,8 @@ def test_prompt_includes_authorized_resource_content() -> None:
 
     prompt = GeminiProvider._build_prompt(request)
 
-    assert "已按用户授权读取的资源内容" in prompt
+    assert "Agent observations" in prompt
+    assert "kind: resource_result" in prompt
     assert "课程大纲" in prompt
     assert "这个课程包含三个项目。" in prompt
 
@@ -79,10 +80,28 @@ def test_prompt_keeps_writeback_paused_on_read_only_branch() -> None:
 
     prompt = GeminiProvider._build_prompt(request)
 
-    assert "写入、修改、删除、创建飞书内容的功能已暂停" in prompt
+    assert "当前写回功能已关闭" in prompt
     assert "不要输出写回 JSON" in prompt
-    assert "可复制的草稿、摘要或操作建议" in prompt
+    assert "可复制的草稿或操作建议" in prompt
     assert "fcgo_writeback" not in prompt
+
+
+def test_prompt_enables_confirmed_writeback_when_runtime_switch_is_on() -> None:
+    request = AssistantRequest(
+        actor_id="ou_user",
+        conversation_id="chat-1",
+        conversation_type=ConversationType.PRIVATE,
+        text="把测试文字写入文档",
+        writeback_enabled=True,
+    )
+
+    prompt = GeminiProvider._build_prompt(request)
+
+    assert "写回功能已启用" in prompt
+    assert "确认卡片由系统自动生成" in prompt
+    assert "不要询问用户是否生成确认卡片" in prompt
+    assert "不能声称已经写入" in prompt
+    assert "写回功能已关闭" not in prompt
 
 
 def test_gemini_provider_exposes_unified_provider_config() -> None:

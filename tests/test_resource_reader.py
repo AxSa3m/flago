@@ -1,15 +1,26 @@
+import json
+from io import BytesIO
+
+import aiosqlite
 import pytest
 import respx
 from httpx import Response
+from pypdf import PdfWriter
 
 from fcgo.config import Settings
-from fcgo.models import ResourceRef, ResourceType
-from fcgo.resources.reader import FeishuResourceReader, WebResourceReader
+from fcgo.feishu.openapi import DownloadedFile
+from fcgo.models import AuditEventType, ResourceRef, ResourceType
+from fcgo.resources.reader import FeishuResourceReader, FeishuResourceSearcher, WebResourceReader
+from fcgo.storage import SQLiteStore
 
 
 class FakeFeishuAPI:
     def __init__(self) -> None:
         self.doc_calls: list[tuple[str, str]] = []
+        self.doc_block_calls: list[tuple[str, str, int]] = []
+        self.doc_blocks_payload: list[dict[str, object]] = []
+        self.media_download_calls: list[tuple[str, str, int]] = []
+        self.media_payloads: dict[str, DownloadedFile] = {}
         self.wiki_calls: list[tuple[str, str]] = []
         self.doc_payload: dict[str, str] = {"title": "测试文档", "content": "文档正文"}
         self.sheet_calls: list[tuple[str, str, str]] = []
@@ -54,10 +65,40 @@ class FakeFeishuAPI:
             ],
             "has_more": False,
         }
+        self.search_docs_calls: list[tuple[str, str, int]] = []
+        self.search_docs_payload: dict[str, object] = {
+            "docs_entities": [
+                {"docs_token": "docx123", "docs_type": "doc", "title": "测试文档"},
+                {"docs_token": "sht123", "docs_type": "sheet", "title": "测试表格"},
+                {"docs_token": "app123", "docs_type": "bitable", "title": "测试多维表"},
+            ]
+        }
+        self.search_wiki_calls: list[tuple[str, str, int]] = []
+        self.search_wiki_payload: dict[str, object] = {"items": []}
 
     async def get_doc_raw_content(self, document_id: str, actor_id: str) -> dict[str, str]:
         self.doc_calls.append((document_id, actor_id))
         return self.doc_payload
+
+    async def list_doc_blocks(
+        self,
+        document_id: str,
+        actor_id: str,
+        *,
+        max_items: int,
+    ) -> list[dict[str, object]]:
+        self.doc_block_calls.append((document_id, actor_id, max_items))
+        return self.doc_blocks_payload[:max_items]
+
+    async def download_doc_media(
+        self,
+        file_token: str,
+        actor_id: str,
+        *,
+        max_bytes: int,
+    ) -> DownloadedFile:
+        self.media_download_calls.append((file_token, actor_id, max_bytes))
+        return self.media_payloads[file_token]
 
     async def get_wiki_node(self, wiki_token: str, actor_id: str) -> dict[str, dict[str, str]]:
         self.wiki_calls.append((wiki_token, actor_id))
@@ -114,12 +155,36 @@ class FakeFeishuAPI:
         self.bitable_record_calls.append((app_token, table_id, actor_id, limit, view_id))
         return self.bitable_records_payload
 
+    async def search_docs(
+        self,
+        query: str,
+        actor_id: str,
+        *,
+        count: int,
+    ) -> dict[str, object]:
+        self.search_docs_calls.append((query, actor_id, count))
+        return self.search_docs_payload
+
+    async def search_wiki_nodes(
+        self,
+        query: str,
+        actor_id: str,
+        *,
+        page_size: int,
+    ) -> dict[str, object]:
+        self.search_wiki_calls.append((query, actor_id, page_size))
+        return self.search_wiki_payload
+
 
 def _settings(
     *,
     max_resource_chars: int = 120_000,
     max_sheet_rows: int = 200,
     max_sheet_columns: int = 26,
+    feishu_docs_base_url: str = "https://docs.feishu.cn",
+    embedded_file_limit: int = 3,
+    pdf_default_pages: int = 2,
+    pdf_max_pages: int = 10,
 ) -> Settings:
     return Settings(
         env="test",
@@ -127,7 +192,156 @@ def _settings(
         max_resource_chars=max_resource_chars,
         max_sheet_rows=max_sheet_rows,
         max_sheet_columns=max_sheet_columns,
+        feishu_docs_base_url=feishu_docs_base_url,
+        embedded_file_limit=embedded_file_limit,
+        pdf_default_pages=pdf_default_pages,
+        pdf_max_pages=pdf_max_pages,
     )
+
+
+@pytest.mark.asyncio
+async def test_search_feishu_resources_uses_configured_docs_base_url() -> None:
+    api = FakeFeishuAPI()
+    searcher = FeishuResourceSearcher(
+        _settings(feishu_docs_base_url="https://my.feishu.cn"),
+        api,
+    )
+
+    refs = await searcher.search("蓝色火箭", "ou_user", limit=5)
+
+    assert api.search_docs_calls == [("蓝色火箭", "ou_user", 5)]
+    assert [ref.url for ref in refs] == [
+        "https://my.feishu.cn/docx/docx123",
+        "https://my.feishu.cn/sheets/sht123",
+        "https://my.feishu.cn/base/app123",
+    ]
+    assert [ref.title for ref in refs] == ["测试文档", "测试表格", "测试多维表"]
+
+
+@pytest.mark.asyncio
+async def test_search_feishu_resources_prefers_api_returned_url() -> None:
+    api = FakeFeishuAPI()
+    api.search_docs_payload = {
+        "docs_entities": [
+            {
+                "docs_token": "docx123",
+                "docs_type": "doc",
+                "title": "测试文档",
+                "url": "https://my.feishu.cn/docx/docx123?from=space_home_recent",
+            }
+        ]
+    }
+    searcher = FeishuResourceSearcher(_settings(), api)
+
+    refs = await searcher.search("蓝色火箭", "ou_user", limit=5)
+
+    assert refs[0].url == "https://my.feishu.cn/docx/docx123?from=space_home_recent"
+    assert refs[0].title == "测试文档"
+
+
+@pytest.mark.asyncio
+async def test_search_feishu_resources_includes_wiki_results() -> None:
+    api = FakeFeishuAPI()
+    api.search_docs_payload = {"docs_entities": []}
+    api.search_wiki_payload = {
+        "items": [
+            {
+                "node_id": "V0pewArU0isGmAkltH3cuhxunwj",
+                "obj_token": "docx_real",
+                "obj_type": 8,
+                "title": "情感调优 无声对白 分镜",
+                "url": "https://my.feishu.cn/wiki/V0pewArU0isGmAkltH3cuhxunwj",
+            }
+        ]
+    }
+    searcher = FeishuResourceSearcher(_settings(), api)
+
+    refs = await searcher.search("情感调优", "ou_user", limit=5)
+
+    assert api.search_wiki_calls == [("情感调优", "ou_user", 5)]
+    assert refs[0].type == ResourceType.FEISHU_DOC
+    assert refs[0].url == "https://my.feishu.cn/wiki/V0pewArU0isGmAkltH3cuhxunwj"
+    assert refs[0].token == "docx_real"
+    assert refs[0].title == "情感调优 无声对白 分镜"
+    assert refs[0].source_kind == "search:wiki:feishu_doc"
+
+
+@pytest.mark.asyncio
+async def test_search_feishu_resources_tries_fuzzy_query_variants() -> None:
+    api = FakeFeishuAPI()
+    api.search_docs_payload = {"docs_entities": []}
+
+    async def search_docs(query: str, actor_id: str, *, count: int) -> dict[str, object]:
+        api.search_docs_calls.append((query, actor_id, count))
+        if query == "情感调优":
+            return {
+                "docs_entities": [
+                    {"docs_token": "docx456", "docs_type": "doc", "title": "情感调优剧本"}
+                ]
+            }
+        return {"docs_entities": []}
+
+    api.search_docs = search_docs  # type: ignore[method-assign]
+    searcher = FeishuResourceSearcher(_settings(), api)
+
+    refs = await searcher.search("情感调优 剧本", "ou_user", limit=5)
+
+    assert [call[0] for call in api.search_docs_calls] == [
+        "情感调优 剧本",
+        "情感调优剧本",
+        "情感调优",
+    ]
+    assert refs[0].token == "docx456"
+
+
+@pytest.mark.asyncio
+async def test_search_feishu_resources_does_not_fall_back_to_generic_terms() -> None:
+    api = FakeFeishuAPI()
+    api.search_docs_payload = {"docs_entities": []}
+    searcher = FeishuResourceSearcher(_settings(), api)
+
+    refs = await searcher.search("情感调优 剧本", "ou_user", limit=5)
+
+    assert refs == []
+    assert [call[0] for call in api.search_docs_calls] == [
+        "情感调优 剧本",
+        "情感调优剧本",
+        "情感调优",
+    ]
+
+
+@pytest.mark.asyncio
+async def test_search_feishu_resources_prefers_long_specific_terms() -> None:
+    api = FakeFeishuAPI()
+    api.search_docs_payload = {"docs_entities": []}
+
+    async def search_wiki_nodes(query: str, actor_id: str, *, page_size: int) -> dict[str, object]:
+        api.search_wiki_calls.append((query, actor_id, page_size))
+        if query == "情感调优":
+            return {
+                "items": [
+                    {
+                        "node_id": "V0pewArU0isGmAkltH3cuhxunwj",
+                        "obj_token": "docx_real",
+                        "obj_type": 8,
+                        "title": "情感调优 无声对白 分镜",
+                        "url": "https://my.feishu.cn/wiki/V0pewArU0isGmAkltH3cuhxunwj",
+                    }
+                ]
+            }
+        return {"items": []}
+
+    api.search_wiki_nodes = search_wiki_nodes  # type: ignore[method-assign]
+    searcher = FeishuResourceSearcher(_settings(), api)
+
+    refs = await searcher.search("一品 情感调优", "ou_user", limit=5)
+
+    assert [call[0] for call in api.search_wiki_calls] == [
+        "一品 情感调优",
+        "一品情感调优",
+        "情感调优",
+    ]
+    assert refs[0].url == "https://my.feishu.cn/wiki/V0pewArU0isGmAkltH3cuhxunwj"
 
 
 @pytest.mark.asyncio
@@ -147,6 +361,229 @@ async def test_read_feishu_doc_content_without_persistence() -> None:
     assert result.content == "文档正文"
     assert result.truncated is False
     assert api.doc_calls == [("docx123", "ou_user")]
+
+
+@pytest.mark.asyncio
+async def test_read_feishu_doc_extracts_default_first_two_pdf_pages() -> None:
+    api = FakeFeishuAPI()
+    api.doc_blocks_payload = [
+        {
+            "block_type": 23,
+            "file": {"token": "file-pdf", "name": "测试附件.pdf"},
+        }
+    ]
+    api.media_payloads["file-pdf"] = DownloadedFile(
+        content=_text_pdf(["First page", "Second page", "Third page"]),
+        content_type="application/pdf",
+        filename="测试附件.pdf",
+    )
+    reader = FeishuResourceReader(_settings(), api)
+    ref = ResourceRef(
+        type=ResourceType.FEISHU_DOC,
+        url="https://docs.feishu.cn/docx/docx123",
+        token="docx123",
+    )
+
+    result = await reader.read(ref, "ou_user")
+
+    assert "[PDF 第 1 页]" in result.content
+    assert "First page" in result.content
+    assert "[PDF 第 2 页]" in result.content
+    assert "Second page" in result.content
+    assert "Third page" not in result.content
+    assert api.doc_block_calls == [("docx123", "ou_user", 1000)]
+    assert api.media_download_calls == [("file-pdf", "ou_user", 20 * 1024 * 1024)]
+
+
+@pytest.mark.asyncio
+async def test_read_feishu_doc_records_embedded_asset_anchor_metadata() -> None:
+    api = FakeFeishuAPI()
+    api.doc_blocks_payload = [
+        {"block_id": "text-1", "parent_id": "docx123", "block_type": 2},
+        {
+            "block_id": "file-1",
+            "parent_id": "docx123",
+            "block_type": 23,
+            "file": {"token": "file-docx", "name": "Claude Code登录指引.docx"},
+        },
+    ]
+    reader = FeishuResourceReader(_settings(embedded_file_limit=0), api)
+    ref = ResourceRef(
+        type=ResourceType.FEISHU_DOC,
+        url="https://docs.feishu.cn/docx/docx123",
+        token="docx123",
+    )
+
+    result = await reader.read(ref, "ou_user")
+
+    assert result.metadata["embedded_assets"] == [
+        {
+            "token": "file-docx",
+            "kind": "file",
+            "name": "Claude Code登录指引.docx",
+            "block_id": "file-1",
+            "parent_block_id": "docx123",
+            "index": 1,
+        }
+    ]
+    assert api.media_download_calls == []
+
+
+@pytest.mark.asyncio
+async def test_read_feishu_doc_extracts_requested_pdf_page() -> None:
+    api = FakeFeishuAPI()
+    api.doc_blocks_payload = [
+        {
+            "block_type": 2,
+            "text": {
+                "elements": [
+                    {
+                        "text_run": {"content": "附件"},
+                        "file": {
+                            "file_token": "inline-pdf",
+                            "name": "内联附件.pdf",
+                        },
+                    }
+                ]
+            },
+        }
+    ]
+    api.media_payloads["inline-pdf"] = DownloadedFile(
+        content=_text_pdf(["Page one", "Page two", "Page three"]),
+        content_type="application/pdf",
+        filename="内联附件.pdf",
+    )
+    reader = FeishuResourceReader(_settings(), api)
+    ref = ResourceRef(
+        type=ResourceType.FEISHU_DOC,
+        url="https://docs.feishu.cn/docx/docx123",
+        token="docx123",
+        range_hint="pdf:page:3",
+    )
+
+    result = await reader.read(ref, "ou_user")
+
+    assert "[PDF 第 3 页]" in result.content
+    assert "Page three" in result.content
+    assert "Page one" not in result.content
+    assert "Page two" not in result.content
+
+
+@pytest.mark.asyncio
+async def test_read_feishu_doc_reports_scanned_pdf_without_text() -> None:
+    api = FakeFeishuAPI()
+    api.doc_blocks_payload = [
+        {"block_type": 23, "file": {"token": "scan-pdf", "name": "扫描件.pdf"}}
+    ]
+    api.media_payloads["scan-pdf"] = DownloadedFile(
+        content=_blank_pdf(),
+        content_type="application/pdf",
+        filename="扫描件.pdf",
+    )
+    reader = FeishuResourceReader(_settings(), api)
+    ref = ResourceRef(
+        type=ResourceType.FEISHU_DOC,
+        url="https://docs.feishu.cn/docx/docx123",
+        token="docx123",
+    )
+
+    result = await reader.read(ref, "ou_user")
+
+    assert "可能是扫描版 PDF" in result.content
+    assert "暂不支持 OCR" in result.content
+
+
+@pytest.mark.asyncio
+async def test_read_feishu_doc_extracts_text_attachment() -> None:
+    api = FakeFeishuAPI()
+    api.doc_blocks_payload = [
+        {"block_type": 23, "file": {"token": "file-text", "name": "说明.md"}}
+    ]
+    api.media_payloads["file-text"] = DownloadedFile(
+        content="# 目标\n支持多格式附件".encode(),
+        content_type="text/markdown",
+        filename="说明.md",
+    )
+    reader = FeishuResourceReader(_settings(), api)
+    ref = ResourceRef(
+        type=ResourceType.FEISHU_DOC,
+        url="https://docs.feishu.cn/docx/docx123",
+        token="docx123",
+    )
+
+    result = await reader.read(ref, "ou_user")
+
+    assert "### 文本文件：说明.md" in result.content
+    assert "支持多格式附件" in result.content
+    assert api.media_download_calls == [("file-text", "ou_user", 20 * 1024 * 1024)]
+
+
+@pytest.mark.asyncio
+async def test_read_feishu_doc_extracts_image_metadata_and_document_links() -> None:
+    api = FakeFeishuAPI()
+    image = BytesIO()
+    from PIL import Image
+
+    Image.new("RGB", (64, 48), color="white").save(image, format="PNG")
+    api.doc_blocks_payload = [
+        {
+            "block_type": 27,
+            "image": {
+                "token": "image-1",
+                "caption": {"content": "产品界面截图"},
+            },
+        },
+        {
+            "block_type": 2,
+            "text": {
+                "elements": [
+                    {
+                        "text_run": {
+                            "content": "项目主页",
+                            "text_element_style": {
+                                "link": {"url": "https%3A%2F%2Fexample.com%2Fproject"}
+                            },
+                        }
+                    },
+                    {
+                        "mention_doc": {
+                            "title": "关联方案",
+                            "url": "https%3A%2F%2Fmy.feishu.cn%2Fdocx%2Fdoc123",
+                        }
+                    },
+                ]
+            },
+        },
+        {
+            "block_type": 26,
+            "iframe": {
+                "component": {
+                    "url": "https%3A%2F%2Fexample.com%2Fdashboard",
+                    "iframe_type": 99,
+                }
+            },
+        },
+    ]
+    api.media_payloads["image-1"] = DownloadedFile(
+        content=image.getvalue(),
+        content_type="image/png",
+        filename="界面.png",
+    )
+    reader = FeishuResourceReader(_settings(), api)
+    ref = ResourceRef(
+        type=ResourceType.FEISHU_DOC,
+        url="https://docs.feishu.cn/docx/docx123",
+        token="docx123",
+    )
+
+    result = await reader.read(ref, "ou_user")
+
+    assert "### 图片：界面.png" in result.content
+    assert "尺寸：64 × 48" in result.content
+    assert "文档描述：产品界面截图" in result.content
+    assert "项目主页 — https://example.com/project" in result.content
+    assert "@文档：关联方案 — https://my.feishu.cn/docx/doc123" in result.content
+    assert "内嵌网页：https://example.com/dashboard" in result.content
 
 
 @pytest.mark.asyncio
@@ -201,6 +638,38 @@ async def test_read_feishu_wiki_rejects_non_doc_nodes() -> None:
 
     assert result.error == "暂不支持读取该类型的 Wiki 节点：mindnote"
     assert api.doc_calls == []
+
+
+@pytest.mark.asyncio
+async def test_read_feishu_resource_audits_error_category_without_raw_error(tmp_path) -> None:
+    store = SQLiteStore(tmp_path / "fcgo.sqlite3")
+    await store.init()
+    api = FakeFeishuAPI()
+    api.store = store
+    api.wiki_payload = {"node": {"obj_token": "mind123", "obj_type": "mindnote"}}
+    reader = FeishuResourceReader(_settings(), api)
+    ref = ResourceRef(
+        type=ResourceType.FEISHU_DOC,
+        url="https://docs.feishu.cn/wiki/wiki123",
+        source_kind="wiki",
+        token="wiki123",
+    )
+
+    result = await reader.read(ref, "ou_user")
+
+    assert result.error == "暂不支持读取该类型的 Wiki 节点：mindnote"
+    audit_details = await _audit_details(store, AuditEventType.RESOURCE_READ.value)
+    assert audit_details == [
+        {
+            "error_length": len("暂不支持读取该类型的 Wiki 节点：mindnote"),
+            "error_type": "unsupported_resource",
+            "has_error": True,
+            "resource_type": "feishu_doc",
+            "source_kind": "wiki",
+            "truncated": False,
+        }
+    ]
+    assert "mindnote" not in json.dumps(audit_details, ensure_ascii=False)
 
 
 @pytest.mark.asyncio
@@ -638,3 +1107,66 @@ async def test_read_web_resource_truncates_text_by_limit() -> None:
 
     assert result.truncated is True
     assert result.content == "12345\n\n[内容已截断]"
+
+
+async def _audit_details(store: SQLiteStore, event_type: str) -> list[dict[str, object]]:
+    async with aiosqlite.connect(store.path) as db:
+        rows = await db.execute_fetchall(
+            "SELECT detail_json FROM audit_events WHERE event_type = ? ORDER BY id",
+            (event_type,),
+        )
+    return [json.loads(str(row[0])) for row in rows]
+
+
+def _text_pdf(page_texts: list[str]) -> bytes:
+    font_object_id = 3 + len(page_texts) * 2
+    kids = " ".join(f"{3 + index * 2} 0 R" for index in range(len(page_texts)))
+    objects: list[bytes] = [
+        b"<< /Type /Catalog /Pages 2 0 R >>",
+        f"<< /Type /Pages /Kids [{kids}] /Count {len(page_texts)} >>".encode(),
+    ]
+    for index, text in enumerate(page_texts):
+        content_object_id = 4 + index * 2
+        escaped = text.replace("\\", "\\\\").replace("(", "\\(").replace(")", "\\)")
+        stream = f"BT /F1 14 Tf 72 720 Td ({escaped}) Tj ET".encode()
+        objects.extend(
+            [
+                (
+                    "<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] "
+                    f"/Resources << /Font << /F1 {font_object_id} 0 R >> >> "
+                    f"/Contents {content_object_id} 0 R >>"
+                ).encode(),
+                f"<< /Length {len(stream)} >>\nstream\n".encode()
+                + stream
+                + b"\nendstream",
+            ]
+        )
+    objects.append(b"<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>")
+
+    result = bytearray(b"%PDF-1.4\n%\xe2\xe3\xcf\xd3\n")
+    offsets = [0]
+    for object_id, body in enumerate(objects, start=1):
+        offsets.append(len(result))
+        result.extend(f"{object_id} 0 obj\n".encode())
+        result.extend(body)
+        result.extend(b"\nendobj\n")
+    xref_offset = len(result)
+    result.extend(f"xref\n0 {len(objects) + 1}\n".encode())
+    result.extend(b"0000000000 65535 f \n")
+    for offset in offsets[1:]:
+        result.extend(f"{offset:010d} 00000 n \n".encode())
+    result.extend(
+        (
+            f"trailer\n<< /Size {len(objects) + 1} /Root 1 0 R >>\n"
+            f"startxref\n{xref_offset}\n%%EOF\n"
+        ).encode()
+    )
+    return bytes(result)
+
+
+def _blank_pdf() -> bytes:
+    output = BytesIO()
+    writer = PdfWriter()
+    writer.add_blank_page(width=612, height=792)
+    writer.write(output)
+    return output.getvalue()

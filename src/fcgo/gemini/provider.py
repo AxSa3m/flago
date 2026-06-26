@@ -109,10 +109,13 @@ class GeminiProvider:
                 thinking_budget=self.thinking_budget,
                 include_thoughts=False,
             )
-        return types.GenerateContentConfig(
-            max_output_tokens=max_output_tokens or self.max_output_tokens,
-            thinking_config=thinking_config,
-        )
+        config: dict[str, Any] = {}
+        output_limit = max_output_tokens or self.max_output_tokens
+        if output_limit is not None:
+            config["max_output_tokens"] = output_limit
+        if thinking_config is not None:
+            config["thinking_config"] = thinking_config
+        return types.GenerateContentConfig(**config)
 
     @staticmethod
     def _build_prompt(request: AssistantRequest) -> str:
@@ -128,7 +131,9 @@ def _gemini_provider_config(settings: Settings) -> ProviderConfig:
         base_url=settings.gemini_base_url,
         http_proxy=settings.gemini_http_proxy,
         timeout_seconds=settings.gemini_timeout_seconds,
-        max_output_tokens=settings.gemini_max_output_tokens,
+        max_output_tokens=settings.effective_model_max_output_tokens(
+            settings.gemini_max_output_tokens,
+        ),
         capabilities=[
             ProviderCapability.CHAT,
             ProviderCapability.JSON_OUTPUT,

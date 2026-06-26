@@ -76,6 +76,57 @@ def test_parse_text_message_from_dict_group_mention() -> None:
     assert message.mentions[0].name == "Gemini助手"
 
 
+def test_parse_text_message_extracts_link_preview_url() -> None:
+    message = parse_text_message(
+        {
+            "event": {
+                "sender": {"sender_id": {"open_id": "ou_user"}},
+                "message": {
+                    "message_id": "om_link",
+                    "chat_id": "oc_chat",
+                    "chat_type": "p2p",
+                    "message_type": "text",
+                    "content": (
+                        '{"text":"这篇文章呢",'
+                        '"url":"https://my.feishu.cn/wiki/AiDzwcQLli2EQYkaKyWckTPAnjj?from=navigation"}'
+                    ),
+                    "mentions": [],
+                },
+            }
+        }
+    )
+
+    assert message is not None
+    assert "这篇文章呢" in message.text
+    assert "https://my.feishu.cn/wiki/AiDzwcQLli2EQYkaKyWckTPAnjj?from=navigation" in message.text
+
+
+def test_parse_post_message_extracts_nested_feishu_link() -> None:
+    message = parse_text_message(
+        {
+            "event": {
+                "sender": {"sender_id": {"open_id": "ou_user"}},
+                "message": {
+                    "message_id": "om_post",
+                    "chat_id": "oc_chat",
+                    "chat_type": "p2p",
+                    "message_type": "post",
+                    "content": (
+                        '{"content":[[{"tag":"text","text":"看看 "},'
+                        '{"tag":"a","text":"英国giffgaff实体SIM卡使用教程",'
+                        '"href":"https://my.feishu.cn/wiki/AiDzwcQLli2EQYkaKyWckTPAnjj?from=navigation"}]]}'
+                    ),
+                    "mentions": [],
+                },
+            }
+        }
+    )
+
+    assert message is not None
+    assert "英国giffgaff实体SIM卡使用教程" in message.text
+    assert "https://my.feishu.cn/wiki/AiDzwcQLli2EQYkaKyWckTPAnjj?from=navigation" in message.text
+
+
 def test_parse_group_message_not_mentioning_configured_bot() -> None:
     message = parse_text_message(
         {

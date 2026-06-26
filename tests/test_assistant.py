@@ -1,16 +1,22 @@
 from datetime import UTC, datetime, timedelta
+from typing import Any
 
 import pytest
 
 from fcgo.agent import Assistant
+from fcgo.agent.assistant import _resource_search_query
+from fcgo.agent.search_planner import ModelResourceSearchPlanner, ResourceSearchPlanningError
 from fcgo.gemini.provider import EchoModelProvider
 from fcgo.models import (
     ActionProposal,
     AssistantRequest,
     AssistantResponse,
+    AuditEventType,
+    ChatContextMessage,
     ConversationType,
     ResourceReadResult,
     ResourceRef,
+    ResourceSearchPlan,
     ResourceType,
     WriteActionType,
 )
@@ -23,6 +29,33 @@ class RecordingModelProvider:
     async def generate(self, request: AssistantRequest) -> AssistantResponse:
         self.requests.append(request)
         return AssistantResponse(text="ok")
+
+
+class PlannerJsonModelProvider:
+    def __init__(self, text: str) -> None:
+        self.text = text
+        self.requests: list[AssistantRequest] = []
+
+    async def generate(self, request: AssistantRequest) -> AssistantResponse:
+        self.requests.append(request)
+        return AssistantResponse(text=self.text)
+
+
+class DocsFeishuLinkModelProvider:
+    async def generate(self, request: AssistantRequest) -> AssistantResponse:  # noqa: ARG002
+        return AssistantResponse(
+            text=(
+                "链接：[测试文档]"
+                "(https://docs.feishu.cn/docx/docx123?from=old_context)"
+            )
+        )
+
+
+class UnknownFeishuLinkModelProvider:
+    async def generate(self, request: AssistantRequest) -> AssistantResponse:  # noqa: ARG002
+        return AssistantResponse(
+            text="找到文档：情感调优剧本，链接：https://docs.feishu.cn/docx/ABC123"
+        )
 
 
 class SheetWrongProposalModelProvider:
@@ -160,6 +193,16 @@ class DocPreviewInstructionBeforeValueProvider:
                 "将以下模型生成内容写入指定文档。\n\n"
                 "写入值：\n"
                 "> 我是 FCGO，一个接入飞书的工作助手。"
+            )
+        )
+
+
+class DocConfirmationQuestionProvider:
+    async def generate(self, request: AssistantRequest) -> AssistantResponse:  # noqa: ARG002
+        return AssistantResponse(
+            text=(
+                "好的，已准备好将“正在测试的文字”写入《测试文档》末尾。"
+                "需要生成确认卡片吗？"
             )
         )
 
@@ -375,6 +418,123 @@ class StubResourceReader:
         return ResourceReadResult(ref=ref, title="测试资源", content=f"{actor_id}: 资源正文")
 
 
+class DocWithEmbeddedAssetReader:
+    async def read(self, ref: ResourceRef, actor_id: str) -> ResourceReadResult:  # noqa: ARG002
+        return ResourceReadResult(
+            ref=ref,
+            title="测试文档",
+            content="文档正文\n\n内嵌文件与图片：\n- Claude Code登录指引.docx",
+            metadata={
+                "embedded_assets": [
+                    {
+                        "token": "file-docx",
+                        "name": "Claude Code登录指引.docx",
+                        "kind": "file",
+                        "block_id": "file-1",
+                        "parent_block_id": "docx123",
+                        "index": 2,
+                    }
+                ]
+            },
+        )
+
+
+class NoTitleResourceReader:
+    async def read(self, ref: ResourceRef, actor_id: str) -> ResourceReadResult:
+        return ResourceReadResult(ref=ref, content=f"{actor_id}: 资源正文")
+
+
+class StubResourceSearcher:
+    def __init__(self) -> None:
+        self.calls: list[tuple[str, str, int]] = []
+
+    async def search(self, query: str, actor_id: str, *, limit: int) -> list[ResourceRef]:
+        self.calls.append((query, actor_id, limit))
+        return [
+            ResourceRef(
+                type=ResourceType.FEISHU_DOC,
+                url="https://my.feishu.cn/docx/docx123",
+                source_kind="search:doc",
+                token="docx123",
+            ),
+            ResourceRef(
+                type=ResourceType.FEISHU_SHEET,
+                url="https://my.feishu.cn/sheets/sht123",
+                source_kind="search:sheet",
+                token="sht123",
+            ),
+        ]
+
+
+class TitledDocResourceSearcher:
+    def __init__(self) -> None:
+        self.calls: list[tuple[str, str, int]] = []
+
+    async def search(self, query: str, actor_id: str, *, limit: int) -> list[ResourceRef]:
+        self.calls.append((query, actor_id, limit))
+        return [
+            ResourceRef(
+                type=ResourceType.FEISHU_DOC,
+                url="https://my.feishu.cn/docx/docx123",
+                title="测试文档",
+                source_kind="search:doc",
+                token="docx123",
+            )
+        ]
+
+
+class QuerySpecificResourceSearcher:
+    def __init__(self) -> None:
+        self.calls: list[tuple[str, str, int]] = []
+
+    async def search(self, query: str, actor_id: str, *, limit: int) -> list[ResourceRef]:
+        self.calls.append((query, actor_id, limit))
+        return [
+            ResourceRef(
+                type=ResourceType.FEISHU_DOC,
+                url=f"https://my.feishu.cn/docx/{query}-{index}",
+                source_kind="search:doc",
+                token=f"{query}-{index}",
+            )
+            for index in range(limit)
+        ]
+
+
+class StubResourceSearchPlanner:
+    def __init__(self, plan: ResourceSearchPlan) -> None:
+        self.plan_result = plan
+        self.requests: list[AssistantRequest] = []
+
+    async def plan(self, request: AssistantRequest) -> ResourceSearchPlan:
+        self.requests.append(request)
+        return self.plan_result
+
+
+class FailingResourceSearchPlanner:
+    async def plan(self, request: AssistantRequest) -> ResourceSearchPlan:  # noqa: ARG002
+        raise RuntimeError("planner failed with sensitive query 情感调优")
+
+
+class RecordingAuditRecorder:
+    def __init__(self) -> None:
+        self.events: list[tuple[AuditEventType, str | None, dict[str, Any]]] = []
+
+    async def audit(
+        self,
+        event_type: AuditEventType,
+        *,
+        actor_id: str | None = None,
+        action_id: str | None = None,  # noqa: ARG002
+        detail: dict[str, Any] | None = None,
+    ) -> None:
+        self.events.append((event_type, actor_id, detail or {}))
+
+
+class EmptyResourceSearcher:
+    async def search(self, query: str, actor_id: str, *, limit: int) -> list[ResourceRef]:  # noqa: ARG002
+        return []
+
+
 class ResolvingWikiResourceReader:
     async def read(self, ref: ResourceRef, actor_id: str) -> ResourceReadResult:  # noqa: ARG002
         resolved = ref.model_copy(
@@ -553,6 +713,82 @@ class BitableTenRecordsWithIdsResourceReader:
         )
 
 
+def test_resource_search_query_strips_natural_language_noise() -> None:
+    assert _resource_search_query("帮我找一篇文档，名字应该是包含 情感调优") == "情感调优"
+    assert _resource_search_query("帮我找一篇 情感调优 的文档 是个剧本") == "情感调优 剧本"
+
+
+@pytest.mark.asyncio
+async def test_model_resource_search_planner_parses_structured_json_plan() -> None:
+    provider = PlannerJsonModelProvider(
+        "```json\n"
+        "{\n"
+        '  "should_search": true,\n'
+        '  "queries": ["情感调优 无声对白 分镜", "情感调优"],\n'
+        '  "resource_types": ["wiki", "docx"],\n'
+        '  "constraints": ["剧本"],\n'
+        '  "reason": "用户要找飞书文档"\n'
+        "}\n"
+        "```"
+    )
+    planner = ModelResourceSearchPlanner(provider)
+    request = AssistantRequest(
+        actor_id="ou_user",
+        conversation_id="chat-1",
+        conversation_type=ConversationType.PRIVATE,
+        text="帮我找那篇情感调优的剧本",
+    )
+
+    plan = await planner.plan(request)
+
+    assert plan.should_search is True
+    assert plan.queries == ["情感调优 无声对白 分镜", "情感调优"]
+    assert plan.resource_types == ["wiki", "doc"]
+    assert plan.constraints == ["剧本"]
+    assert "当前用户消息" in provider.requests[0].text
+
+
+@pytest.mark.asyncio
+async def test_model_resource_search_planner_returns_empty_plan_on_invalid_json() -> None:
+    provider = PlannerJsonModelProvider("我觉得应该搜一下，但没有 JSON")
+    planner = ModelResourceSearchPlanner(provider)
+    request = AssistantRequest(
+        actor_id="ou_user",
+        conversation_id="chat-1",
+        conversation_type=ConversationType.PRIVATE,
+        text="帮我找文档",
+    )
+
+    with pytest.raises(ResourceSearchPlanningError):
+        await planner.plan(request)
+
+
+@pytest.mark.asyncio
+async def test_assistant_falls_back_to_local_search_when_planner_returns_invalid_json() -> None:
+    planner = ModelResourceSearchPlanner(PlannerJsonModelProvider("不是 JSON"))
+    provider = RecordingModelProvider()
+    searcher = StubResourceSearcher()
+    assistant = Assistant(
+        provider,
+        StubResourceReader(),
+        searcher,
+        resource_search_planner=planner,
+        resource_search_limit=5,
+        resource_search_read_limit=1,
+    )
+    request = AssistantRequest(
+        actor_id="ou_user",
+        conversation_id="chat-1",
+        conversation_type=ConversationType.PRIVATE,
+        text="帮我搜索飞书文档 项目计划",
+    )
+
+    await assistant.handle(request)
+
+    assert searcher.calls == [("项目计划", "ou_user", 5)]
+    assert provider.requests[0].resource_results[0].content == "ou_user: 资源正文"
+
+
 @pytest.mark.asyncio
 async def test_assistant_extracts_urls() -> None:
     assistant = Assistant(EchoModelProvider())
@@ -572,6 +808,36 @@ async def test_assistant_extracts_urls() -> None:
 
 
 @pytest.mark.asyncio
+async def test_assistant_passes_first_pdf_pages_hint_to_doc_reader() -> None:
+    assistant = Assistant(RecordingModelProvider(), StubResourceReader())
+    request = AssistantRequest(
+        actor_id="ou_user",
+        conversation_id="chat-1",
+        conversation_type=ConversationType.PRIVATE,
+        text="这个 PDF 前两页讲了什么 https://my.feishu.cn/docx/docx123",
+    )
+
+    await assistant.handle(request)
+
+    assert request.resource_refs[0].range_hint == "pdf:first:2"
+
+
+@pytest.mark.asyncio
+async def test_assistant_passes_exact_pdf_page_hint_to_doc_reader() -> None:
+    assistant = Assistant(RecordingModelProvider(), StubResourceReader())
+    request = AssistantRequest(
+        actor_id="ou_user",
+        conversation_id="chat-1",
+        conversation_type=ConversationType.PRIVATE,
+        text="读取 PDF 第 3 页 https://my.feishu.cn/docx/docx123",
+    )
+
+    await assistant.handle(request)
+
+    assert request.resource_refs[0].range_hint == "pdf:page:3"
+
+
+@pytest.mark.asyncio
 async def test_assistant_reads_feishu_doc_resources_before_model() -> None:
     provider = RecordingModelProvider()
     assistant = Assistant(provider, StubResourceReader())
@@ -588,6 +854,398 @@ async def test_assistant_reads_feishu_doc_resources_before_model() -> None:
     assert len(request.resource_results) == 1
     assert request.resource_results[0].content == "ou_user: 资源正文"
     assert provider.requests[0].resource_results[0].title == "测试资源"
+
+
+@pytest.mark.asyncio
+async def test_assistant_searches_user_visible_feishu_resources_on_demand() -> None:
+    provider = RecordingModelProvider()
+    searcher = StubResourceSearcher()
+    assistant = Assistant(
+        provider,
+        StubResourceReader(),
+        searcher,
+        resource_search_limit=5,
+        resource_search_read_limit=1,
+    )
+    request = AssistantRequest(
+        actor_id="ou_user",
+        conversation_id="chat-1",
+        conversation_type=ConversationType.PRIVATE,
+        text="帮我搜索飞书文档 项目计划",
+    )
+
+    await assistant.handle(request)
+
+    assert searcher.calls == [("项目计划", "ou_user", 5)]
+    assert request.resource_urls == [
+        "https://my.feishu.cn/docx/docx123",
+        "https://my.feishu.cn/sheets/sht123",
+    ]
+    assert len(request.resource_results) == 1
+    assert request.resource_results[0].ref.token == "docx123"
+    assert provider.requests[0].resource_results[0].content == "ou_user: 资源正文"
+
+
+@pytest.mark.asyncio
+async def test_assistant_treats_find_document_as_resource_search_intent() -> None:
+    provider = RecordingModelProvider()
+    searcher = StubResourceSearcher()
+    assistant = Assistant(provider, StubResourceReader(), searcher)
+    request = AssistantRequest(
+        actor_id="ou_user",
+        conversation_id="chat-1",
+        conversation_type=ConversationType.PRIVATE,
+        text="帮我找一篇 情感调优 的文档",
+    )
+
+    await assistant.handle(request)
+
+    assert searcher.calls == [("情感调优", "ou_user", 5)]
+    assert provider.requests
+
+
+@pytest.mark.asyncio
+async def test_assistant_uses_model_resource_search_plan_for_fuzzy_request() -> None:
+    provider = RecordingModelProvider()
+    searcher = StubResourceSearcher()
+    planner = StubResourceSearchPlanner(
+        ResourceSearchPlan(
+            should_search=True,
+            queries=["情感调优 无声对白 分镜", "情感调优"],
+            resource_types=["wiki", "doc"],
+        )
+    )
+    assistant = Assistant(
+        provider,
+        StubResourceReader(),
+        searcher,
+        resource_search_planner=planner,
+        resource_search_limit=5,
+        resource_search_read_limit=1,
+    )
+    request = AssistantRequest(
+        actor_id="ou_user",
+        conversation_id="chat-1",
+        conversation_type=ConversationType.PRIVATE,
+        text="帮我找那篇无声对白",
+    )
+
+    await assistant.handle(request)
+
+    assert planner.requests == [request]
+    assert searcher.calls == [
+        ("情感调优 无声对白 分镜", "ou_user", 5),
+        ("情感调优", "ou_user", 5),
+    ]
+    assert request.resource_urls == [
+        "https://my.feishu.cn/docx/docx123",
+        "https://my.feishu.cn/sheets/sht123",
+    ]
+    assert provider.requests[0].resource_results[0].content == "ou_user: 资源正文"
+
+
+@pytest.mark.asyncio
+async def test_assistant_audits_resource_search_plan_and_outcome_without_raw_query() -> None:
+    provider = RecordingModelProvider()
+    searcher = StubResourceSearcher()
+    planner = StubResourceSearchPlanner(
+        ResourceSearchPlan(
+            should_search=True,
+            queries=["情感调优 无声对白 分镜", "情感调优"],
+            resource_types=["doc", "wiki", "doc"],
+            constraints=["标题相关"],
+            reason="用户要求查找文档",
+        )
+    )
+    audit = RecordingAuditRecorder()
+    assistant = Assistant(
+        provider,
+        StubResourceReader(),
+        searcher,
+        resource_search_planner=planner,
+        audit_recorder=audit,
+        resource_search_limit=5,
+        resource_search_read_limit=1,
+    )
+    request = AssistantRequest(
+        actor_id="ou_user",
+        conversation_id="chat-1",
+        conversation_type=ConversationType.PRIVATE,
+        text="帮我找那篇无声对白",
+    )
+
+    await assistant.handle(request)
+
+    assert [event[0] for event in audit.events] == [
+        AuditEventType.AGENT_TOOL_PLANNED,
+        AuditEventType.AGENT_TOOL_EXECUTED,
+    ]
+    planned = audit.events[0][2]
+    assert planned == {
+        "tool": "resource_search",
+        "should_search": True,
+        "query_count": 2,
+        "query_lengths": [len("情感调优 无声对白 分镜"), len("情感调优")],
+        "resource_types": ["doc", "wiki"],
+        "constraint_count": 1,
+        "reason_length": 8,
+    }
+    executed = audit.events[1][2]
+    assert executed["result_count"] == 2
+    assert executed["result_types"] == {
+        ResourceType.FEISHU_DOC.value: 1,
+        ResourceType.FEISHU_SHEET.value: 1,
+    }
+    assert "情感调优" not in str(planned)
+    assert audit.events[0][1] == "ou_user"
+
+
+@pytest.mark.asyncio
+async def test_assistant_audits_resource_search_planner_failure_without_raw_error() -> None:
+    provider = RecordingModelProvider()
+    searcher = StubResourceSearcher()
+    audit = RecordingAuditRecorder()
+    assistant = Assistant(
+        provider,
+        StubResourceReader(),
+        searcher,
+        resource_search_planner=FailingResourceSearchPlanner(),
+        audit_recorder=audit,
+        resource_search_limit=5,
+        resource_search_read_limit=1,
+    )
+    request = AssistantRequest(
+        actor_id="ou_user",
+        conversation_id="chat-1",
+        conversation_type=ConversationType.PRIVATE,
+        text="帮我搜索飞书文档 项目计划",
+    )
+
+    await assistant.handle(request)
+
+    assert searcher.calls == [("项目计划", "ou_user", 5)]
+    assert audit.events[0][0] == AuditEventType.ERROR
+    assert audit.events[0][2] == {
+        "kind": "resource_search_planner_failed",
+        "tool": "resource_search",
+        "error_type": "RuntimeError",
+        "error_length": len("planner failed with sensitive query 情感调优"),
+        "fallback_used": True,
+    }
+    assert "情感调优" not in str(audit.events[0][2])
+
+
+@pytest.mark.asyncio
+async def test_assistant_searches_each_planned_topic_with_fair_limit() -> None:
+    provider = RecordingModelProvider()
+    searcher = QuerySpecificResourceSearcher()
+    planner = StubResourceSearchPlanner(
+        ResourceSearchPlan(
+            should_search=True,
+            queries=["蓝色火箭测试", "情感调优", "Ozon"],
+        )
+    )
+    assistant = Assistant(
+        provider,
+        StubResourceReader(),
+        searcher,
+        resource_search_planner=planner,
+        resource_search_limit=2,
+        resource_search_read_limit=1,
+    )
+    request = AssistantRequest(
+        actor_id="ou_user",
+        conversation_id="chat-1",
+        conversation_type=ConversationType.PRIVATE,
+        text="1是蓝色火箭测试，2.情感调优相关文档，3，Ozon相关文档的链接都发我",
+    )
+
+    await assistant.handle(request)
+
+    assert searcher.calls == [
+        ("蓝色火箭测试", "ou_user", 2),
+        ("情感调优", "ou_user", 2),
+        ("Ozon", "ou_user", 2),
+    ]
+    assert len(request.resource_urls) == 6
+
+
+@pytest.mark.asyncio
+async def test_assistant_supplements_link_summary_search_queries_from_context() -> None:
+    provider = RecordingModelProvider()
+    searcher = QuerySpecificResourceSearcher()
+    planner = StubResourceSearchPlanner(ResourceSearchPlan(should_search=False))
+    assistant = Assistant(
+        provider,
+        StubResourceReader(),
+        searcher,
+        resource_search_planner=planner,
+        resource_search_limit=1,
+        resource_search_read_limit=1,
+    )
+    request = AssistantRequest(
+        actor_id="ou_user",
+        conversation_id="chat-1",
+        conversation_type=ConversationType.PRIVATE,
+        text="把相关的文档链接汇总发我一下",
+        chat_context_messages=[
+            ChatContextMessage(
+                message_id="om-summary",
+                sender_id="assistant",
+                text=(
+                    "1. **“情感调优”文档搜索**：多次请求均未找到。\n"
+                    "2. **“蓝色火箭”相关测试**：成功定位到包含编码的文档。\n"
+                    "3. **Ozon项目搜索**：仅找到无标题资源链接。"
+                ),
+                created_at="2026-06-12T10:34:23+00:00",
+            )
+        ],
+    )
+
+    await assistant.handle(request)
+
+    assert searcher.calls == [
+        ("情感调优", "ou_user", 1),
+        ("蓝色火箭", "ou_user", 1),
+        ("Ozon", "ou_user", 1),
+    ]
+    assert len(request.resource_urls) == 3
+
+
+@pytest.mark.asyncio
+async def test_assistant_respects_model_resource_search_plan_no_search() -> None:
+    provider = RecordingModelProvider()
+    searcher = StubResourceSearcher()
+    planner = StubResourceSearchPlanner(ResourceSearchPlan(should_search=False))
+    assistant = Assistant(
+        provider,
+        StubResourceReader(),
+        searcher,
+        resource_search_planner=planner,
+    )
+    request = AssistantRequest(
+        actor_id="ou_user",
+        conversation_id="chat-1",
+        conversation_type=ConversationType.PRIVATE,
+        text="帮我搜索飞书文档 项目计划",
+    )
+
+    await assistant.handle(request)
+
+    assert searcher.calls == []
+    assert request.resource_results == []
+    assert provider.requests[0].resource_results == []
+
+
+@pytest.mark.asyncio
+async def test_assistant_rewrites_model_generated_docs_feishu_links_to_current_ref_url() -> None:
+    searcher = StubResourceSearcher()
+    assistant = Assistant(
+        DocsFeishuLinkModelProvider(),
+        StubResourceReader(),
+        searcher,
+        resource_search_limit=5,
+        resource_search_read_limit=1,
+    )
+    request = AssistantRequest(
+        actor_id="ou_user",
+        conversation_id="chat-1",
+        conversation_type=ConversationType.PRIVATE,
+        text="帮我搜索飞书文档 项目计划",
+    )
+
+    response = await assistant.handle(request)
+
+    assert "https://my.feishu.cn/docx/docx123" in response.text
+    assert "https://docs.feishu.cn/docx/docx123" not in response.text
+
+
+@pytest.mark.asyncio
+async def test_assistant_replaces_untrusted_model_feishu_links_with_real_search_results() -> None:
+    searcher = StubResourceSearcher()
+    assistant = Assistant(
+        UnknownFeishuLinkModelProvider(),
+        StubResourceReader(),
+        searcher,
+        resource_search_limit=5,
+        resource_search_read_limit=1,
+    )
+    request = AssistantRequest(
+        actor_id="ou_user",
+        conversation_id="chat-1",
+        conversation_type=ConversationType.PRIVATE,
+        text="帮我找一篇 情感调优 的文档",
+    )
+
+    response = await assistant.handle(request)
+
+    assert "ABC123" not in response.text
+    assert "我只找到了以下真实可读取的飞书结果" in response.text
+    assert "https://my.feishu.cn/docx/docx123" in response.text
+
+
+@pytest.mark.asyncio
+async def test_assistant_blocks_untrusted_model_feishu_links_without_search_results() -> None:
+    assistant = Assistant(UnknownFeishuLinkModelProvider(), StubResourceReader())
+    request = AssistantRequest(
+        actor_id="ou_user",
+        conversation_id="chat-1",
+        conversation_type=ConversationType.PRIVATE,
+        text="随便聊聊",
+    )
+
+    response = await assistant.handle(request)
+
+    assert "ABC123" not in response.text
+    assert "https://docs.feishu.cn/docx/ABC123" not in response.text
+    assert "无法确认的飞书链接" in response.text
+    assert "安全策略拦截" in response.text
+
+
+@pytest.mark.asyncio
+async def test_assistant_does_not_search_group_messages_without_explicit_links() -> None:
+    provider = RecordingModelProvider()
+    searcher = StubResourceSearcher()
+    assistant = Assistant(provider, StubResourceReader(), searcher)
+    request = AssistantRequest(
+        actor_id="ou_user",
+        conversation_id="chat-1",
+        conversation_type=ConversationType.GROUP,
+        text="帮我搜索飞书文档 项目计划",
+    )
+
+    await assistant.handle(request)
+
+    assert searcher.calls == []
+    assert request.resource_results == []
+
+
+@pytest.mark.asyncio
+async def test_assistant_reports_empty_resource_search_to_model() -> None:
+    provider = RecordingModelProvider()
+    audit = RecordingAuditRecorder()
+    assistant = Assistant(
+        provider,
+        StubResourceReader(),
+        EmptyResourceSearcher(),
+        audit_recorder=audit,
+    )
+    request = AssistantRequest(
+        actor_id="ou_user",
+        conversation_id="chat-1",
+        conversation_type=ConversationType.PRIVATE,
+        text="查找飞书资料 不存在的主题",
+    )
+
+    response = await assistant.handle(request)
+
+    assert request.resource_results[0].title == "飞书资料搜索"
+    assert request.resource_results[0].error == "没有搜索到匹配的飞书文档、电子表格或多维表格。"
+    assert response.text == "没有搜索到匹配的飞书文档、电子表格或多维表格。"
+    assert provider.requests == []
+    assert audit.events[-1][0] == AuditEventType.AGENT_TOOL_EXECUTED
+    assert audit.events[-1][2]["result_count"] == 0
+    assert audit.events[-1][2]["has_error"] is False
 
 
 @pytest.mark.asyncio
@@ -697,7 +1355,227 @@ async def test_assistant_uses_resolved_wiki_doc_token_for_writeback() -> None:
     response = await assistant.handle(request)
 
     assert len(response.action_proposals) == 1
-    assert response.action_proposals[0].target == {"document_id": "docx_from_wiki"}
+    proposal = response.action_proposals[0]
+    assert proposal.target == {"document_id": "docx_from_wiki"}
+    assert proposal.target_title == "Wiki 文档"
+    assert proposal.target_url == "https://docs.feishu.cn/wiki/wiki123"
+
+
+@pytest.mark.asyncio
+async def test_assistant_understands_write_a_sentence_to_named_document() -> None:
+    planner = StubResourceSearchPlanner(
+        ResourceSearchPlan(
+            should_search=True,
+            queries=["测试文档"],
+            reason="named write target",
+        )
+    )
+    assistant = Assistant(
+        RecordingModelProvider(),
+        StubResourceReader(),
+        StubResourceSearcher(),
+        resource_search_planner=planner,
+    )
+    request = AssistantRequest(
+        actor_id="ou_user",
+        conversation_id="chat-1",
+        conversation_type=ConversationType.PRIVATE,
+        text="帮我写一句“正在测试的文字”到测试文档里",
+    )
+
+    response = await assistant.handle(request)
+
+    assert len(response.action_proposals) == 1
+    assert response.action_proposals[0].action_type == WriteActionType.DOC_APPEND
+    assert response.action_proposals[0].target == {"document_id": "docx123"}
+    assert response.action_proposals[0].target_title == "测试资源"
+    assert response.action_proposals[0].target_url == "https://my.feishu.cn/docx/docx123"
+    assert response.action_proposals[0].payload == {"content": "正在测试的文字"}
+
+
+@pytest.mark.asyncio
+async def test_assistant_rejects_doc_write_before_named_embedded_file() -> None:
+    planner = StubResourceSearchPlanner(
+        ResourceSearchPlan(
+            should_search=True,
+            queries=["测试文档"],
+            reason="named write target",
+        )
+    )
+    assistant = Assistant(
+        RecordingModelProvider(),
+        DocWithEmbeddedAssetReader(),
+        StubResourceSearcher(),
+        resource_search_planner=planner,
+    )
+    request = AssistantRequest(
+        actor_id="ou_user",
+        conversation_id="chat-1",
+        conversation_type=ConversationType.PRIVATE,
+        text="帮我写一句“卡片测试成功M2”到测试文档里《Claude Code登录指引》这个文件的前面一行",
+    )
+
+    response = await assistant.handle(request)
+
+    assert response.action_proposals == []
+    assert "当前版本还不能稳定写入文档中间位置" in response.text
+    assert "文档开头或文档末尾" in response.text
+
+
+@pytest.mark.asyncio
+async def test_assistant_rejects_doc_write_after_named_embedded_file() -> None:
+    planner = StubResourceSearchPlanner(
+        ResourceSearchPlan(
+            should_search=True,
+            queries=["测试文档"],
+            reason="named write target",
+        )
+    )
+    assistant = Assistant(
+        RecordingModelProvider(),
+        StubResourceReader(),
+        StubResourceSearcher(),
+        resource_search_planner=planner,
+    )
+    request = AssistantRequest(
+        actor_id="ou_user",
+        conversation_id="chat-1",
+        conversation_type=ConversationType.PRIVATE,
+        text="帮我写一句“卡片测试成功M3”到测试文档里《Claude Code登录指引》这个文件的后面",
+    )
+
+    response = await assistant.handle(request)
+
+    assert response.action_proposals == []
+    assert "当前版本还不能稳定写入文档中间位置" in response.text
+    assert "未指定位置时默认追加到文档末尾" in response.text
+
+
+@pytest.mark.asyncio
+async def test_assistant_uses_current_quoted_doc_content_over_model_history() -> None:
+    planner = StubResourceSearchPlanner(
+        ResourceSearchPlan(
+            should_search=True,
+            queries=["测试文档"],
+            reason="named write target",
+        )
+    )
+    assistant = Assistant(
+        DocConfirmationQuestionProvider(),
+        StubResourceReader(),
+        StubResourceSearcher(),
+        resource_search_planner=planner,
+    )
+    request = AssistantRequest(
+        actor_id="ou_user",
+        conversation_id="chat-1",
+        conversation_type=ConversationType.PRIVATE,
+        text="帮我写一句“卡片测试成功”到测试文档末尾",
+        chat_context_messages=[
+            ChatContextMessage(
+                message_id="om_old",
+                sender_id="ou_user",
+                text="帮我写一句“正在测试的文字”到测试文档里",
+                created_at="2026-06-25T08:00:00+00:00",
+            )
+        ],
+    )
+
+    response = await assistant.handle(request)
+
+    assert len(response.action_proposals) == 1
+    proposal = response.action_proposals[0]
+    assert proposal.payload == {"content": "卡片测试成功"}
+    assert "正在测试的文字" not in proposal.preview
+    assert response.text == "我已准备好写回预览，请在卡片中确认后执行。"
+
+
+@pytest.mark.asyncio
+async def test_assistant_prioritizes_named_writeback_target_over_planner_query() -> None:
+    planner = StubResourceSearchPlanner(
+        ResourceSearchPlan(
+            should_search=True,
+            queries=["卡片测试成功123"],
+            reason="bad model query",
+        )
+    )
+    searcher = TitledDocResourceSearcher()
+    assistant = Assistant(
+        DocConfirmationQuestionProvider(),
+        NoTitleResourceReader(),
+        searcher,
+        resource_search_planner=planner,
+    )
+    request = AssistantRequest(
+        actor_id="ou_user",
+        conversation_id="chat-1",
+        conversation_type=ConversationType.PRIVATE,
+        text="帮我写一句“卡片测试成功123”到测试文档末尾",
+        chat_context_messages=[
+            ChatContextMessage(
+                message_id="om_old",
+                sender_id="ou_user",
+                text="不是是卡片测试成功",
+                created_at="2026-06-25T08:00:00+00:00",
+            )
+        ],
+    )
+
+    response = await assistant.handle(request)
+
+    assert searcher.calls[0][0] == "测试文档"
+    assert len(response.action_proposals) == 1
+    proposal = response.action_proposals[0]
+    assert proposal.payload == {"content": "卡片测试成功123"}
+    assert proposal.target_title == "测试文档"
+    assert proposal.target_url == "https://my.feishu.cn/docx/docx123"
+    assert "不是是卡片测试成功" not in proposal.preview
+    assert response.text == "我已准备好写回预览，请在卡片中确认后执行。"
+
+
+@pytest.mark.asyncio
+async def test_assistant_inherits_previous_write_request_for_position_clarification() -> None:
+    planner = StubResourceSearchPlanner(
+        ResourceSearchPlan(
+            should_search=True,
+            queries=["测试文档"],
+            reason="continued write target",
+        )
+    )
+    assistant = Assistant(
+        RecordingModelProvider(),
+        StubResourceReader(),
+        StubResourceSearcher(),
+        resource_search_planner=planner,
+    )
+    request = AssistantRequest(
+        actor_id="ou_user",
+        conversation_id="chat-1",
+        conversation_type=ConversationType.PRIVATE,
+        text="文章最开始",
+        chat_context_messages=[
+            ChatContextMessage(
+                message_id="om_previous",
+                sender_id="ou_user",
+                text="帮我写一句“正在测试的文字”到测试文档里",
+                created_at="2026-06-25T08:00:00+00:00",
+            )
+        ],
+    )
+
+    response = await assistant.handle(request)
+
+    assert len(response.action_proposals) == 1
+    proposal = response.action_proposals[0]
+    assert proposal.target == {
+        "document_id": "docx123",
+        "block_id": "docx123",
+        "index": 0,
+    }
+    assert proposal.target_title == "测试资源"
+    assert proposal.target_url == "https://my.feishu.cn/docx/docx123"
+    assert proposal.payload == {"content": "正在测试的文字"}
+    assert "文档开头" in proposal.preview
 
 
 @pytest.mark.asyncio

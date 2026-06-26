@@ -14,6 +14,9 @@
 - `fcgo.writeback`：实验性写回代码，当前分支默认关闭。
 - `fcgo.server`：FastAPI 服务入口。
 
+上下文读取、用户授权和长期记忆的隐私边界见
+[上下文读取、用户授权和长期记忆隐私规格](context-privacy-memory.md)。相关实现默认开启当前会话上下文读取，并禁止长期保存完整正文。
+
 ## 数据流
 
 1. 飞书长连接收到消息事件。
@@ -33,10 +36,10 @@
 
 当前运行时代码通过 `ModelProviderRegistry` 和 `ModelRouter` 装配 Provider。默认 Provider
 由 `FCGO_DEFAULT_PROVIDER` 控制，默认模型可通过 `FCGO_DEFAULT_MODEL` 覆盖；目前已实现
-`gemini`、`openai`、`deepseek`、`qwen`、`doubao`、`minimax` 和本地开发用 `echo`。
+`gemini`、`openai`、`deepseek`、`qwen`、`doubao`、`minimax`、`claude` 和本地开发用 `echo`。
 后续多模型接入规划见
 [多模型 Provider 架构规划](multi-model-provider-architecture.md)，目标是支持
-Claude、Seedance、ComfyUI API 等不同类型 Provider，并通过统一能力矩阵、配置和路由层管理。
+Seedance、ComfyUI API 等不同类型 Provider，并通过统一能力矩阵、配置和路由层管理。
 
 ## 写入暂停
 
@@ -52,3 +55,7 @@ SQLite 默认位置为 `data/fcgo.sqlite3`，包含：
 - `idempotency_keys`
 - `pending_actions`（实验写回遗留表，当前默认不写入）
 - `audit_events`
+
+隐私默认配置：
+
+- `FCGO_MEMORY_STORE_RAW_TEXT=false`

@@ -1,0 +1,58 @@
+from fcgo.config import Settings
+
+
+def test_context_and_memory_privacy_defaults_are_conservative() -> None:
+    settings = Settings(env="test", oauth_enable_offline_access=False)
+
+    assert settings.context_recent_message_limit == 50
+    assert settings.context_recent_time_window_hours == 24
+    assert settings.context_cache_ttl_hours == 24
+    assert settings.context_cache_refresh_seconds == 60
+    assert settings.context_inject_message_limit == 8
+    assert settings.context_max_chars == 6000
+    assert settings.memory_store_raw_text is False
+    assert settings.memory_item_max_chars == 2000
+    assert settings.memory_context_max_chars == 4000
+    assert settings.assistant_default_name == "小智"
+    assert settings.doc_block_scan_limit == 1000
+    assert settings.embedded_file_limit == 3
+    assert settings.embedded_file_max_bytes == 20 * 1024 * 1024
+    assert settings.embedded_file_max_chars == 40_000
+    assert settings.embedded_link_limit == 20
+    assert settings.pdf_default_pages == 2
+    assert settings.pdf_max_pages == 10
+    assert settings.pdf_extract_timeout_seconds == 20
+    assert settings.oauth_enable_offline_access is False
+    assert "offline_access" not in settings.oauth_scope_list
+    assert "base:table:read" in settings.oauth_scope_list
+    assert "docs:document.media:download" in settings.oauth_scope_list
+
+
+def test_oauth_offline_access_is_opt_in() -> None:
+    settings = Settings(env="test", oauth_enable_offline_access=True)
+
+    assert "offline_access" in settings.oauth_scope_list
+    assert "offline_access" not in settings.oauth_required_scope_list
+
+
+def test_oauth_scopes_filter_offline_access_when_disabled() -> None:
+    settings = Settings(
+        env="test",
+        feishu_oauth_scopes="auth:user.id:read offline_access docx:document:readonly",
+        oauth_enable_offline_access=False,
+    )
+
+    assert settings.oauth_scope_list == ["auth:user.id:read", "docx:document:readonly"]
+
+
+def test_context_and_memory_privacy_settings_can_be_overridden() -> None:
+    settings = Settings(
+        env="test",
+        memory_store_raw_text=True,
+        memory_item_max_chars=100,
+        memory_context_max_chars=200,
+    )
+
+    assert settings.memory_store_raw_text is True
+    assert settings.memory_item_max_chars == 100
+    assert settings.memory_context_max_chars == 200

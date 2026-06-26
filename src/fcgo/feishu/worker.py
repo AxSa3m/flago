@@ -38,6 +38,7 @@ class FeishuLongConnectionWorker:
         self.writeback = writeback
 
     def run_forever(self) -> None:
+        _configure_lark_ws_proxy(self.settings)
         event_handler = (
             lark.EventDispatcherHandler.builder(
                 self.settings.feishu_verification_token.get_secret_value(),
@@ -101,14 +102,18 @@ class FeishuLongConnectionWorker:
         self,
         data: P2CardActionTrigger,
     ) -> P2CardActionTriggerResponse:
-        if self.writeback is None:
-            logger.error("feishu_card_action_writeback_not_configured")
-            return card_action_response("error", "写回服务暂未启用")
         try:
             callback = parse_card_action_event(data)
         except Exception:
             logger.exception("feishu_card_action_parse_failed")
             return card_action_response("error", "卡片操作解析失败")
+        if _is_memory_delete_action(callback.action_key):
+            return self._handle_memory_delete_card_action(callback)
+        if _is_memory_save_action(callback.action_key):
+            return self._handle_memory_save_card_action(callback)
+        if self.writeback is None:
+            logger.error("feishu_card_action_writeback_not_configured")
+            return card_action_response("error", "写回服务暂未启用")
         try:
             if callback.action == "confirm":
                 result = _run_sync_with_timeout(
@@ -139,6 +144,39 @@ class FeishuLongConnectionWorker:
             result.status,
         )
         return card_action_response(result.status, result.message)
+
+    def _handle_memory_delete_card_action(self, callback: Any) -> P2CardActionTriggerResponse:
+        if self.router is None:
+            logger.error("feishu_memory_delete_router_not_configured")
+            return card_action_response("error", "记忆服务暂未启用")
+        if callback.action == "cancel":
+            return card_action_response("canceled", "已取消删除长期记忆。")
+        try:
+            message = _run_sync(self.router.confirm_memory_delete(callback.actor_id))
+        except Exception:
+            logger.exception("feishu_memory_delete_failed actor_id=%s", callback.actor_id)
+            return card_action_response("error", "删除长期记忆失败，请稍后重试")
+        return card_action_response("executed", message)
+
+    def _handle_memory_save_card_action(self, callback: Any) -> P2CardActionTriggerResponse:
+        if self.router is None:
+            logger.error("feishu_memory_save_router_not_configured")
+            return card_action_response("error", "记忆服务暂未启用")
+        if callback.action == "cancel":
+            return card_action_response("canceled", "已取消保存长期记忆。")
+        try:
+            message = _run_sync(
+                self.router.confirm_memory_save(
+                    callback.actor_id,
+                    key=str(callback.value.get("memory_key") or ""),
+                    kind=str(callback.value.get("memory_kind") or ""),
+                    content=str(callback.value.get("memory_content") or ""),
+                )
+            )
+        except Exception:
+            logger.exception("feishu_memory_save_failed actor_id=%s", callback.actor_id)
+            return card_action_response("error", "保存长期记忆失败，请稍后重试")
+        return card_action_response("executed", message)
 
 
 def _run_or_schedule(coro: Coroutine[Any, Any, None], failure_log_name: str) -> None:
@@ -221,6 +259,30 @@ def _run_in_background_thread(coro: Coroutine[Any, Any, Any]) -> Future[Any]:
     return future
 
 
+def _configure_lark_ws_proxy(settings: Settings) -> None:
+    proxy = settings.feishu_http_proxy
+    if not proxy:
+        return
+
+    try:
+        from lark_oapi.ws import client as lark_ws_client
+
+        original_post = lark_ws_client.requests.post
+
+        def _post_with_proxy(*args: Any, **kwargs: Any) -> Any:
+            kwargs.setdefault("proxies", {"http": proxy, "https": proxy})
+            return original_post(*args, **kwargs)
+
+        def _ws_proxy_kwargs() -> dict[str, str]:
+            return {"proxy": proxy}
+
+        lark_ws_client.requests.post = _post_with_proxy
+        lark_ws_client._ws_connect_kwargs = _ws_proxy_kwargs
+        logger.info("feishu_ws_proxy_enabled")
+    except Exception:  # noqa: BLE001 - proxy fallback should not block startup
+        logger.exception("feishu_ws_proxy_config_failed")
+
+
 def _log_future_failure(future: Future[Any], failure_log_name: str) -> None:
     def on_done(completed: Future[Any]) -> None:
         try:
@@ -229,3 +291,21 @@ def _log_future_failure(future: Future[Any], failure_log_name: str) -> None:
             logger.exception(failure_log_name)
 
     future.add_done_callback(on_done)
+
+
+def _is_memory_delete_action(action_key: str) -> bool:
+    return action_key.strip().lower() in {
+        "memory.delete.confirm",
+        "memory.delete.cancel",
+        "fcgo.memory.delete.confirm",
+        "fcgo.memory.delete.cancel",
+    }
+
+
+def _is_memory_save_action(action_key: str) -> bool:
+    return action_key.strip().lower() in {
+        "memory.save.confirm",
+        "memory.save.cancel",
+        "fcgo.memory.save.confirm",
+        "fcgo.memory.save.cancel",
+    }

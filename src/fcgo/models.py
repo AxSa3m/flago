@@ -22,6 +22,7 @@ class ResourceType(StrEnum):
 class WriteActionType(StrEnum):
     DOC_CREATE = "doc_create"
     DOC_APPEND = "doc_append"
+    DOC_DELETE_BLOCK = "doc_delete_block"
     SHEET_WRITE_RANGE = "sheet_write_range"
     BITABLE_CREATE_RECORD = "bitable_create_record"
     BITABLE_UPDATE_RECORD = "bitable_update_record"
@@ -71,6 +72,7 @@ class FeishuBotMenuEvent(BaseModel):
 class ResourceRef(BaseModel):
     type: ResourceType
     url: str
+    title: str | None = None
     source_kind: str | None = None
     token: str | None = None
     sheet_id: str | None = None
@@ -85,6 +87,42 @@ class ResourceReadResult(BaseModel):
     content: str = ""
     truncated: bool = False
     error: str | None = None
+    metadata: dict[str, Any] = Field(default_factory=dict)
+
+
+class ResourceSearchPlan(BaseModel):
+    should_search: bool = False
+    queries: list[str] = Field(default_factory=list)
+    resource_types: list[str] = Field(default_factory=list)
+    constraints: list[str] = Field(default_factory=list)
+    reason: str = ""
+
+
+class AgentObservationKind(StrEnum):
+    CURRENT_MESSAGE = "current_message"
+    CHAT_SUMMARY = "chat_summary"
+    RECENT_CHAT = "recent_chat"
+    RESOURCE_LINKS = "resource_links"
+    RESOURCE_RESULT = "resource_result"
+    USER_MEMORY = "user_memory"
+
+
+class AgentObservation(BaseModel):
+    kind: AgentObservationKind
+    title: str
+    content: str
+    source: str = ""
+    metadata: dict[str, Any] = Field(default_factory=dict)
+
+
+class MemoryItem(BaseModel):
+    id: str
+    subject_id: str
+    kind: str
+    content: str
+    source: str
+    created_at: str
+    updated_at: str
 
 
 class AssistantRequest(BaseModel):
@@ -93,11 +131,24 @@ class AssistantRequest(BaseModel):
     conversation_id: str
     conversation_type: ConversationType
     text: str
+    assistant_name: str = "小智"
+    writeback_enabled: bool = False
     model_provider: str | None = None
     model: str | None = None
     resource_urls: list[str] = Field(default_factory=list)
     resource_refs: list[ResourceRef] = Field(default_factory=list)
     resource_results: list[ResourceReadResult] = Field(default_factory=list)
+    chat_context_messages: list["ChatContextMessage"] = Field(default_factory=list)
+    chat_context_summary: str = ""
+    chat_context_omitted_count: int = 0
+    memory_items: list[MemoryItem] = Field(default_factory=list)
+
+
+class ChatContextMessage(BaseModel):
+    message_id: str
+    sender_id: str = ""
+    text: str
+    created_at: str
 
 
 class ResourceReadRequest(BaseModel):
@@ -160,6 +211,8 @@ class ActionProposal(BaseModel):
     actor_id: str
     action_type: WriteActionType
     target: dict[str, Any]
+    target_title: str | None = None
+    target_url: str | None = None
     payload: dict[str, Any]
     preview: str
     created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
@@ -185,13 +238,28 @@ class AuditEventType(StrEnum):
     OAUTH_STATE_CREATED = "oauth_state_created"
     OAUTH_AUTHORIZED = "oauth_authorized"
     OAUTH_TOKEN_REFRESHED = "oauth_token_refreshed"
+    CONTEXT_ENABLED = "context_enabled"
+    CONTEXT_DISABLED = "context_disabled"
+    MEMORY_ENABLED = "memory_enabled"
+    MEMORY_DELETED = "memory_deleted"
+    MEMORY_DISABLED = "memory_disabled"
+    MEMORY_UPDATED = "memory_updated"
+    CONTEXT_HISTORY_READ = "context_history_read"
+    RESOURCE_SEARCHED = "resource_searched"
+    RESOURCE_READ = "resource_read"
+    AGENT_TOOL_PLANNED = "agent_tool_planned"
+    AGENT_TOOL_EXECUTED = "agent_tool_executed"
     ACTION_CREATED = "action_created"
     ACTION_CONFIRMED = "action_confirmed"
     ACTION_CANCELED = "action_canceled"
     ACTION_EXPIRED = "action_expired"
     WRITE_EXECUTED = "write_executed"
+    WRITE_REVERTED = "write_reverted"
+    ASSISTANT_NAME_SET = "assistant_name_set"
+    ASSISTANT_NAME_CLEARED = "assistant_name_cleared"
     MODEL_PREFERENCE_SET = "model_preference_set"
     MODEL_PREFERENCE_CLEARED = "model_preference_cleared"
+    MODEL_GENERATED = "model_generated"
     ERROR = "error"
 
 
@@ -213,5 +281,19 @@ class ModelPreference(BaseModel):
     scope: str
     provider: str
     model: str | None = None
+    updated_by: str
+    updated_at: str
+
+
+class AssistantNamePreference(BaseModel):
+    subject_id: str
+    assistant_name: str
+    updated_by: str
+    updated_at: str
+
+
+class ContextPreference(BaseModel):
+    scope: str
+    enabled: bool
     updated_by: str
     updated_at: str

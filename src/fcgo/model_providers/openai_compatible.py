@@ -146,7 +146,9 @@ def openai_compatible_provider_configs(settings: Settings) -> list[ProviderConfi
                 base_url=base_url.strip(),
                 http_proxy=settings.openai_compatible_http_proxy,
                 timeout_seconds=settings.openai_compatible_timeout_seconds,
-                max_output_tokens=settings.openai_compatible_max_output_tokens,
+                max_output_tokens=settings.effective_model_max_output_tokens(
+                    settings.openai_compatible_max_output_tokens,
+                ),
                 capabilities=[
                     ProviderCapability.CHAT,
                     ProviderCapability.JSON_OUTPUT,

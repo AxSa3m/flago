@@ -1,13 +1,15 @@
 from typing import Any, Literal
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 
 class FeishuCardCallback(BaseModel):
     action_id: str
     actor_id: str
     action: Literal["confirm", "cancel"]
+    action_key: str = ""
     event_id: str = ""
+    value: dict[str, Any] = Field(default_factory=dict)
     raw: dict[str, Any]
 
 
@@ -31,7 +33,9 @@ def parse_card_callback(payload: dict[str, Any]) -> FeishuCardCallback:
         action_id=action_id,
         actor_id=actor_id,
         action=action,
+        action_key=str(raw_action),
         event_id=_event_id(payload),
+        value=value,
         raw=payload,
     )
 
@@ -98,8 +102,24 @@ def _event_id(payload: dict[str, Any]) -> str:
 
 def _normalize_action(action: str) -> str:
     normalized = action.strip().lower()
-    if normalized in {"confirm", "writeback.confirm", "fcgo.writeback.confirm"}:
+    if normalized in {
+        "confirm",
+        "writeback.confirm",
+        "fcgo.writeback.confirm",
+        "memory.delete.confirm",
+        "fcgo.memory.delete.confirm",
+        "memory.save.confirm",
+        "fcgo.memory.save.confirm",
+    }:
         return "confirm"
-    if normalized in {"cancel", "writeback.cancel", "fcgo.writeback.cancel"}:
+    if normalized in {
+        "cancel",
+        "writeback.cancel",
+        "fcgo.writeback.cancel",
+        "memory.delete.cancel",
+        "fcgo.memory.delete.cancel",
+        "memory.save.cancel",
+        "fcgo.memory.save.cancel",
+    }:
         return "cancel"
     return normalized

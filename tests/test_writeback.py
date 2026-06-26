@@ -6,7 +6,7 @@ import aiosqlite
 import pytest
 
 from fcgo.config import Settings
-from fcgo.models import ActionProposal, PendingActionStatus, WriteActionType
+from fcgo.models import ActionProposal, AuditEventType, PendingActionStatus, WriteActionType
 from fcgo.storage import SQLiteStore
 from fcgo.writeback.service import WritebackService
 
@@ -256,6 +256,116 @@ async def test_confirm_marks_original_reverted_after_bitable_delete(tmp_path) ->
 
     assert result.status == "executed"
     assert await store.find_latest_reversible_writeback("user-1") is None
+
+
+@pytest.mark.asyncio
+async def test_confirm_records_reversible_sheet_write(tmp_path) -> None:
+    store = SQLiteStore(tmp_path / "fcgo.sqlite3")
+    await store.init()
+    executor = FakeExecutor(
+        {
+            "write_result": {"ok": True},
+            "previous_values": [["旧值", ""], ["", ""]],
+        }
+    )
+    service = WritebackService(store, executor)
+    proposal = ActionProposal(
+        actor_id="user-1",
+        action_type=WriteActionType.SHEET_WRITE_RANGE,
+        target={"spreadsheet_token": "sht1", "range": "Sheet1!A1:B2"},
+        payload={"values": [["A", "B"], ["C", "D"]]},
+        preview="write sheet",
+        expires_at=datetime.now(UTC) + timedelta(minutes=5),
+    )
+    await store.save_pending_action(proposal)
+
+    result = await service.confirm(proposal.id, "user-1")
+    reversible = await store.find_latest_reversible_writeback("user-1")
+
+    assert result.status == "executed"
+    assert reversible is not None
+    assert reversible["undo_action_type"] == WriteActionType.SHEET_WRITE_RANGE.value
+    assert reversible["undo_target"] == {
+        "spreadsheet_token": "sht1",
+        "range": "Sheet1!A1:B2",
+    }
+    assert reversible["undo_payload"] == {
+        "values": [["旧值", ""], ["", ""]],
+        "undo_of_action_id": proposal.id,
+    }
+
+
+@pytest.mark.asyncio
+async def test_confirm_records_reversible_doc_append_when_block_ids_returned(tmp_path) -> None:
+    store = SQLiteStore(tmp_path / "fcgo.sqlite3")
+    await store.init()
+    executor = FakeExecutor({"children": [{"block_id": "blk1"}, {"block_id": "blk2"}]})
+    service = WritebackService(store, executor)
+    proposal = ActionProposal(
+        actor_id="user-1",
+        action_type=WriteActionType.DOC_APPEND,
+        target={"document_id": "docx123"},
+        payload={"content": "新增内容"},
+        preview="append doc",
+        expires_at=datetime.now(UTC) + timedelta(minutes=5),
+    )
+    await store.save_pending_action(proposal)
+
+    result = await service.confirm(proposal.id, "user-1")
+    reversible = await store.find_latest_reversible_writeback("user-1")
+
+    assert result.status == "executed"
+    assert reversible is not None
+    assert reversible["action_id"] == proposal.id
+    assert reversible["undo_action_type"] == WriteActionType.DOC_DELETE_BLOCK.value
+    assert reversible["undo_target"] == {"document_id": "docx123"}
+    assert reversible["undo_payload"] == {
+        "block_ids": ["blk1", "blk2"],
+        "undo_of_action_id": proposal.id,
+    }
+
+
+@pytest.mark.asyncio
+async def test_sheet_undo_marks_original_reverted_without_creating_redo(tmp_path) -> None:
+    store = SQLiteStore(tmp_path / "fcgo.sqlite3")
+    await store.init()
+    await store.save_writeback_execution(
+        action_id="original-sheet",
+        actor_id="user-1",
+        action_type=WriteActionType.SHEET_WRITE_RANGE.value,
+        target={"spreadsheet_token": "sht1", "range": "Sheet1!A1"},
+        payload={"values": [["新值"]]},
+        result={"previous_values": [["旧值"]]},
+        undo_action_type=WriteActionType.SHEET_WRITE_RANGE.value,
+        undo_target={"spreadsheet_token": "sht1", "range": "Sheet1!A1"},
+        undo_payload={"values": [["旧值"]], "undo_of_action_id": "original-sheet"},
+        undo_preview="restore sheet",
+    )
+    service = WritebackService(
+        store,
+        FakeExecutor({"write_result": {"ok": True}, "previous_values": [["新值"]]}),
+    )
+    undo = ActionProposal(
+        actor_id="user-1",
+        action_type=WriteActionType.SHEET_WRITE_RANGE,
+        target={"spreadsheet_token": "sht1", "range": "Sheet1!A1"},
+        payload={"values": [["旧值"]], "undo_of_action_id": "original-sheet"},
+        preview="restore sheet",
+        expires_at=datetime.now(UTC) + timedelta(minutes=5),
+    )
+    await store.save_pending_action(undo)
+
+    result = await service.confirm(undo.id, "user-1")
+    history = await store.list_recent_writeback_executions("user-1")
+
+    assert result.status == "executed"
+    assert await store.find_latest_reversible_writeback("user-1") is None
+    assert history[0]["action_id"] == undo.id
+    assert history[0]["reversible"] is False
+    assert history[1]["action_id"] == "original-sheet"
+    assert history[1]["reverted_at"] is not None
+    detail = await _last_audit_detail(store, AuditEventType.WRITE_REVERTED.value)
+    assert detail["undo_action_id"] == undo.id
 
 
 async def _last_audit_detail(store: SQLiteStore, event_type: str) -> dict[str, Any]:
