@@ -73,6 +73,7 @@ class AgentOrchestrator:
             conversation_type=request.conversation_type,
             writeback_enabled=self.enable_writeback,
             writeback_confirmation_mode=self.writeback_confirmation_mode,
+            request=request,
             resource_reader=self.resource_reader,
             resource_searcher=self.resource_searcher,
             store=self.store,
@@ -325,6 +326,9 @@ def _system_prompt(request: AssistantRequest, tool_specs: list[dict[str, Any]]) 
             "如果需要真实飞书资源，先调用 search_resources/read_resource，"
             "不得编造结果、标题、URL 或 token。",
             "如果用户只是普通聊天或测试上下文，不要调用写入工具。",
+            "提取写入正文时，只能使用当前用户消息，或 Observation 中标题为"
+            "“最近待补充位置的写回请求”的内容。",
+            "不要从旧确认卡片、旧助手回复、旧待写预览里继承写入正文。",
             "写入、修改、删除必须先输出 writeback_drafts 或调用 prepare_writeback；"
             "程序会生成确认卡片。",
             "当前只稳定支持写到文档开头或文档末尾；用户要求附件前后或文档中间位置时，直接说明暂不支持稳定写入中间位置。",

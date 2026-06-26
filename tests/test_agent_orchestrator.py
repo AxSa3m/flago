@@ -7,6 +7,7 @@ from fcgo.agent.orchestrator import AgentOrchestrator
 from fcgo.model_providers.types import ModelRequest, ModelResponse
 from fcgo.models import (
     AssistantRequest,
+    ChatContextMessage,
     ConversationType,
     ResourceReadResult,
     ResourceRef,
@@ -133,6 +134,124 @@ async def test_agent_converts_writeback_draft_to_action_proposal() -> None:
     assert proposal.target_title == "测试文档"
     assert proposal.target_url == "https://my.feishu.cn/docx/docx1"
     assert proposal.payload == {"content": "卡片测试成功"}
+
+
+@pytest.mark.asyncio
+async def test_agent_normalizes_json_writeback_draft_to_executable_doc_append() -> None:
+    model = FakeAgentModel(
+        [
+            _decision(
+                final_response="我已准备好写回预览，请在卡片中确认后执行。",
+                writeback_drafts=[
+                    {
+                        "action_type": WriteActionType.DOC_APPEND.value,
+                        "target": {
+                            "type": ResourceType.FEISHU_DOC.value,
+                            "token": "docx1",
+                            "url": "https://my.feishu.cn/docx/docx1",
+                            "position": "start",
+                        },
+                        "payload": {"text": "Agent测试Agents"},
+                        "preview": "向文档开头插入文本：Agent测试Agents",
+                    }
+                ],
+            )
+        ]
+    )
+    agent = AgentOrchestrator(model, enable_writeback=True)
+
+    response = await agent.handle(_request("帮我写一句“Agent测试Agents”到测试文档开头"))
+
+    proposal = response.action_proposals[0]
+    assert proposal.target == {
+        "type": ResourceType.FEISHU_DOC.value,
+        "token": "docx1",
+        "url": "https://my.feishu.cn/docx/docx1",
+        "document_id": "docx1",
+        "title": "测试文档",
+        "block_id": "docx1",
+        "index": 0,
+    }
+    assert proposal.target_title == "测试文档"
+    assert proposal.payload == {"content": "Agent测试Agents"}
+    assert proposal.preview == "向文档开头插入文本：\nAgent测试Agents"
+
+
+@pytest.mark.asyncio
+async def test_agent_prompt_marks_recent_writeback_request_for_location_followup() -> None:
+    model = FakeAgentModel([_decision(final_response="ok")])
+    agent = AgentOrchestrator(model, enable_writeback=True)
+    request = _request("帮我写在开头吧").model_copy(
+        update={
+            "chat_context_messages": [
+                ChatContextMessage(
+                    message_id="m1",
+                    sender_id="ou_user",
+                    text="帮我写一句“旧内容”到测试文档开头",
+                    created_at="2026-06-26T06:00:00+00:00",
+                ),
+                ChatContextMessage(
+                    message_id="m2",
+                    sender_id="ou_user",
+                    text="帮我写一句“新内容”到测试文档里的多维表格之前",
+                    created_at="2026-06-26T06:01:00+00:00",
+                ),
+            ]
+        }
+    )
+
+    await agent.handle(request)
+
+    user_prompt = model.requests[0].messages[1].content
+    assert "最近待补充位置的写回请求" in user_prompt
+    assert "新内容" in user_prompt
+
+
+@pytest.mark.asyncio
+async def test_agent_overrides_stale_model_content_for_location_followup() -> None:
+    model = FakeAgentModel(
+        [
+            _decision(
+                writeback_drafts=[
+                    {
+                        "action_type": WriteActionType.DOC_APPEND.value,
+                        "target": {
+                            "token": "docx1",
+                            "url": "https://my.feishu.cn/docx/docx1",
+                            "position": "start",
+                        },
+                        "payload": {"text": "旧内容"},
+                        "preview": "向文档开头插入文本：旧内容",
+                    }
+                ],
+            )
+        ]
+    )
+    agent = AgentOrchestrator(model, enable_writeback=True)
+    request = _request("帮我写在开头吧").model_copy(
+        update={
+            "chat_context_messages": [
+                ChatContextMessage(
+                    message_id="m1",
+                    sender_id="ou_user",
+                    text="帮我写一句“旧内容”到测试文档开头",
+                    created_at="2026-06-26T06:00:00+00:00",
+                ),
+                ChatContextMessage(
+                    message_id="m2",
+                    sender_id="ou_user",
+                    text="帮我写一句“新内容”到测试文档里的多维表格之前",
+                    created_at="2026-06-26T06:01:00+00:00",
+                ),
+            ]
+        }
+    )
+
+    response = await agent.handle(request)
+
+    proposal = response.action_proposals[0]
+    assert proposal.payload == {"content": "新内容"}
+    assert proposal.preview == "向文档开头插入文本：\n新内容"
 
 
 @pytest.mark.asyncio

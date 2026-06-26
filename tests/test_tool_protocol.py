@@ -5,6 +5,7 @@ import pytest
 from fcgo.agent.tools import ToolExecutionContext, default_tool_registry, model_tool_specs
 from fcgo.models import (
     ActionProposalDraft,
+    AssistantRequest,
     ConversationType,
     ResourceReadRequest,
     ResourceRef,
@@ -170,10 +171,58 @@ async def test_prepare_writeback_rejects_document_middle_insert() -> None:
     assert "文档中间位置" in (result.user_message or "")
 
 
-def _tool_context(*, writeback_enabled: bool) -> ToolExecutionContext:
+@pytest.mark.asyncio
+async def test_prepare_writeback_normalizes_agent_json_doc_append_shape() -> None:
+    registry = default_tool_registry()
+    request = WritebackProposalRequest(
+        proposals=[
+            ActionProposalDraft(
+                action_type=WriteActionType.DOC_APPEND,
+                target={
+                    "type": ResourceType.FEISHU_DOC.value,
+                    "token": "docx1",
+                    "url": "https://my.feishu.cn/docx/docx1",
+                    "position": "start",
+                },
+                payload={"text": "hello"},
+                preview="向文档开头插入文本：hello",
+            )
+        ]
+    )
+
+    result = await registry.execute(
+        call_id="call-4",
+        name=ToolName.PREPARE_WRITEBACK,
+        arguments=request.model_dump(mode="json"),
+        context=_tool_context(
+            writeback_enabled=True,
+            request=AssistantRequest(
+                actor_id="ou_user",
+                conversation_id="private:oc_chat",
+                conversation_type=ConversationType.PRIVATE,
+                text="帮我写一句“hello”到测试文档开头",
+            ),
+        ),
+    )
+
+    draft = result.content["writeback_drafts"][0]
+    assert result.ok is True
+    assert draft["target"]["document_id"] == "docx1"
+    assert draft["target"]["block_id"] == "docx1"
+    assert draft["target"]["index"] == 0
+    assert draft["target"]["title"] == "测试文档"
+    assert draft["payload"] == {"content": "hello"}
+
+
+def _tool_context(
+    *,
+    writeback_enabled: bool,
+    request: AssistantRequest | None = None,
+) -> ToolExecutionContext:
     return ToolExecutionContext(
         actor_id="ou_user",
         conversation_type=ConversationType.PRIVATE,
         writeback_enabled=writeback_enabled,
         writeback_confirmation_mode=WritebackConfirmationMode.ALWAYS,
+        request=request,
     )

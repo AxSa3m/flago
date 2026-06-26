@@ -1,3 +1,5 @@
+import re
+
 from fcgo.models import (
     AgentObservation,
     AgentObservationKind,
@@ -15,6 +17,20 @@ def build_agent_observations(request: AssistantRequest) -> list[AgentObservation
             source="feishu.message",
         )
     ]
+    followup_source = _writeback_location_followup_source(request)
+    if followup_source:
+        observations.append(
+            AgentObservation(
+                kind=AgentObservationKind.RECENT_CHAT,
+                title="最近待补充位置的写回请求",
+                content=followup_source,
+                source="fcgo.context.writeback_followup",
+                metadata={
+                    "priority": "high",
+                    "instruction": "当前消息只补充位置时，应继承这条请求里的写入内容和目标",
+                },
+            )
+        )
     if request.chat_context_summary.strip():
         observations.append(
             AgentObservation(
@@ -75,6 +91,42 @@ def build_agent_observations(request: AssistantRequest) -> list[AgentObservation
         )
     observations.extend(_resource_observations(request.resource_results))
     return observations
+
+
+def _writeback_location_followup_source(request: AssistantRequest) -> str:
+    if not _is_location_only_writeback_followup(request.text):
+        return ""
+    for message in reversed(request.chat_context_messages):
+        text = message.text.strip()
+        if not text or text == request.text.strip():
+            continue
+        if _has_explicit_writeback_content(text):
+            return text
+    return ""
+
+
+def _is_location_only_writeback_followup(text: str) -> bool:
+    normalized = re.sub(r"\s+", "", text.strip().casefold())
+    if not normalized:
+        return False
+    location_markers = ("开头", "末尾", "文末", "最后", "最前", "最开始", "top", "bottom")
+    write_markers = ("写", "加", "追加", "插入", "放")
+    if not any(marker in normalized for marker in location_markers):
+        return False
+    if not any(marker in normalized for marker in write_markers):
+        return False
+    return len(normalized) <= 24 or normalized in {"帮我写在开头吧", "写在开头吧", "写到开头"}
+
+
+def _has_explicit_writeback_content(text: str) -> bool:
+    normalized = text.strip()
+    if not normalized:
+        return False
+    has_write = any(marker in normalized for marker in ("写", "添加", "追加", "插入", "记录"))
+    has_target = any(marker in normalized for marker in ("到", "进", "文档", "表格", "多维表"))
+    has_content = bool(re.search(r"[“\"']([^”\"']{1,200})[”\"']", normalized))
+    has_sentence = "一句" in normalized
+    return has_write and has_target and (has_content or has_sentence)
 
 
 def render_agent_observations(observations: list[AgentObservation]) -> str:

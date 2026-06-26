@@ -1,4 +1,5 @@
 import asyncio
+import re
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from typing import Any
@@ -8,6 +9,7 @@ from pydantic import BaseModel, ValidationError
 from fcgo.agent.protocols import ResourceReader, ResourceSearcher
 from fcgo.models import (
     ActionProposalDraft,
+    AssistantRequest,
     ConversationType,
     EmptyToolRequest,
     MemoryDraftRequest,
@@ -23,6 +25,7 @@ from fcgo.models import (
     WritebackConfirmationMode,
     WritebackProposalRequest,
 )
+from fcgo.resources.parser import parse_resource_url
 
 ToolHandler = Callable[[BaseModel, "ToolExecutionContext"], Awaitable[ToolResult]]
 
@@ -58,6 +61,7 @@ class ToolExecutionContext:
     conversation_type: ConversationType
     writeback_enabled: bool
     writeback_confirmation_mode: WritebackConfirmationMode
+    request: AssistantRequest | None = None
     resource_reader: ResourceReader | None = None
     resource_searcher: ResourceSearcher | None = None
     store: Any | None = None
@@ -310,7 +314,17 @@ async def _prepare_writeback(payload: BaseModel, context: ToolExecutionContext) 
     request = _typed(payload, WritebackProposalRequest)
     if not request.proposals:
         return _tool_error(ToolName.PREPARE_WRITEBACK, "missing_writeback_drafts")
-    unsupported = [_unsupported_writeback_reason(draft) for draft in request.proposals]
+    normalized = [_normalize_writeback_draft(draft, context) for draft in request.proposals]
+    missing_required = [
+        reason for draft in normalized if (reason := _missing_writeback_required_reason(draft))
+    ]
+    if missing_required:
+        return _tool_error(
+            ToolName.PREPARE_WRITEBACK,
+            "; ".join(missing_required),
+            "我还不能确定写回目标或写入内容，请明确目标文档和要写入的文字。",
+        )
+    unsupported = [_unsupported_writeback_reason(draft) for draft in normalized]
     unsupported = [reason for reason in unsupported if reason]
     if unsupported:
         return _tool_error(
@@ -324,11 +338,11 @@ async def _prepare_writeback(payload: BaseModel, context: ToolExecutionContext) 
         ok=True,
         content={
             "writeback_drafts": [
-                draft.model_dump(mode="json") for draft in request.proposals
+                draft.model_dump(mode="json") for draft in normalized
             ],
             "confirmation_mode": context.writeback_confirmation_mode.value,
         },
-        audit_metadata={"draft_count": len(request.proposals)},
+        audit_metadata={"draft_count": len(normalized)},
     )
 
 
@@ -413,6 +427,56 @@ async def _web_read(payload: BaseModel, context: ToolExecutionContext) -> ToolRe
     )
 
 
+def _normalize_writeback_draft(
+    draft: ActionProposalDraft,
+    context: ToolExecutionContext,
+) -> ActionProposalDraft:
+    if draft.action_type != WriteActionType.DOC_APPEND:
+        return draft
+    target = dict(draft.target)
+    payload = dict(draft.payload)
+    document_id = _doc_id_from_target(target)
+    if document_id:
+        target["document_id"] = document_id
+    url = _target_url(target)
+    if url:
+        target["url"] = url
+    title = _target_title(target, context.request)
+    if title:
+        target["title"] = title
+    content = _followup_writeback_content(context.request) or _doc_append_content(payload)
+    if content:
+        payload["content"] = content
+    payload.pop("text", None)
+    position = _write_position(target, payload, draft.preview)
+    target.pop("position", None)
+    payload.pop("position", None)
+    if position == "start" and document_id:
+        target["block_id"] = document_id
+        target["index"] = 0
+    elif position == "end":
+        if target.get("block_id") == document_id:
+            target.pop("block_id", None)
+        if _int_or_none(target.get("index")) in {-1, None}:
+            target.pop("index", None)
+    preview = _normalized_doc_append_preview(
+        content=content or str(payload.get("content") or ""),
+        position=position,
+        fallback=draft.preview,
+    )
+    return draft.model_copy(update={"target": target, "payload": payload, "preview": preview})
+
+
+def _missing_writeback_required_reason(draft: ActionProposalDraft) -> str:
+    if draft.action_type != WriteActionType.DOC_APPEND:
+        return ""
+    if not str(draft.target.get("document_id") or "").strip():
+        return "missing_document_id"
+    if not str(draft.payload.get("content") or "").strip():
+        return "missing_doc_append_content"
+    return ""
+
+
 def _unsupported_writeback_reason(draft: ActionProposalDraft) -> str:
     if draft.action_type != WriteActionType.DOC_APPEND:
         return ""
@@ -424,6 +488,176 @@ def _unsupported_writeback_reason(draft: ActionProposalDraft) -> str:
     if document_id and block_id == document_id and index == 0:
         return ""
     return "unsupported_doc_middle_insert"
+
+
+def _doc_id_from_target(target: dict[str, Any]) -> str:
+    direct = _first_text(target, "document_id", "doc_id", "token")
+    if direct:
+        return direct
+    url = _target_url(target)
+    if not url:
+        return ""
+    ref = parse_resource_url(url)
+    if ref.type == ResourceType.FEISHU_DOC and ref.token:
+        return ref.token
+    return ""
+
+
+def _target_url(target: dict[str, Any]) -> str:
+    return _first_text(target, "target_url", "url", "link")
+
+
+def _target_title(target: dict[str, Any], request: AssistantRequest | None) -> str:
+    title = _first_text(target, "target_title", "title", "name", "document_title")
+    if title and not _is_generic_target_title(title):
+        return title
+    document_id = _doc_id_from_target(target)
+    url = _target_url(target)
+    if request is not None:
+        matched = _title_from_known_resources(request, document_id=document_id, url=url)
+        if matched:
+            return matched
+        from_text = _title_from_request_text(request.text)
+        if from_text:
+            return from_text
+        for message in reversed(request.chat_context_messages):
+            from_context = _title_from_request_text(message.text)
+            if from_context:
+                return from_context
+    return "" if _is_generic_target_title(title) else title
+
+
+def _title_from_known_resources(
+    request: AssistantRequest,
+    *,
+    document_id: str,
+    url: str,
+) -> str:
+    for result in request.resource_results:
+        if _resource_matches(result.ref, document_id=document_id, url=url):
+            title = (result.title or result.ref.title or "").strip()
+            if title and not _is_generic_target_title(title):
+                return title
+    for ref in request.resource_refs:
+        if _resource_matches(ref, document_id=document_id, url=url):
+            title = (ref.title or "").strip()
+            if title and not _is_generic_target_title(title):
+                return title
+    return ""
+
+
+def _resource_matches(ref: ResourceRef, *, document_id: str, url: str) -> bool:
+    if document_id and ref.token == document_id:
+        return True
+    return bool(url and ref.url == url)
+
+
+def _title_from_request_text(text: str) -> str:
+    for pattern in (r"《([^》]{2,60})》",):
+        for match in re.finditer(pattern, text):
+            candidate = _clean_target_title(match.group(1))
+            if candidate:
+                return candidate
+    marker_match = re.search(
+        r"(?:到|进|写到|写进)\s*([^，。！？\n]{2,80}?)(?:的)?(?:开头|末尾|文末|里|里面|中|之前|前面|后面|$)",
+        text,
+    )
+    if marker_match:
+        return _clean_target_title(marker_match.group(1))
+    return ""
+
+
+def _clean_target_title(value: str) -> str:
+    cleaned = re.sub(r"https?://\S+", " ", value)
+    cleaned = re.sub(
+        r"(?:开头|末尾|文末|最后|最前面|最开始|里面|里|中|之前|前面|后面|的多维表格|多维表格)$",
+        "",
+        cleaned.strip(),
+    )
+    cleaned = cleaned.strip(" ：:，,。？?！!；;\"'`“”《》")
+    if not cleaned or _is_generic_target_title(cleaned):
+        return ""
+    return cleaned[:80]
+
+
+def _is_generic_target_title(value: str) -> bool:
+    compact = re.sub(r"\s+", "", value or "").casefold()
+    return compact in {"", "目标", "目标文档", "目标资源", "文档", "打开目标资源"}
+
+
+def _doc_append_content(payload: dict[str, Any]) -> str:
+    return _first_text(payload, "content", "text", "value")
+
+
+def _followup_writeback_content(request: AssistantRequest | None) -> str:
+    if request is None or not _is_location_only_writeback_followup(request.text):
+        return ""
+    for message in reversed(request.chat_context_messages):
+        text = message.text.strip()
+        if not text or text == request.text.strip():
+            continue
+        content = _content_from_writeback_request(text)
+        if content:
+            return content
+    return ""
+
+
+def _content_from_writeback_request(text: str) -> str:
+    for pattern in (
+        r"[“\"']([^”\"']{1,500})[”\"']",
+        r"写\s*一句\s*([^，。！？\n]{1,500}?)(?:到|进|写到|写进)",
+    ):
+        match = re.search(pattern, text)
+        if match:
+            content = match.group(1).strip(" ：:，,。？?！!；;\"'`“”")
+            if content:
+                return content
+    return ""
+
+
+def _is_location_only_writeback_followup(text: str) -> bool:
+    normalized = re.sub(r"\s+", "", text.strip().casefold())
+    if not normalized:
+        return False
+    location_markers = ("开头", "末尾", "文末", "最后", "top", "bottom")
+    if not any(marker in normalized for marker in location_markers):
+        return False
+    if not any(marker in normalized for marker in ("写", "加", "追加", "插入", "放")):
+        return False
+    return len(normalized) <= 24
+
+
+def _write_position(
+    target: dict[str, Any],
+    payload: dict[str, Any],
+    preview: str,
+) -> str:
+    raw = f"{target.get('position') or ''} {payload.get('position') or ''} {preview}"
+    lowered = raw.casefold()
+    if any(marker in lowered for marker in ("start", "top", "开头", "最前", "最开始")):
+        return "start"
+    if any(marker in lowered for marker in ("end", "bottom", "末尾", "文末", "最后")):
+        return "end"
+    return ""
+
+
+def _normalized_doc_append_preview(*, content: str, position: str, fallback: str) -> str:
+    cleaned = content.strip()
+    if not cleaned:
+        return fallback
+    if position == "start":
+        return f"向文档开头插入文本：\n{cleaned}"
+    if position == "end":
+        return f"向文档追加文本：\n{cleaned}"
+    return fallback or f"向文档追加文本：\n{cleaned}"
+
+
+def _first_text(data: dict[str, Any], *keys: str) -> str:
+    for key in keys:
+        value = data.get(key)
+        if isinstance(value, str) and value.strip():
+            return value.strip()
+    return ""
 
 
 def _tool_error(name: ToolName, error: str, user_message: str | None = None) -> ToolResult:

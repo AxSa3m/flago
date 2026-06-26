@@ -3,7 +3,7 @@ from fcgo.models import WritebackConfirmationMode
 
 
 def test_context_and_memory_privacy_defaults_are_conservative() -> None:
-    settings = Settings(env="test", oauth_enable_offline_access=False)
+    settings = Settings(_env_file=None, env="test", oauth_enable_offline_access=False)
 
     assert settings.context_recent_message_limit == 50
     assert settings.context_recent_time_window_hours == 24
@@ -34,7 +34,7 @@ def test_context_and_memory_privacy_defaults_are_conservative() -> None:
 
 
 def test_oauth_offline_access_is_opt_in() -> None:
-    settings = Settings(env="test", oauth_enable_offline_access=True)
+    settings = Settings(_env_file=None, env="test", oauth_enable_offline_access=True)
 
     assert "offline_access" in settings.oauth_scope_list
     assert "offline_access" not in settings.oauth_required_scope_list
@@ -42,6 +42,7 @@ def test_oauth_offline_access_is_opt_in() -> None:
 
 def test_oauth_scopes_filter_offline_access_when_disabled() -> None:
     settings = Settings(
+        _env_file=None,
         env="test",
         feishu_oauth_scopes="auth:user.id:read offline_access docx:document:readonly",
         oauth_enable_offline_access=False,
@@ -52,6 +53,7 @@ def test_oauth_scopes_filter_offline_access_when_disabled() -> None:
 
 def test_context_and_memory_privacy_settings_can_be_overridden() -> None:
     settings = Settings(
+        _env_file=None,
         env="test",
         memory_store_raw_text=True,
         memory_item_max_chars=100,
