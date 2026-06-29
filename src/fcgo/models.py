@@ -3,7 +3,7 @@ from enum import StrEnum
 from typing import Any, Literal
 from uuid import uuid4
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 
 class ConversationType(StrEnum):
@@ -261,6 +261,11 @@ class AgentDecision(BaseModel):
     final_response: str | None = None
     tool_calls: list[ToolCall] = Field(default_factory=list)
     writeback_drafts: list[ActionProposalDraft] = Field(default_factory=list)
+
+    @field_validator("tool_calls", "writeback_drafts", mode="before")
+    @classmethod
+    def _none_lists_are_empty(cls, value: Any) -> Any:
+        return [] if value is None else value
 
 
 class ActionProposal(BaseModel):

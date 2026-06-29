@@ -105,6 +105,56 @@ async def test_agent_repairs_invalid_json_once() -> None:
 
 
 @pytest.mark.asyncio
+async def test_agent_repairs_invalid_json_after_tool_results() -> None:
+    searcher = FakeSearcher()
+    model = FakeAgentModel(
+        [
+            _decision(
+                tool_calls=[
+                    {
+                        "id": "search-1",
+                        "name": ToolName.SEARCH_RESOURCES.value,
+                        "arguments": {"query": "测试文档", "limit": 3},
+                    }
+                ]
+            ),
+            "不是 JSON",
+            _decision(final_response="已根据搜索结果继续处理。"),
+        ]
+    )
+    agent = AgentOrchestrator(model, resource_searcher=searcher)
+
+    response = await agent.handle(_request("帮我搜索测试文档"))
+
+    assert response.text == "已根据搜索结果继续处理。"
+    assert len(model.requests) == 3
+    assert model.requests[2].metadata["agent_mode"] == "json_repair"
+    assert "Tool results" in model.requests[2].messages[1].content
+
+
+@pytest.mark.asyncio
+async def test_agent_accepts_null_decision_lists() -> None:
+    model = FakeAgentModel(
+        [
+            json.dumps(
+                {
+                    "final_response": "空列表字段已兼容。",
+                    "tool_calls": None,
+                    "writeback_drafts": None,
+                },
+                ensure_ascii=False,
+            )
+        ]
+    )
+    agent = AgentOrchestrator(model)
+
+    response = await agent.handle(_request("测试 null 列表"))
+
+    assert response.text == "空列表字段已兼容。"
+    assert response.action_proposals == []
+
+
+@pytest.mark.asyncio
 async def test_agent_converts_writeback_draft_to_action_proposal() -> None:
     model = FakeAgentModel(
         [

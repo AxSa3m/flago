@@ -80,11 +80,11 @@ class AgentOrchestrator:
             model_router=self.model_router or self.model_provider,
         )
 
-        for step_index in range(self.max_steps):
+        for _ in range(self.max_steps):
             decision, parse_error = await self._next_decision(
                 request,
                 tool_results=tool_results,
-                repair=step_index == 0,
+                repair=True,
             )
             if decision is None:
                 return AssistantResponse(text=_parse_failure_text(parse_error))
@@ -402,6 +402,8 @@ def _inject_message_links(request: AssistantRequest) -> None:
 
 
 def _parse_failure_text(parse_error: str) -> str:
+    if parse_error.startswith("AgentDecision 校验失败"):
+        parse_error = "模型输出字段类型不正确。"
     return (
         "我没有解析出有效的 Agent 决策，因此没有执行任何工具。"
         f"原因：{parse_error or '模型输出格式不正确'}"
