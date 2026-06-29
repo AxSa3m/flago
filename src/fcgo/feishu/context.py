@@ -96,6 +96,7 @@ class ChatContextLoader:
                 summary=summary,
                 source_message_count=len(cached),
             )
+        await self._cache_current_message(message, scope)
         await self._maybe_save_conversation_memory(message, scope, summary)
         return selected, summary, len(older)
 
@@ -138,6 +139,21 @@ class ChatContextLoader:
             kind=CONVERSATION_MEMORY_KIND,
             content=content,
             source=conversation_memory_source(scope),
+        )
+
+    async def _cache_current_message(self, message: FeishuMessage, scope: str) -> None:
+        if not message.message_id or not message.text.strip():
+            return
+        await self.store.upsert_context_messages(
+            scope=scope,
+            messages=[
+                ChatContextMessage(
+                    message_id=message.message_id,
+                    sender_id=message.sender_id,
+                    text=message.text,
+                    created_at=datetime.now(UTC).isoformat(),
+                )
+            ],
         )
 
 
@@ -358,6 +374,12 @@ def _is_context_dependent_query(text: str) -> bool:
         "what did i say",
         "previous",
         "earlier",
+        "写在开头",
+        "写到开头",
+        "写在结尾",
+        "写到结尾",
+        "写在末尾",
+        "写到末尾",
     )
     return any(marker in normalized for marker in markers)
 

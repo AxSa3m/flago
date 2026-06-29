@@ -255,6 +255,59 @@ async def test_agent_overrides_stale_model_content_for_location_followup() -> No
 
 
 @pytest.mark.asyncio
+async def test_agent_uses_recent_bare_user_text_for_location_followup() -> None:
+    model = FakeAgentModel(
+        [
+            _decision(
+                writeback_drafts=[
+                    {
+                        "action_type": WriteActionType.DOC_APPEND.value,
+                        "target": {
+                            "token": "docx1",
+                            "url": "https://my.feishu.cn/docx/docx1",
+                            "position": "end",
+                        },
+                        "payload": {"text": "Agent测试Agents"},
+                        "preview": "向文档追加文本：Agent测试Agents",
+                    }
+                ],
+            )
+        ]
+    )
+    agent = AgentOrchestrator(model, enable_writeback=True)
+    request = _request("写在结尾吧").model_copy(
+        update={
+            "chat_context_messages": [
+                ChatContextMessage(
+                    message_id="m1",
+                    sender_id="ou_user",
+                    text="帮我写一句“Agent测试Agents”到测试文档开头",
+                    created_at="2026-06-26T06:00:00+00:00",
+                ),
+                ChatContextMessage(
+                    message_id="m2",
+                    sender_id="ou_bot",
+                    text="你想把这句话写到测试文档的开头还是末尾？",
+                    created_at="2026-06-26T06:01:00+00:00",
+                ),
+                ChatContextMessage(
+                    message_id="m3",
+                    sender_id="ou_user",
+                    text="中间位置测试agents",
+                    created_at="2026-06-26T06:02:00+00:00",
+                ),
+            ]
+        }
+    )
+
+    response = await agent.handle(request)
+
+    proposal = response.action_proposals[0]
+    assert proposal.payload == {"content": "中间位置测试agents"}
+    assert proposal.preview == "向文档追加文本：\n中间位置测试agents"
+
+
+@pytest.mark.asyncio
 async def test_agent_rejects_unsupported_middle_writeback_draft() -> None:
     model = FakeAgentModel(
         [

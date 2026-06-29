@@ -100,7 +100,9 @@ def _writeback_location_followup_source(request: AssistantRequest) -> str:
         text = message.text.strip()
         if not text or text == request.text.strip():
             continue
-        if _has_explicit_writeback_content(text):
+        if message.sender_id and request.actor_id and message.sender_id != request.actor_id:
+            continue
+        if _has_explicit_writeback_content(text) or _is_bare_writeback_content(text):
             return text
     return ""
 
@@ -109,7 +111,7 @@ def _is_location_only_writeback_followup(text: str) -> bool:
     normalized = re.sub(r"\s+", "", text.strip().casefold())
     if not normalized:
         return False
-    location_markers = ("开头", "末尾", "文末", "最后", "最前", "最开始", "top", "bottom")
+    location_markers = ("开头", "结尾", "末尾", "文末", "最后", "最前", "最开始", "top", "bottom")
     write_markers = ("写", "加", "追加", "插入", "放")
     if not any(marker in normalized for marker in location_markers):
         return False
@@ -127,6 +129,19 @@ def _has_explicit_writeback_content(text: str) -> bool:
     has_content = bool(re.search(r"[“\"']([^”\"']{1,200})[”\"']", normalized))
     has_sentence = "一句" in normalized
     return has_write and has_target and (has_content or has_sentence)
+
+
+def _is_bare_writeback_content(text: str) -> bool:
+    normalized = text.strip()
+    if not normalized or len(normalized) > 200:
+        return False
+    if normalized.startswith(("/", "\\")):
+        return False
+    if _is_location_only_writeback_followup(normalized):
+        return False
+    return not any(
+        marker in normalized for marker in ("？", "?", "吗", "帮我", "请", "写到", "写进")
+    )
 
 
 def render_agent_observations(observations: list[AgentObservation]) -> str:

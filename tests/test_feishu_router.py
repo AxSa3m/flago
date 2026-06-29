@@ -773,6 +773,40 @@ async def test_router_uses_cached_chat_context_within_refresh_window(tmp_path) -
 
 
 @pytest.mark.asyncio
+async def test_router_caches_current_message_for_next_followup_within_refresh_window(
+    tmp_path,
+) -> None:
+    store = SQLiteStore(tmp_path / "fcgo.sqlite3")
+    await store.init()
+    history = RecordingChatHistoryAPI({"items": []})
+    client = RecordingFeishuClient()
+    assistant = SuccessfulAssistant()
+    router = FeishuMessageRouter(
+        assistant,
+        client,
+        store,
+        chat_history_api=history,
+        settings=Settings(env="test", context_cache_refresh_seconds=3600),
+    )
+
+    await router.handle_message(
+        _message(
+            "om_middle_writeback",
+            "帮我写一句“中间位置测试agents”到测试文档里的多维表格之前",
+        )
+    )
+    await router.handle_message(_message("om_location_followup", "帮我写在开头吧"))
+
+    injected = assistant.requests[1].chat_context_messages
+    assert len(history.calls) == 2
+    assert any(
+        item.message_id == "om_middle_writeback"
+        and "中间位置测试agents" in item.text
+        for item in injected
+    )
+
+
+@pytest.mark.asyncio
 async def test_router_refreshes_chat_context_for_context_dependent_query(tmp_path) -> None:
     store = SQLiteStore(tmp_path / "fcgo.sqlite3")
     await store.init()
@@ -806,7 +840,7 @@ async def test_router_refreshes_chat_context_for_context_dependent_query(tmp_pat
 
     assert len(history.calls) == 2
     injected = assistant.requests[1].chat_context_messages
-    assert [item.message_id for item in injected] == ["om_keyword"]
+    assert [item.message_id for item in injected][-1:] == ["om_keyword"]
 
 
 @pytest.mark.asyncio
@@ -861,8 +895,8 @@ async def test_router_refreshes_chat_context_for_document_reference_query(tmp_pa
 
     assert len(history.calls) == 2
     injected = assistant.requests[1].chat_context_messages
-    assert [item.message_id for item in injected] == ["om_user_lookup", "om_bot_answer"]
-    assert "蓝色火箭测试的编码" in injected[1].text
+    assert [item.message_id for item in injected][-2:] == ["om_user_lookup", "om_bot_answer"]
+    assert "蓝色火箭测试的编码" in injected[-1].text
 
 
 @pytest.mark.asyncio

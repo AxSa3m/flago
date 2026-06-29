@@ -596,9 +596,13 @@ def _followup_writeback_content(request: AssistantRequest | None) -> str:
         text = message.text.strip()
         if not text or text == request.text.strip():
             continue
+        if message.sender_id and request.actor_id and message.sender_id != request.actor_id:
+            continue
         content = _content_from_writeback_request(text)
         if content:
             return content
+        if _is_bare_writeback_content(text):
+            return text.strip()
     return ""
 
 
@@ -615,11 +619,24 @@ def _content_from_writeback_request(text: str) -> str:
     return ""
 
 
+def _is_bare_writeback_content(text: str) -> bool:
+    normalized = text.strip()
+    if not normalized or len(normalized) > 200:
+        return False
+    if normalized.startswith(("/", "\\")):
+        return False
+    if _is_location_only_writeback_followup(normalized):
+        return False
+    return not any(
+        marker in normalized for marker in ("？", "?", "吗", "帮我", "请", "写到", "写进")
+    )
+
+
 def _is_location_only_writeback_followup(text: str) -> bool:
     normalized = re.sub(r"\s+", "", text.strip().casefold())
     if not normalized:
         return False
-    location_markers = ("开头", "末尾", "文末", "最后", "top", "bottom")
+    location_markers = ("开头", "结尾", "末尾", "文末", "最后", "top", "bottom")
     if not any(marker in normalized for marker in location_markers):
         return False
     if not any(marker in normalized for marker in ("写", "加", "追加", "插入", "放")):
@@ -636,7 +653,7 @@ def _write_position(
     lowered = raw.casefold()
     if any(marker in lowered for marker in ("start", "top", "开头", "最前", "最开始")):
         return "start"
-    if any(marker in lowered for marker in ("end", "bottom", "末尾", "文末", "最后")):
+    if any(marker in lowered for marker in ("end", "bottom", "结尾", "末尾", "文末", "最后")):
         return "end"
     return ""
 
