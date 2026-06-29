@@ -74,6 +74,95 @@ async def test_openai_compatible_provider_posts_chat_completion_request() -> Non
 
 @pytest.mark.asyncio
 @respx.mock
+async def test_openai_compatible_provider_adapts_native_tool_calls() -> None:
+    route = respx.post("https://api.example.test/v1/chat/completions").mock(
+        return_value=httpx.Response(
+            200,
+            json={
+                "choices": [
+                    {
+                        "message": {
+                            "content": None,
+                            "tool_calls": [
+                                {
+                                    "id": "call-search",
+                                    "type": "function",
+                                    "function": {
+                                        "name": "search_resources",
+                                        "arguments": "{\"query\":\"测试文档\",\"limit\":3}",
+                                    },
+                                }
+                            ],
+                        }
+                    }
+                ],
+                "usage": {
+                    "prompt_tokens": 10,
+                    "completion_tokens": 4,
+                    "total_tokens": 14,
+                },
+            },
+        )
+    )
+    provider = OpenAICompatibleProvider(
+        ProviderConfig(
+            name="deepseek",
+            kind=ProviderKind.OPENAI_COMPATIBLE,
+            default_model="deepseek-test",
+            api_key=SecretStr("sk-test-openai-compatible"),
+            base_url="https://api.example.test/v1",
+            capabilities=[ProviderCapability.CHAT, ProviderCapability.TOOL_CALLING],
+        )
+    )
+    request = ModelRequest(
+        request_id="req-tools",
+        provider="deepseek",
+        model="deepseek-test",
+        messages=[ModelMessage(role=ModelMessageRole.USER, content="帮我找测试文档")],
+        tools=[
+            {
+                "name": "search_resources",
+                "description": "Search resources.",
+                "parameters": {
+                    "type": "object",
+                    "properties": {"query": {"type": "string"}, "limit": {"type": "integer"}},
+                    "required": ["query"],
+                },
+            }
+        ],
+        tool_choice="auto",
+    )
+
+    response = await provider.generate_model(request)
+
+    assert response.text == ""
+    assert len(response.tool_calls) == 1
+    assert response.tool_calls[0].id == "call-search"
+    assert response.tool_calls[0].name == "search_resources"
+    assert response.tool_calls[0].arguments == {"query": "测试文档", "limit": 3}
+    payload = json.loads(route.calls.last.request.content)
+    assert payload["tool_choice"] == "auto"
+    assert payload["tools"] == [
+        {
+            "type": "function",
+            "function": {
+                "name": "search_resources",
+                "description": "Search resources.",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "query": {"type": "string"},
+                        "limit": {"type": "integer"},
+                    },
+                    "required": ["query"],
+                },
+            },
+        }
+    ]
+
+
+@pytest.mark.asyncio
+@respx.mock
 async def test_openai_compatible_provider_reports_redacted_http_errors() -> None:
     respx.post("https://api.example.test/v1/chat/completions").mock(
         return_value=httpx.Response(

@@ -53,6 +53,12 @@ class ModelRequest(BaseModel):
     metadata: dict[str, Any] = Field(default_factory=dict)
 
 
+class ModelToolCall(BaseModel):
+    id: str
+    name: str
+    arguments: dict[str, Any] = Field(default_factory=dict)
+
+
 class ProviderConfig(BaseModel):
     name: str
     kind: ProviderKind
@@ -87,4 +93,5 @@ class ModelResponse(BaseModel):
     provider: str | None = None
     model: str | None = None
     usage: ModelUsage | None = None
+    tool_calls: list[ModelToolCall] = Field(default_factory=list)
     raw: dict[str, Any] = Field(default_factory=dict)

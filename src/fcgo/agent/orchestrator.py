@@ -13,6 +13,7 @@ from fcgo.model_providers.types import (
     ModelMessageRole,
     ModelRequest,
     ModelResponse,
+    ModelToolCall,
     ProviderCapability,
 )
 from fcgo.models import (
@@ -128,6 +129,9 @@ class AgentOrchestrator:
                 tool_results=tool_results,
             )
         )
+        native_decision = _agent_decision_from_native_tool_calls(response.tool_calls)
+        if native_decision is not None:
+            return native_decision, ""
         decision, error = _parse_agent_decision(response.text)
         if decision is not None or not repair:
             return decision, error
@@ -365,6 +369,31 @@ def _parse_agent_decision(text: str) -> tuple[AgentDecision | None, str]:
         return AgentDecision.model_validate(data), ""
     except ValidationError as exc:
         return None, f"AgentDecision 校验失败：{exc.errors()}"
+
+
+def _agent_decision_from_native_tool_calls(
+    tool_calls: list[ModelToolCall],
+) -> AgentDecision | None:
+    calls = [
+        ToolCall(
+            id=call.id,
+            name=ToolName(call.name),
+            arguments=call.arguments,
+        )
+        for call in tool_calls
+        if _is_known_tool_name(call.name)
+    ]
+    if not calls:
+        return None
+    return AgentDecision(tool_calls=calls)
+
+
+def _is_known_tool_name(name: str) -> bool:
+    try:
+        ToolName(name)
+    except ValueError:
+        return False
+    return True
 
 
 def _extract_json_object(text: str) -> str:

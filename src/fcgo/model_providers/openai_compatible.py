@@ -1,3 +1,4 @@
+import json
 import logging
 from time import perf_counter
 from typing import Any
@@ -10,6 +11,7 @@ from fcgo.model_providers.types import (
     ModelMessage,
     ModelRequest,
     ModelResponse,
+    ModelToolCall,
     ModelUsage,
     ProviderCapability,
     ProviderConfig,
@@ -52,6 +54,10 @@ class OpenAICompatibleProvider:
             payload["max_tokens"] = max_tokens
         if request.temperature is not None:
             payload["temperature"] = request.temperature
+        if request.tools:
+            payload["tools"] = [_tool_payload(tool) for tool in request.tools]
+        if request.tool_choice:
+            payload["tool_choice"] = request.tool_choice
         started_at = perf_counter()
         response_json = await self._post_json(payload)
         latency_ms = int((perf_counter() - started_at) * 1000)
@@ -70,6 +76,7 @@ class OpenAICompatibleProvider:
             provider=self.name,
             model=model,
             usage=usage,
+            tool_calls=_response_tool_calls(response_json),
             raw={"latency_ms": latency_ms},
         )
 
@@ -166,11 +173,30 @@ def _chat_completions_url(base_url: str) -> str:
     return f"{normalized}/chat/completions"
 
 
-def _message_payload(message: ModelMessage) -> dict[str, str]:
-    payload = {"role": message.role.value, "content": message.content}
+def _message_payload(message: ModelMessage) -> dict[str, Any]:
+    payload: dict[str, Any] = {"role": message.role.value, "content": message.content}
     if message.name:
         payload["name"] = message.name
+    tool_call_id = message.metadata.get("tool_call_id")
+    if message.role.value == "tool" and isinstance(tool_call_id, str) and tool_call_id:
+        payload["tool_call_id"] = tool_call_id
     return payload
+
+
+def _tool_payload(tool: dict[str, Any]) -> dict[str, Any]:
+    name = str(tool.get("name") or "").strip()
+    description = str(tool.get("description") or "").strip()
+    parameters = tool.get("parameters")
+    if not isinstance(parameters, dict):
+        parameters = {"type": "object", "properties": {}}
+    return {
+        "type": "function",
+        "function": {
+            "name": name,
+            "description": description,
+            "parameters": parameters,
+        },
+    }
 
 
 def _response_text(response_json: dict[str, Any]) -> str:
@@ -193,6 +219,56 @@ def _response_text(response_json: dict[str, Any]) -> str:
                 parts.append(item["text"])
         return "".join(parts)
     return ""
+
+
+def _response_tool_calls(response_json: dict[str, Any]) -> list[ModelToolCall]:
+    message = _first_choice_message(response_json)
+    if message is None:
+        return []
+    raw_tool_calls = message.get("tool_calls")
+    if not isinstance(raw_tool_calls, list):
+        return []
+    calls: list[ModelToolCall] = []
+    for index, item in enumerate(raw_tool_calls):
+        if not isinstance(item, dict):
+            continue
+        function = item.get("function")
+        if not isinstance(function, dict):
+            continue
+        name = function.get("name")
+        if not isinstance(name, str) or not name.strip():
+            continue
+        calls.append(
+            ModelToolCall(
+                id=str(item.get("id") or f"tool-call-{index + 1}"),
+                name=name.strip(),
+                arguments=_tool_arguments(function.get("arguments")),
+            )
+        )
+    return calls
+
+
+def _first_choice_message(response_json: dict[str, Any]) -> dict[str, Any] | None:
+    choices = response_json.get("choices")
+    if not isinstance(choices, list) or not choices:
+        return None
+    first = choices[0]
+    if not isinstance(first, dict):
+        return None
+    message = first.get("message")
+    return message if isinstance(message, dict) else None
+
+
+def _tool_arguments(raw_arguments: Any) -> dict[str, Any]:
+    if isinstance(raw_arguments, dict):
+        return raw_arguments
+    if not isinstance(raw_arguments, str) or not raw_arguments.strip():
+        return {}
+    try:
+        parsed = json.loads(raw_arguments)
+    except json.JSONDecodeError:
+        return {}
+    return parsed if isinstance(parsed, dict) else {}
 
 
 def _usage(raw_usage: Any) -> ModelUsage | None:

@@ -4,7 +4,7 @@ from typing import Any
 import pytest
 
 from fcgo.agent.orchestrator import AgentOrchestrator
-from fcgo.model_providers.types import ModelRequest, ModelResponse
+from fcgo.model_providers.types import ModelRequest, ModelResponse, ModelToolCall
 from fcgo.models import (
     AssistantRequest,
     ChatContextMessage,
@@ -19,13 +19,16 @@ from fcgo.models import (
 
 
 class FakeAgentModel:
-    def __init__(self, outputs: list[str]) -> None:
+    def __init__(self, outputs: list[str | ModelResponse]) -> None:
         self.outputs = outputs
         self.requests: list[ModelRequest] = []
 
     async def generate_model(self, request: ModelRequest) -> ModelResponse:
         self.requests.append(request)
-        return ModelResponse(text=self.outputs.pop(0), provider="fake", model="fake-model")
+        output = self.outputs.pop(0)
+        if isinstance(output, ModelResponse):
+            return output
+        return ModelResponse(text=output, provider="fake", model="fake-model")
 
 
 class FakeSearcher:
@@ -89,6 +92,38 @@ async def test_agent_executes_search_tool_then_returns_final_response() -> None:
     assert searcher.queries == ["情感调优"]
     assert response.text == "找到了：情感调优。"
     assert len(model.requests) == 2
+    assert "Tool results" in model.requests[1].messages[1].content
+
+
+@pytest.mark.asyncio
+async def test_agent_executes_native_model_tool_calls() -> None:
+    searcher = FakeSearcher()
+    model = FakeAgentModel(
+        [
+            ModelResponse(
+                text="",
+                provider="fake",
+                model="fake-model",
+                tool_calls=[
+                    ModelToolCall(
+                        id="native-search",
+                        name=ToolName.SEARCH_RESOURCES.value,
+                        arguments={"query": "情感调优", "limit": 3},
+                    )
+                ],
+            ),
+            _decision(final_response="原生工具调用已执行。"),
+        ]
+    )
+    agent = AgentOrchestrator(model, resource_searcher=searcher)
+
+    response = await agent.handle(_request("帮我找情感调优相关文档"))
+
+    assert searcher.queries == ["情感调优"]
+    assert response.text == "原生工具调用已执行。"
+    assert len(model.requests) == 2
+    assert model.requests[0].tools
+    assert model.requests[0].tool_choice == "auto"
     assert "Tool results" in model.requests[1].messages[1].content
 
 
