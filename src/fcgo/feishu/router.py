@@ -100,6 +100,8 @@ class FeishuMessageRouter:
             return
         if await self._maybe_handle_privacy_command(message):
             return
+        if await self._maybe_handle_writeback_command(message):
+            return
         if await self._maybe_handle_explicit_memory_statement(message):
             return
         if _is_writeback_history_command(message.text):
@@ -254,7 +256,8 @@ class FeishuMessageRouter:
                 _writeback_disabled_text(response.text),
             )
             return
-        if self.settings.writeback_confirmation_mode == WritebackConfirmationMode.DRAFT_ONLY:
+        confirmation_mode = await self._effective_writeback_confirmation_mode(message)
+        if confirmation_mode == WritebackConfirmationMode.DRAFT_ONLY:
             await self.feishu_client.reply_text(
                 message.chat_id,
                 _draft_only_writeback_text(response),
@@ -277,8 +280,7 @@ class FeishuMessageRouter:
                     duplicate["status"],
                 )
         if (
-            self.settings.writeback_confirmation_mode
-            == WritebackConfirmationMode.LOW_RISK_DIRECT
+            confirmation_mode == WritebackConfirmationMode.LOW_RISK_DIRECT
             and duplicate_count == 0
             and self.writeback_service is not None
             and all(
@@ -375,6 +377,49 @@ class FeishuMessageRouter:
         await self.feishu_client.reply_text(
             message.chat_id,
             _model_menu_only_text(await self._assistant_name_for_message(message)),
+        )
+        return True
+
+    async def _maybe_handle_writeback_command(self, message: FeishuMessage) -> bool:
+        command = _parse_writeback_command(message.text)
+        if command is None:
+            return False
+        assistant_name = await self._assistant_name_for_message(message)
+        normalized = re.sub(r"\s+", "", command.strip())
+        if normalized in {"", "状态", "查看", "策略"}:
+            await self.feishu_client.reply_text(
+                message.chat_id,
+                await self._writeback_status_text(message, assistant_name=assistant_name),
+            )
+            return True
+        if normalized in {"历史", "最近", "最近写回"}:
+            await self._reply_writeback_history(message)
+            return True
+        if normalized in {"自动开启", "开启自动", "自动打开", "打开自动"}:
+            await self.feishu_client.reply_text(
+                message.chat_id,
+                await self._enable_writeback_auto_text(message, assistant_name=assistant_name),
+            )
+            return True
+        if normalized in {"自动关闭", "关闭自动", "自动暂停", "暂停自动"}:
+            await self.feishu_client.reply_text(
+                message.chat_id,
+                await self._disable_writeback_auto_text(message, assistant_name=assistant_name),
+            )
+            return True
+        if normalized in {"自动清除", "清除自动", "清除偏好", "恢复默认"}:
+            await self.store.clear_writeback_auto_execute(
+                message.sender_id,
+                updated_by=message.sender_id,
+            )
+            await self.feishu_client.reply_text(
+                message.chat_id,
+                f"已清除你的自动写回偏好。{assistant_name} 将使用服务默认写回策略。",
+            )
+            return True
+        await self.feishu_client.reply_text(
+            message.chat_id,
+            _writeback_command_help(assistant_name),
         )
         return True
 
@@ -911,6 +956,83 @@ class FeishuMessageRouter:
         if conversation_preference is not None:
             return conversation_preference
         return None
+
+    async def _effective_writeback_confirmation_mode(
+        self,
+        message: FeishuMessage,
+    ) -> WritebackConfirmationMode:
+        if self.settings.writeback_confirmation_mode == WritebackConfirmationMode.DRAFT_ONLY:
+            return WritebackConfirmationMode.DRAFT_ONLY
+        preference = await self.store.get_writeback_auto_execute(message.sender_id)
+        if preference is not None and self.settings.writeback_auto_execute_enabled:
+            return (
+                WritebackConfirmationMode.LOW_RISK_DIRECT
+                if preference.enabled
+                else WritebackConfirmationMode.ALWAYS
+            )
+        return self.settings.writeback_confirmation_mode
+
+    async def _writeback_status_text(
+        self,
+        message: FeishuMessage,
+        *,
+        assistant_name: str,
+    ) -> str:
+        preference = await self.store.get_writeback_auto_execute(message.sender_id)
+        effective_mode = await self._effective_writeback_confirmation_mode(message)
+        if preference is None:
+            user_setting = "未设置"
+        else:
+            user_setting = "已开启" if preference.enabled else "已关闭"
+        lines = [
+            f"{assistant_name} 当前写回策略：{_writeback_confirmation_mode_label(effective_mode)}",
+            f"- 你的自动写回偏好：{user_setting}",
+            "- 服务是否允许用户开启自动写回："
+            f"{'是' if self.settings.writeback_auto_execute_enabled else '否'}",
+            f"- 写入功能：{'已开启' if self.settings.writeback_enabled else '已暂停'}",
+        ]
+        if effective_mode == WritebackConfirmationMode.LOW_RISK_DIRECT:
+            lines.append("低风险文档开头/末尾追加会直接执行；修改、删除、表格和多维表仍会要求确认。")
+        else:
+            lines.append("默认会先生成确认卡片，不会直接写入。")
+        return "\n".join(lines)
+
+    async def _enable_writeback_auto_text(
+        self,
+        message: FeishuMessage,
+        *,
+        assistant_name: str,
+    ) -> str:
+        if not self.settings.writeback_enabled:
+            return "写入功能当前已暂停，无法开启自动写回。"
+        if not self.settings.writeback_auto_execute_enabled:
+            return (
+                "服务当前未开放用户自动写回开关。需要服务配置 "
+                "`FCGO_WRITEBACK_AUTO_EXECUTE_ENABLED=true` 后才能开启。"
+            )
+        await self.store.set_writeback_auto_execute(
+            subject_id=message.sender_id,
+            enabled=True,
+            updated_by=message.sender_id,
+        )
+        return (
+            f"已开启你的个人自动写回偏好。{assistant_name} "
+            "只会对明确目标的文档开头/末尾追加直接执行；"
+            "修改、删除、表格、多维表和不明确目标仍会生成确认卡片。发送 /写回 自动关闭 可随时关闭。"
+        )
+
+    async def _disable_writeback_auto_text(
+        self,
+        message: FeishuMessage,
+        *,
+        assistant_name: str,
+    ) -> str:
+        await self.store.set_writeback_auto_execute(
+            subject_id=message.sender_id,
+            enabled=False,
+            updated_by=message.sender_id,
+        )
+        return f"已关闭你的个人自动写回偏好。{assistant_name} 后续会先生成确认卡片。"
 
     async def _reply_oauth_card(self, message: FeishuMessage, *, force_link: bool) -> None:
         if self.oauth is None:
@@ -1525,6 +1647,10 @@ def _parse_model_command(text: str) -> str | None:
     return _parse_prefixed_command(text, "/模型", "模型")
 
 
+def _parse_writeback_command(text: str) -> str | None:
+    return _parse_prefixed_command(text, "/写回", "写回")
+
+
 def _parse_prefixed_command(text: str, *prefixes: str) -> str | None:
     stripped = text.strip()
     for prefix in prefixes:
@@ -1609,6 +1735,26 @@ def _model_menu_only_text(assistant_name: str = "小智") -> str:
     )
 
 
+def _writeback_command_help(assistant_name: str = "小智") -> str:
+    return (
+        f"{assistant_name} 的写回指令：\n"
+        "- /写回 状态\n"
+        "- /写回 自动开启\n"
+        "- /写回 自动关闭\n"
+        "- /写回 自动清除\n"
+        "- /写回 历史"
+    )
+
+
+def _writeback_confirmation_mode_label(mode: WritebackConfirmationMode) -> str:
+    labels = {
+        WritebackConfirmationMode.ALWAYS: "确认后写入",
+        WritebackConfirmationMode.LOW_RISK_DIRECT: "低风险自动写入",
+        WritebackConfirmationMode.DRAFT_ONLY: "只生成草稿",
+    }
+    return labels[mode]
+
+
 def _assistant_command_help() -> str:
     return (
         "助手名称指令：\n"
@@ -1647,10 +1793,11 @@ def _menu_help_text(assistant_name: str = "小智") -> str:
         "- 模型：查看可用模型，或设置你的个人默认模型。\n"
         "- 授权：获取飞书 OAuth 授权链接，或查看授权状态。\n"
         "- 上下文：查看当前上下文读取策略。\n"
+        "- 写回：查看写回策略，或开启/关闭低风险自动写回。\n"
         "- 记忆：查看、删除、关闭或开启你的长期记忆。\n"
         "- 帮助：查看当前菜单说明。\n\n"
         "仍然可以直接发送 /助手 名称、/模型 查看、/授权、/授权 状态、"
-        "/上下文 查看、/记忆 查看。"
+        "/上下文 查看、/写回 状态、/记忆 查看。"
     )
 
 
@@ -1668,6 +1815,9 @@ def _privacy_command_help(assistant_name: str = "小智") -> str:
         "- /授权\n"
         "- /授权 状态\n"
         "- /上下文 查看\n"
+        "- /写回 状态\n"
+        "- /写回 自动开启\n"
+        "- /写回 自动关闭\n"
         "- /记忆 查看\n"
         "- /记忆 记住 输出格式=优先表格\n"
         "- /记忆 修改 语言风格=简洁中文\n"

@@ -295,6 +295,143 @@ async def test_router_low_risk_direct_writeback_policy_executes_doc_append(tmp_p
 
 
 @pytest.mark.asyncio
+async def test_router_writeback_auto_command_enables_low_risk_direct(tmp_path) -> None:
+    store = SQLiteStore(tmp_path / "fcgo.sqlite3")
+    await store.init()
+    proposal = ActionProposal(
+        actor_id="ou_user",
+        action_type=WriteActionType.DOC_APPEND,
+        target={"document_id": "docx123"},
+        target_title="测试文档",
+        payload={"content": "hello"},
+        preview="向文档追加：hello",
+        expires_at=datetime.now(UTC) + timedelta(minutes=30),
+    )
+    client = RecordingFeishuClient()
+    writeback_service = FakeWritebackService()
+    router = FeishuMessageRouter(
+        ProposalAssistant(proposal),
+        client,
+        store,
+        settings=Settings(
+            env="test",
+            writeback_enabled=True,
+            writeback_auto_execute_enabled=True,
+            writeback_confirmation_mode=WritebackConfirmationMode.ALWAYS,
+        ),
+        writeback_service=writeback_service,
+    )
+
+    await router.handle_message(_message("om_writeback_auto_on", "/写回 自动开启"))
+    await router.handle_message(_message("om_writeback_auto_run", "帮我写回"))
+
+    preference = await store.get_writeback_auto_execute("ou_user")
+    assert preference is not None
+    assert preference.enabled is True
+    assert writeback_service.confirmed == [(proposal.id, "ou_user")]
+    assert client.cards == []
+    assert "已开启你的个人自动写回偏好" in client.replies[0][1]
+    assert "写回已执行" in client.replies[1][1]
+
+
+@pytest.mark.asyncio
+async def test_router_writeback_auto_command_keeps_high_risk_on_card(tmp_path) -> None:
+    store = SQLiteStore(tmp_path / "fcgo.sqlite3")
+    await store.init()
+    proposal = ActionProposal(
+        actor_id="ou_user",
+        action_type=WriteActionType.BITABLE_UPDATE_RECORD,
+        target={"app_token": "app1", "table_id": "tbl1", "record_id": "rec1"},
+        target_title="测试多维表",
+        payload={"fields": {"状态": "完成"}},
+        preview="更新多维表记录",
+        expires_at=datetime.now(UTC) + timedelta(minutes=30),
+    )
+    client = RecordingFeishuClient()
+    writeback_service = FakeWritebackService()
+    router = FeishuMessageRouter(
+        ProposalAssistant(proposal),
+        client,
+        store,
+        settings=Settings(
+            env="test",
+            writeback_enabled=True,
+            writeback_auto_execute_enabled=True,
+            writeback_confirmation_mode=WritebackConfirmationMode.ALWAYS,
+        ),
+        writeback_service=writeback_service,
+    )
+
+    await router.handle_message(_message("om_writeback_auto_high_on", "/写回 自动开启"))
+    await router.handle_message(_message("om_writeback_auto_high_run", "帮我更新记录"))
+
+    assert writeback_service.confirmed == []
+    assert len(client.cards) == 1
+    assert "测试多维表" in str(client.cards[0][1])
+
+
+@pytest.mark.asyncio
+async def test_router_writeback_auto_command_disabled_restores_cards(tmp_path) -> None:
+    store = SQLiteStore(tmp_path / "fcgo.sqlite3")
+    await store.init()
+    proposal = ActionProposal(
+        actor_id="ou_user",
+        action_type=WriteActionType.DOC_APPEND,
+        target={"document_id": "docx123"},
+        target_title="测试文档",
+        payload={"content": "hello"},
+        preview="向文档追加：hello",
+        expires_at=datetime.now(UTC) + timedelta(minutes=30),
+    )
+    client = RecordingFeishuClient()
+    writeback_service = FakeWritebackService()
+    router = FeishuMessageRouter(
+        ProposalAssistant(proposal),
+        client,
+        store,
+        settings=Settings(
+            env="test",
+            writeback_enabled=True,
+            writeback_auto_execute_enabled=True,
+            writeback_confirmation_mode=WritebackConfirmationMode.ALWAYS,
+        ),
+        writeback_service=writeback_service,
+    )
+
+    await router.handle_message(_message("om_writeback_auto_disable", "/写回 自动关闭"))
+    await router.handle_message(_message("om_writeback_auto_card", "帮我写回"))
+
+    preference = await store.get_writeback_auto_execute("ou_user")
+    assert preference is not None
+    assert preference.enabled is False
+    assert writeback_service.confirmed == []
+    assert len(client.cards) == 1
+    assert "已关闭你的个人自动写回偏好" in client.replies[0][1]
+
+
+@pytest.mark.asyncio
+async def test_router_writeback_auto_command_requires_feature_flag(tmp_path) -> None:
+    store = SQLiteStore(tmp_path / "fcgo.sqlite3")
+    await store.init()
+    client = RecordingFeishuClient()
+    router = FeishuMessageRouter(
+        SuccessfulAssistant(),
+        client,
+        store,
+        settings=Settings(
+            env="test",
+            writeback_enabled=True,
+            writeback_auto_execute_enabled=False,
+        ),
+    )
+
+    await router.handle_message(_message("om_writeback_auto_flag", "/写回 自动开启"))
+
+    assert await store.get_writeback_auto_execute("ou_user") is None
+    assert "FCGO_WRITEBACK_AUTO_EXECUTE_ENABLED=true" in client.replies[0][1]
+
+
+@pytest.mark.asyncio
 async def test_router_warns_but_allows_recent_duplicate_writeback(tmp_path) -> None:
     store = SQLiteStore(tmp_path / "fcgo.sqlite3")
     await store.init()

@@ -52,6 +52,7 @@ Copy-Item .env.example .env
 - `FCGO_START_LONG_CONNECTION=true`
 - `FCGO_AGENT_MODE=legacy`：默认保持当前稳定编排；测试 Agent + Tools 时改为 `agent`
 - `FCGO_WRITEBACK_ENABLED=false`：默认关闭写回；测试确认式写回时改为 `true`
+- `FCGO_WRITEBACK_AUTO_EXECUTE_ENABLED=false`：默认不允许用户开启低风险自动写回；需要该能力时改为 `true`
 - `FCGO_WRITEBACK_CONFIRMATION_MODE=always`：写回确认策略，可选 `always`、`low_risk_direct`、`draft_only`
 
 最小 Gemini 直连配置示例：
@@ -72,6 +73,7 @@ GEMINI_HTTP_PROXY=
 GEMINI_BASE_URL=
 
 FCGO_WRITEBACK_ENABLED=false
+FCGO_WRITEBACK_AUTO_EXECUTE_ENABLED=false
 FCGO_WRITEBACK_CONFIRMATION_MODE=always
 ```
 

@@ -204,6 +204,10 @@ class Settings(BaseSettings):
         default=1800, alias="FCGO_PENDING_ACTION_TTL_SECONDS"
     )
     writeback_enabled: bool = Field(default=False, alias="FCGO_WRITEBACK_ENABLED")
+    writeback_auto_execute_enabled: bool = Field(
+        default=False,
+        alias="FCGO_WRITEBACK_AUTO_EXECUTE_ENABLED",
+    )
     writeback_confirmation_mode: WritebackConfirmationMode = Field(
         default=WritebackConfirmationMode.ALWAYS,
         alias="FCGO_WRITEBACK_CONFIRMATION_MODE",

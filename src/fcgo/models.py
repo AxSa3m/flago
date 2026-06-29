@@ -312,6 +312,9 @@ class AuditEventType(StrEnum):
     ACTION_EXPIRED = "action_expired"
     WRITE_EXECUTED = "write_executed"
     WRITE_REVERTED = "write_reverted"
+    WRITEBACK_AUTO_ENABLED = "writeback_auto_enabled"
+    WRITEBACK_AUTO_DISABLED = "writeback_auto_disabled"
+    WRITEBACK_AUTO_CLEARED = "writeback_auto_cleared"
     ASSISTANT_NAME_SET = "assistant_name_set"
     ASSISTANT_NAME_CLEARED = "assistant_name_cleared"
     MODEL_PREFERENCE_SET = "model_preference_set"
@@ -351,6 +354,13 @@ class AssistantNamePreference(BaseModel):
 
 class ContextPreference(BaseModel):
     scope: str
+    enabled: bool
+    updated_by: str
+    updated_at: str
+
+
+class WritebackAutoPreference(BaseModel):
+    subject_id: str
     enabled: bool
     updated_by: str
     updated_at: str

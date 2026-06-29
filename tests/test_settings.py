@@ -30,6 +30,7 @@ def test_context_and_memory_privacy_defaults_are_conservative() -> None:
     assert "offline_access" not in settings.oauth_scope_list
     assert "base:table:read" in settings.oauth_scope_list
     assert "docs:document.media:download" in settings.oauth_scope_list
+    assert settings.writeback_auto_execute_enabled is False
     assert settings.writeback_confirmation_mode == WritebackConfirmationMode.ALWAYS
 
 

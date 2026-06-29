@@ -76,10 +76,14 @@ Seedance、ComfyUI API 等不同类型 Provider，并通过统一能力矩阵、
 环境变量：
 
 - `FCGO_WRITEBACK_ENABLED=false|true`：关闭时不会保存或执行任何写回。
+- `FCGO_WRITEBACK_AUTO_EXECUTE_ENABLED=false|true`：控制用户是否可以通过 `/写回 自动开启`
+  启用个人低风险自动写回；默认关闭。
 - `FCGO_WRITEBACK_CONFIRMATION_MODE=always|low_risk_direct|draft_only`
   - `always`：默认值；所有写入、修改、删除都生成确认卡片。
   - `low_risk_direct`：明确目标的文档开头/末尾追加可直接执行；修改、删除、表格和多维表仍需确认。
   - `draft_only`：只返回草稿，不保存 pending action，不执行。
+
+用户级自动写回偏好只影响该用户。开启后仍不会绕过权限、幂等、审计和可撤回记录；高风险动作仍强制确认。
 
 Agent v1 只稳定支持文档开头、文档末尾、表格范围、多维表新增/更新/删除这类结构化写回草案。
 文档中间位置、附件前后位置会返回“不支持稳定写入中间位置”，不会生成可执行卡片。

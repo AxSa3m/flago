@@ -15,6 +15,7 @@ from fcgo.models import (
     MemoryItem,
     ModelPreference,
     PendingActionStatus,
+    WritebackAutoPreference,
 )
 
 
@@ -85,6 +86,12 @@ class SQLiteStore:
                     updated_at TEXT NOT NULL
                 );
                 CREATE TABLE IF NOT EXISTS memory_preferences (
+                    subject_id TEXT PRIMARY KEY,
+                    enabled INTEGER NOT NULL,
+                    updated_by TEXT NOT NULL,
+                    updated_at TEXT NOT NULL
+                );
+                CREATE TABLE IF NOT EXISTS writeback_auto_preferences (
                     subject_id TEXT PRIMARY KEY,
                     enabled INTEGER NOT NULL,
                     updated_by TEXT NOT NULL,
@@ -820,6 +827,79 @@ class SQLiteStore:
         if not rows_list:
             return True
         return bool(rows_list[0][0])
+
+    async def set_writeback_auto_execute(
+        self,
+        *,
+        subject_id: str,
+        enabled: bool,
+        updated_by: str,
+    ) -> None:
+        now = _now_iso()
+        async with aiosqlite.connect(self.path) as db:
+            await db.execute(
+                """
+                INSERT INTO writeback_auto_preferences(
+                    subject_id, enabled, updated_by, updated_at
+                )
+                VALUES (?, ?, ?, ?)
+                ON CONFLICT(subject_id) DO UPDATE SET
+                    enabled = excluded.enabled,
+                    updated_by = excluded.updated_by,
+                    updated_at = excluded.updated_at
+                """,
+                (subject_id, int(enabled), updated_by, now),
+            )
+            await db.commit()
+        await self.audit(
+            AuditEventType.WRITEBACK_AUTO_ENABLED
+            if enabled
+            else AuditEventType.WRITEBACK_AUTO_DISABLED,
+            actor_id=updated_by,
+            detail={"subject_id": subject_id},
+        )
+
+    async def get_writeback_auto_execute(
+        self,
+        subject_id: str,
+    ) -> WritebackAutoPreference | None:
+        async with aiosqlite.connect(self.path) as db:
+            rows = await db.execute_fetchall(
+                """
+                SELECT subject_id, enabled, updated_by, updated_at
+                FROM writeback_auto_preferences
+                WHERE subject_id = ?
+                """,
+                (subject_id,),
+            )
+        rows_list = list(rows)
+        if not rows_list:
+            return None
+        row = rows_list[0]
+        return WritebackAutoPreference(
+            subject_id=str(row[0]),
+            enabled=bool(row[1]),
+            updated_by=str(row[2]),
+            updated_at=str(row[3]),
+        )
+
+    async def clear_writeback_auto_execute(
+        self,
+        subject_id: str,
+        *,
+        updated_by: str,
+    ) -> None:
+        async with aiosqlite.connect(self.path) as db:
+            await db.execute(
+                "DELETE FROM writeback_auto_preferences WHERE subject_id = ?",
+                (subject_id,),
+            )
+            await db.commit()
+        await self.audit(
+            AuditEventType.WRITEBACK_AUTO_CLEARED,
+            actor_id=updated_by,
+            detail={"subject_id": subject_id},
+        )
 
     async def save_writeback_execution(
         self,
