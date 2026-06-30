@@ -93,6 +93,22 @@ class FeishuOpenAPI:
             ),
         )
 
+    async def download_message_resource(
+        self,
+        message_id: str,
+        file_key: str,
+        *,
+        resource_type: str = "image",
+        max_bytes: int,
+    ) -> DownloadedFile:
+        encoded_message_id = quote(message_id, safe="")
+        encoded_file_key = quote(file_key, safe="")
+        return await self._download_tenant_binary(
+            f"/open-apis/im/v1/messages/{encoded_message_id}/resources/{encoded_file_key}"
+            f"?type={quote(resource_type, safe='')}",
+            max_bytes=max_bytes,
+        )
+
     async def get_wiki_node(self, wiki_token: str, actor_id: str) -> dict[str, Any]:
         return await self.get(
             "/open-apis/wiki/v2/spaces/get_node",
@@ -650,6 +666,54 @@ class FeishuOpenAPI:
                     raise RuntimeError(
                         f"飞书附件超过读取上限 {max_bytes} 字节"
                     )
+                chunks.append(chunk)
+            return DownloadedFile(
+                content=b"".join(chunks),
+                content_type=response.headers.get("content-type", "")
+                .split(";", 1)[0]
+                .strip()
+                .lower(),
+                filename=_content_disposition_filename(
+                    response.headers.get("content-disposition", "")
+                ),
+            )
+
+    async def _download_tenant_binary(
+        self,
+        path: str,
+        *,
+        max_bytes: int,
+    ) -> DownloadedFile:
+        token = await self._tenant_access_token()
+        url = f"{self.settings.feishu_base_url.rstrip('/')}{path}"
+        async with (
+            httpx.AsyncClient(
+                timeout=30,
+                proxy=self.settings.feishu_http_proxy,
+            ) as client,
+            client.stream(
+                "GET",
+                url,
+                headers={"Authorization": f"Bearer {token}"},
+            ) as response,
+        ):
+            if response.is_error:
+                body = await response.aread()
+                detail = _binary_error_detail(body)
+                raise RuntimeError(
+                    f"Feishu API error HTTP {response.status_code}: {detail}"
+                )
+            content_length = _int_or_none(response.headers.get("content-length"))
+            if content_length is not None and content_length > max_bytes:
+                raise RuntimeError(
+                    f"飞书消息资源大小 {content_length} 字节，超过读取上限 {max_bytes} 字节"
+                )
+            chunks: list[bytes] = []
+            downloaded = 0
+            async for chunk in response.aiter_bytes():
+                downloaded += len(chunk)
+                if downloaded > max_bytes:
+                    raise RuntimeError(f"飞书消息资源超过读取上限 {max_bytes} 字节")
                 chunks.append(chunk)
             return DownloadedFile(
                 content=b"".join(chunks),

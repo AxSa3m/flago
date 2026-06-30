@@ -57,6 +57,13 @@ class FeishuMention(BaseModel):
     name: str = ""
 
 
+class FeishuMessageAttachment(BaseModel):
+    key: str
+    type: str = "image"
+    filename: str | None = None
+    content_type: str | None = None
+
+
 class FeishuMessage(BaseModel):
     message_id: str
     chat_id: str
@@ -68,6 +75,7 @@ class FeishuMessage(BaseModel):
     root_id: str | None = None
     parent_id: str | None = None
     mentions: list[FeishuMention] = Field(default_factory=list)
+    attachments: list[FeishuMessageAttachment] = Field(default_factory=list)
     is_bot_mentioned: bool = False
     raw: dict[str, Any] = Field(default_factory=dict)
 
@@ -139,6 +147,13 @@ class MemoryItem(BaseModel):
     updated_at: str
 
 
+class AssistantAttachment(BaseModel):
+    type: Literal["image"] = "image"
+    media_type: str
+    data_base64: str
+    filename: str | None = None
+
+
 class AssistantRequest(BaseModel):
     request_id: str = Field(default_factory=lambda: uuid4().hex)
     actor_id: str
@@ -153,6 +168,7 @@ class AssistantRequest(BaseModel):
     resource_urls: list[str] = Field(default_factory=list)
     resource_refs: list[ResourceRef] = Field(default_factory=list)
     resource_results: list[ResourceReadResult] = Field(default_factory=list)
+    attachments: list[AssistantAttachment] = Field(default_factory=list)
     chat_context_messages: list["ChatContextMessage"] = Field(default_factory=list)
     chat_context_summary: str = ""
     chat_context_omitted_count: int = 0

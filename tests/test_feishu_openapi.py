@@ -335,6 +335,43 @@ async def test_http_error_includes_feishu_error_body(tmp_path) -> None:
 
 @pytest.mark.asyncio
 @respx.mock
+async def test_download_message_resource_uses_tenant_token(tmp_path) -> None:
+    store = SQLiteStore(tmp_path / "fcgo.sqlite3")
+    await store.init()
+    api = FeishuOpenAPI(_settings(tmp_path), store)
+    respx.post("https://open.feishu.test/open-apis/auth/v3/tenant_access_token/internal").mock(
+        return_value=Response(
+            200,
+            json={"code": 0, "tenant_access_token": "tenant-token", "expire": 7200},
+        )
+    )
+    route = respx.get(
+        "https://open.feishu.test/open-apis/im/v1/messages/om_1/resources/img_1"
+    ).mock(
+        return_value=Response(
+            200,
+            headers={"content-type": "image/png", "content-disposition": 'filename="img.png"'},
+            content=b"image",
+        )
+    )
+
+    result = await api.download_message_resource(
+        "om_1",
+        "img_1",
+        resource_type="image",
+        max_bytes=1024,
+    )
+
+    assert result.content == b"image"
+    assert result.content_type == "image/png"
+    assert result.filename == "img.png"
+    request = route.calls.last.request
+    assert request.headers["authorization"] == "Bearer tenant-token"
+    assert request.url.params["type"] == "image"
+
+
+@pytest.mark.asyncio
+@respx.mock
 async def test_sheet_read_uses_user_token_and_render_options(tmp_path) -> None:
     store = SQLiteStore(tmp_path / "fcgo.sqlite3")
     await store.init()

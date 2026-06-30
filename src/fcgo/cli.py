@@ -115,6 +115,7 @@ def _run_worker() -> None:
         settings,
         chat_history_api=openapi,
         writeback_service=writeback,
+        message_resource_api=openapi,
     )
     logger.info("starting_feishu_long_connection_worker")
     FeishuLongConnectionWorker(settings, router, writeback).run_forever()

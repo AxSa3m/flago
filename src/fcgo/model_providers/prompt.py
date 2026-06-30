@@ -1,5 +1,6 @@
 from fcgo.agent.context_builder import build_agent_observations, render_agent_observations
 from fcgo.model_providers.types import (
+    ModelAttachment,
     ModelMessage,
     ModelMessageRole,
     ModelRequest,
@@ -36,7 +37,7 @@ def build_assistant_model_request(
         provider=provider,
         model=model,
         max_output_tokens=max_output_tokens,
-        required_capabilities=[ProviderCapability.CHAT],
+        required_capabilities=_required_capabilities(request),
         messages=[
             ModelMessage(
                 role=ModelMessageRole.SYSTEM,
@@ -51,6 +52,15 @@ def build_assistant_model_request(
             ModelMessage(
                 role=ModelMessageRole.USER,
                 content=_build_user_content(request),
+                attachments=[
+                    ModelAttachment(
+                        media_type=attachment.media_type,
+                        data_base64=attachment.data_base64,
+                        filename=attachment.filename,
+                    )
+                    for attachment in request.attachments
+                    if attachment.type == "image"
+                ],
             ),
         ],
         metadata={
@@ -59,6 +69,12 @@ def build_assistant_model_request(
             "conversation_type": request.conversation_type.value,
         },
     )
+
+
+def _required_capabilities(request: AssistantRequest) -> list[ProviderCapability]:
+    if request.attachments:
+        return [ProviderCapability.CHAT, ProviderCapability.VISION_INPUT]
+    return [ProviderCapability.CHAT]
 
 
 def _system_instructions(

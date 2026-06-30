@@ -3,7 +3,12 @@ from collections.abc import Mapping
 from typing import Any
 from urllib.parse import unquote
 
-from fcgo.models import ConversationType, FeishuMention, FeishuMessage
+from fcgo.models import (
+    ConversationType,
+    FeishuMention,
+    FeishuMessage,
+    FeishuMessageAttachment,
+)
 
 
 def parse_text_message(
@@ -22,7 +27,7 @@ def parse_text_message(
     message = _get(event_obj, "message", {})
     sender = _get(event_obj, "sender", {})
     message_type = _get(message, "message_type") or _get(message, "msg_type")
-    if message_type not in {"text", "post"}:
+    if message_type not in {"text", "post", "image"}:
         return None
 
     content = _get(message, "content") or "{}"
@@ -37,7 +42,10 @@ def parse_text_message(
     else:
         conversation_type = ConversationType.PRIVATE
     mentions = _parse_mentions(_get(message, "mentions", []))
+    attachments = _message_attachments(content_obj, message_type=str(message_type))
     normalized_text = _strip_mentions(text, mentions)
+    if attachments and not normalized_text:
+        normalized_text = "请描述这张图片。"
     thread_id = _get(message, "thread_id") or None
     root_id = _get(message, "root_id") or None
     parent_id = _get(message, "parent_id") or None
@@ -60,6 +68,7 @@ def parse_text_message(
         root_id=root_id,
         parent_id=parent_id,
         mentions=mentions,
+        attachments=attachments,
         is_bot_mentioned=_is_bot_mentioned(
             conversation_type,
             mentions,
@@ -86,6 +95,57 @@ def _parse_mentions(raw_mentions: Any) -> list[FeishuMention]:
             )
         )
     return mentions
+
+
+def _message_attachments(content_obj: Any, *, message_type: str) -> list[FeishuMessageAttachment]:
+    attachments: list[FeishuMessageAttachment] = []
+    seen: set[str] = set()
+
+    def add(key: Any, *, filename: Any = None, content_type: Any = None) -> None:
+        if not isinstance(key, str) or not key.strip():
+            return
+        normalized_key = key.strip()
+        if normalized_key in seen:
+            return
+        seen.add(normalized_key)
+        attachments.append(
+            FeishuMessageAttachment(
+                key=normalized_key,
+                type="image",
+                filename=str(filename).strip() if filename else None,
+                content_type=str(content_type).strip() if content_type else None,
+            )
+        )
+
+    def visit(value: Any) -> None:
+        if isinstance(value, list):
+            for item in value:
+                visit(item)
+            return
+        if not isinstance(value, Mapping):
+            return
+        tag = str(value.get("tag") or "").lower()
+        if message_type == "image" or tag in {"img", "image"}:
+            add(
+                value.get("image_key") or value.get("file_key") or value.get("key"),
+                filename=value.get("file_name") or value.get("filename") or value.get("name"),
+                content_type=value.get("content_type") or value.get("mime_type"),
+            )
+        for nested_key in ("image", "img"):
+            nested = value.get(nested_key)
+        if isinstance(nested, Mapping):
+            filename = nested.get("file_name") or nested.get("filename") or nested.get("name")
+            add(
+                nested.get("image_key") or nested.get("file_key") or nested.get("key"),
+                filename=filename,
+                content_type=nested.get("content_type") or nested.get("mime_type"),
+            )
+        for item in value.values():
+            if isinstance(item, list | Mapping):
+                visit(item)
+
+    visit(content_obj)
+    return attachments
 
 
 def _strip_mentions(text: str, mentions: list[FeishuMention]) -> str:

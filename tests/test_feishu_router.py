@@ -7,6 +7,7 @@ import pytest
 
 from fcgo.config import Settings
 from fcgo.feishu.oauth import AuthorizationStatus
+from fcgo.feishu.openapi import DownloadedFile
 from fcgo.feishu.router import FeishuMessageRouter
 from fcgo.model_providers.echo import EchoModelProvider
 from fcgo.model_providers.registry import ModelProviderRegistry, ModelRouter, build_model_router
@@ -18,6 +19,7 @@ from fcgo.models import (
     ConversationType,
     FeishuBotMenuEvent,
     FeishuMessage,
+    FeishuMessageAttachment,
     PendingActionStatus,
     WriteActionType,
     WritebackConfirmationMode,
@@ -85,6 +87,22 @@ class FailingChatHistoryAPI:
         raise RuntimeError("请先在飞书中发送 /授权 完成授权后再读取聊天上下文")
 
 
+class FakeMessageResourceAPI:
+    def __init__(self) -> None:
+        self.calls: list[tuple[str, str, str, int]] = []
+
+    async def download_message_resource(
+        self,
+        message_id: str,
+        file_key: str,
+        *,
+        resource_type: str = "image",
+        max_bytes: int,
+    ) -> DownloadedFile:
+        self.calls.append((message_id, file_key, resource_type, max_bytes))
+        return DownloadedFile(content=b"image-bytes", content_type="image/png", filename="图.png")
+
+
 class RecordingFeishuClient:
     def __init__(self) -> None:
         self.replies: list[tuple[str, str]] = []
@@ -149,6 +167,33 @@ async def test_router_replies_with_model_response(tmp_path) -> None:
 
     assert client.replies == [("oc_chat", "ok: hello")]
     assert router.assistant.requests[0].conversation_id == "private:oc_chat"
+
+
+@pytest.mark.asyncio
+async def test_router_downloads_current_message_image_for_assistant(tmp_path) -> None:
+    store = SQLiteStore(tmp_path / "fcgo.sqlite3")
+    await store.init()
+    assistant = SuccessfulAssistant()
+    client = RecordingFeishuClient()
+    resources = FakeMessageResourceAPI()
+    router = FeishuMessageRouter(
+        assistant,
+        client,
+        store,
+        settings=Settings(env="test", attachment_vision_enabled=True),
+        message_resource_api=resources,
+    )
+    message = _message("om_image_question", "这幅图讲了什么？")
+    message.attachments.append(FeishuMessageAttachment(key="img_v2_abc", type="image"))
+
+    await router.handle_message(message)
+
+    assert resources.calls == [("om_image_question", "img_v2_abc", "image", 5 * 1024 * 1024)]
+    assert len(assistant.requests) == 1
+    assert len(assistant.requests[0].attachments) == 1
+    assert assistant.requests[0].model_provider == "gemini"
+    assert assistant.requests[0].attachments[0].media_type == "image/png"
+    assert assistant.requests[0].attachments[0].filename == "图.png"
 
 
 @pytest.mark.asyncio

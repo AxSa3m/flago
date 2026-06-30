@@ -1,3 +1,4 @@
+import base64
 import logging
 import re
 from datetime import UTC, datetime, timedelta
@@ -15,6 +16,7 @@ from fcgo.model_providers.catalog import find_catalog_item
 from fcgo.model_providers.registry import ModelRouter
 from fcgo.models import (
     ActionProposal,
+    AssistantAttachment,
     AssistantRequest,
     AssistantResponse,
     AuditEventType,
@@ -40,6 +42,17 @@ class OAuthLinkService(Protocol):
     async def authorization_status(self, subject_id: str) -> AuthorizationStatus: ...
 
 
+class MessageResourceAPI(Protocol):
+    async def download_message_resource(
+        self,
+        message_id: str,
+        file_key: str,
+        *,
+        resource_type: str = "image",
+        max_bytes: int,
+    ) -> Any: ...
+
+
 class FeishuMessageRouter:
     def __init__(
         self,
@@ -51,6 +64,7 @@ class FeishuMessageRouter:
         settings: Settings | None = None,
         chat_history_api: ChatHistoryAPI | None = None,
         writeback_service: WritebackService | None = None,
+        message_resource_api: MessageResourceAPI | None = None,
     ) -> None:
         self.assistant = assistant
         self.feishu_client = feishu_client
@@ -59,6 +73,7 @@ class FeishuMessageRouter:
         self.model_router = model_router
         self.settings = settings or Settings()
         self.writeback_service = writeback_service
+        self.message_resource_api = message_resource_api
         self.context_loader = (
             ChatContextLoader(settings=self.settings, store=store, api=chat_history_api)
             if chat_history_api is not None
@@ -174,6 +189,7 @@ class FeishuMessageRouter:
                 memory_items,
                 max_chars=self.settings.memory_context_max_chars,
             )
+        attachments = await self._current_message_attachments(message)
         request = AssistantRequest(
             actor_id=message.sender_id,
             conversation_id=message.conversation_key or message.chat_id,
@@ -181,12 +197,21 @@ class FeishuMessageRouter:
             text=message.text,
             assistant_name=await self._assistant_name_for_message(message),
             assistant_profile=await self._assistant_profile_for_message(message),
-            model_provider=model_preference.provider if model_preference else None,
-            model=model_preference.model if model_preference else None,
+            model_provider=_request_model_provider(
+                model_preference,
+                attachments,
+                settings=self.settings,
+            ),
+            model=_request_model(
+                model_preference,
+                attachments,
+                settings=self.settings,
+            ),
             chat_context_messages=chat_context_messages,
             chat_context_summary=chat_context_summary,
             chat_context_omitted_count=chat_context_omitted_count,
             memory_items=memory_items,
+            attachments=attachments,
         )
         try:
             response = await self.assistant.handle(request)
@@ -196,6 +221,50 @@ class FeishuMessageRouter:
             await self.feishu_client.reply_text(message.chat_id, _model_failure_message(detail))
             return
         await self._send_assistant_response(message, response)
+
+    async def _current_message_attachments(
+        self,
+        message: FeishuMessage,
+    ) -> list[AssistantAttachment]:
+        if not message.attachments or self.message_resource_api is None:
+            return []
+        if not self.settings.attachment_vision_enabled:
+            return []
+        items: list[AssistantAttachment] = []
+        for attachment in message.attachments:
+            if attachment.type != "image":
+                continue
+            try:
+                downloaded = await self.message_resource_api.download_message_resource(
+                    message.message_id,
+                    attachment.key,
+                    resource_type="image",
+                    max_bytes=self.settings.attachment_vision_max_bytes,
+                )
+            except Exception as exc:  # noqa: BLE001
+                logger.warning(
+                    "message_image_download_failed message_id=%s key=%s error=%s",
+                    message.message_id,
+                    attachment.key,
+                    redact(str(exc)),
+                )
+                continue
+            media_type = (
+                attachment.content_type
+                or getattr(downloaded, "content_type", "")
+                or "image/png"
+            )
+            content = getattr(downloaded, "content", b"")
+            if not isinstance(content, bytes) or not content:
+                continue
+            items.append(
+                AssistantAttachment(
+                    media_type=str(media_type).split(";", 1)[0].strip() or "image/png",
+                    data_base64=base64.b64encode(content).decode("ascii"),
+                    filename=attachment.filename or getattr(downloaded, "filename", None),
+                )
+            )
+        return items
 
     async def handle_bot_menu(self, event: FeishuBotMenuEvent) -> None:
         receive_id, receive_id_type = _menu_receive_target(event)
@@ -1919,6 +1988,28 @@ def _user_model_scope(message: FeishuMessage) -> str:
 
 def _conversation_context_scope(message: FeishuMessage) -> str:
     return f"conversation:{message.conversation_key or message.chat_id}"
+
+
+def _request_model_provider(
+    model_preference: ModelPreference | None,
+    attachments: list[AssistantAttachment],
+    *,
+    settings: Settings,
+) -> str | None:
+    if attachments:
+        return settings.attachment_vision_provider.strip() or None
+    return model_preference.provider if model_preference else None
+
+
+def _request_model(
+    model_preference: ModelPreference | None,
+    attachments: list[AssistantAttachment],
+    *,
+    settings: Settings,
+) -> str | None:
+    if attachments:
+        return settings.attachment_vision_model
+    return model_preference.model if model_preference else None
 
 
 def _resolved_model_spec(

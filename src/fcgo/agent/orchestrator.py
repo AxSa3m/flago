@@ -9,6 +9,7 @@ from fcgo.agent.context_builder import build_agent_observations, render_agent_ob
 from fcgo.agent.protocols import ResourceReader, ResourceSearcher
 from fcgo.agent.tools import ToolExecutionContext, ToolRegistry, default_tool_registry
 from fcgo.model_providers.types import (
+    ModelAttachment,
     ModelMessage,
     ModelMessageRole,
     ModelRequest,
@@ -255,7 +256,7 @@ def _build_agent_model_request(
         request_id=request.request_id,
         provider=request.model_provider,
         model=request.model,
-        required_capabilities=[ProviderCapability.CHAT],
+        required_capabilities=_required_capabilities(request),
         temperature=0,
         messages=[
             ModelMessage(
@@ -265,6 +266,7 @@ def _build_agent_model_request(
             ModelMessage(
                 role=ModelMessageRole.USER,
                 content=_user_prompt(request, tool_results),
+                attachments=_model_attachments(request),
             ),
         ],
         tools=tool_specs,
@@ -297,14 +299,18 @@ def _build_repair_model_request(
         request_id=request.request_id,
         provider=request.model_provider,
         model=request.model,
-        required_capabilities=[ProviderCapability.CHAT],
+        required_capabilities=_required_capabilities(request),
         temperature=0,
         messages=[
             ModelMessage(
                 role=ModelMessageRole.SYSTEM,
                 content=_system_prompt(request, tool_specs),
             ),
-            ModelMessage(role=ModelMessageRole.USER, content=prompt),
+            ModelMessage(
+                role=ModelMessageRole.USER,
+                content=prompt,
+                attachments=_model_attachments(request),
+            ),
         ],
         tools=tool_specs,
         tool_choice="auto",
@@ -315,6 +321,24 @@ def _build_repair_model_request(
             "agent_mode": "json_repair",
         },
     )
+
+
+def _required_capabilities(request: AssistantRequest) -> list[ProviderCapability]:
+    if request.attachments:
+        return [ProviderCapability.CHAT, ProviderCapability.VISION_INPUT]
+    return [ProviderCapability.CHAT]
+
+
+def _model_attachments(request: AssistantRequest) -> list[ModelAttachment]:
+    return [
+        ModelAttachment(
+            media_type=attachment.media_type,
+            data_base64=attachment.data_base64,
+            filename=attachment.filename,
+        )
+        for attachment in request.attachments
+        if attachment.type == "image"
+    ]
 
 
 def _system_prompt(request: AssistantRequest, tool_specs: list[dict[str, Any]]) -> str:

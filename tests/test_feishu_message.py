@@ -219,10 +219,10 @@ def test_parse_non_text_message_returns_none() -> None:
             "event": {
                 "sender": {"sender_id": {"open_id": "ou_user"}},
                 "message": {
-                    "message_id": "om_image",
+                    "message_id": "om_audio",
                     "chat_id": "oc_chat",
                     "chat_type": "p2p",
-                    "message_type": "image",
+                    "message_type": "audio",
                     "content": "{}",
                 },
             }
@@ -230,6 +230,54 @@ def test_parse_non_text_message_returns_none() -> None:
     )
 
     assert message is None
+
+
+def test_parse_image_message_extracts_image_key() -> None:
+    message = parse_text_message(
+        {
+            "event": {
+                "sender": {"sender_id": {"open_id": "ou_user"}},
+                "message": {
+                    "message_id": "om_image",
+                    "chat_id": "oc_chat",
+                    "chat_type": "p2p",
+                    "message_type": "image",
+                    "content": '{"image_key":"img_v2_abc"}',
+                },
+            }
+        }
+    )
+
+    assert message is not None
+    assert message.text == "请描述这张图片。"
+    assert len(message.attachments) == 1
+    assert message.attachments[0].key == "img_v2_abc"
+
+
+def test_parse_post_message_extracts_inline_image_key() -> None:
+    message = parse_text_message(
+        {
+            "event": {
+                "sender": {"sender_id": {"open_id": "ou_user"}},
+                "message": {
+                    "message_id": "om_post_image",
+                    "chat_id": "oc_chat",
+                    "chat_type": "p2p",
+                    "message_type": "post",
+                    "content": (
+                        '{"content":[[{"tag":"img","image_key":"img_v2_inline"},'
+                        '{"tag":"text","text":"这幅图讲了什么？"}]]}'
+                    ),
+                    "mentions": [],
+                },
+            }
+        }
+    )
+
+    assert message is not None
+    assert "这幅图讲了什么" in message.text
+    assert len(message.attachments) == 1
+    assert message.attachments[0].key == "img_v2_inline"
 
 
 def test_parse_bot_menu_event_from_dict() -> None:
