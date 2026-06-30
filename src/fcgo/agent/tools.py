@@ -231,10 +231,7 @@ async def _search_resources(payload: BaseModel, context: ToolExecutionContext) -
     request = _typed(payload, ResourceSearchRequest)
     if context.resource_searcher is None:
         return _tool_error(ToolName.SEARCH_RESOURCES, "resource_search_unavailable")
-    queries = [query.strip() for query in request.queries if query.strip()]
-    if request.query.strip():
-        queries.insert(0, request.query.strip())
-    queries = _unique(queries)
+    queries = _expanded_search_queries(request)
     if not queries:
         return _tool_error(ToolName.SEARCH_RESOURCES, "missing_query", "请提供搜索关键词。")
     limit = min(max(request.limit, 1), 20)
@@ -267,6 +264,79 @@ async def _search_resources(payload: BaseModel, context: ToolExecutionContext) -
         user_message="" if refs else "没有搜索到匹配的飞书资源。",
         audit_metadata={"query_count": len(queries), "result_count": len(refs)},
     )
+
+
+def _expanded_search_queries(request: ResourceSearchRequest) -> list[str]:
+    raw_queries = [request.query, *request.queries]
+    queries: list[str] = []
+    for raw_query in raw_queries:
+        query = _normalize_search_query(raw_query)
+        if not query:
+            continue
+        queries.append(query)
+        queries.extend(_search_query_variants(query))
+    return _unique([query for query in queries if len(query) <= 80])[:6]
+
+
+def _search_query_variants(query: str) -> list[str]:
+    variants: list[str] = []
+    without_generic = query
+    for word in (
+        "飞书云文档",
+        "飞书文档",
+        "飞书文件",
+        "云文档",
+        "请帮我",
+        "帮我",
+        "请",
+        "搜索",
+        "查找",
+        "找到",
+        "找一下",
+        "找一篇",
+        "找一个",
+        "文档",
+        "文件",
+        "资料",
+        "相关的",
+        "相关",
+        "包含",
+        "标题",
+        "名字",
+        "名称",
+        "内容",
+    ):
+        without_generic = without_generic.replace(word, " ")
+    without_generic = _normalize_search_query(without_generic)
+    compact_without_generic = re.sub(r"\s+", "", without_generic)
+    if compact_without_generic and compact_without_generic != query:
+        variants.append(compact_without_generic)
+    if without_generic and without_generic != query:
+        variants.append(without_generic)
+
+    for base in [without_generic, query]:
+        if not base:
+            continue
+        compact = re.sub(r"\s+", "", base)
+        for suffix in ("资料测试", "测试资料", "测试", "剧本", "教程", "案例"):
+            if compact.endswith(suffix):
+                shortened = compact[: -len(suffix)].strip()
+                if len(shortened) >= 2:
+                    variants.append(shortened)
+
+    tokenized = [
+        token
+        for token in re.split(r"[\s,，。:：;；!?！？/\\|]+", without_generic or query)
+        if len(token) >= 2
+    ]
+    variants.extend(tokenized[:3])
+    return _unique(variants)
+
+
+def _normalize_search_query(value: str) -> str:
+    cleaned = re.sub(r"https?://\S+", " ", value or "")
+    cleaned = re.sub(r"[“”\"'`《》（）()\[\]【】]", " ", cleaned)
+    return re.sub(r"\s+", " ", cleaned).strip(" ：:，,。？?！!；;")
 
 
 async def _read_resource(payload: BaseModel, context: ToolExecutionContext) -> ToolResult:

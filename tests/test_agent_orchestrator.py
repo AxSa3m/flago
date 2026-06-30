@@ -48,6 +48,26 @@ class FakeSearcher:
         ][:limit]
 
 
+class QueryMatchingSearcher:
+    def __init__(self, match_query: str) -> None:
+        self.match_query = match_query
+        self.queries: list[str] = []
+
+    async def search(self, query: str, actor_id: str, *, limit: int) -> list[ResourceRef]:
+        self.queries.append(query)
+        if query != self.match_query:
+            return []
+        return [
+            ResourceRef(
+                type=ResourceType.FEISHU_DOC,
+                url="https://my.feishu.cn/docx/test-doc",
+                title="测试文档",
+                token="test-doc",
+                source_kind="search:drive",
+            )
+        ][:limit]
+
+
 class FakeReader:
     async def read(self, ref: ResourceRef, actor_id: str) -> ResourceReadResult:
         return ResourceReadResult(
@@ -93,6 +113,31 @@ async def test_agent_executes_search_tool_then_returns_final_response() -> None:
     assert response.text == "找到了：情感调优。"
     assert len(model.requests) == 2
     assert "Tool results" in model.requests[1].messages[1].content
+
+
+@pytest.mark.asyncio
+async def test_agent_search_tool_expands_over_specific_feishu_queries() -> None:
+    searcher = QueryMatchingSearcher("蓝色火箭测试")
+    model = FakeAgentModel(
+        [
+            _decision(
+                tool_calls=[
+                    {
+                        "id": "search-1",
+                        "name": ToolName.SEARCH_RESOURCES.value,
+                        "arguments": {"query": "飞书文档 蓝色火箭资料测试", "limit": 3},
+                    }
+                ]
+            ),
+            _decision(final_response="找到了：测试文档。"),
+        ]
+    )
+    agent = AgentOrchestrator(model, resource_searcher=searcher)
+
+    response = await agent.handle(_request("帮我搜索 飞书文档 蓝色火箭资料测试"))
+
+    assert searcher.queries[:2] == ["飞书文档 蓝色火箭资料测试", "蓝色火箭测试"]
+    assert response.text == "找到了：测试文档。"
 
 
 @pytest.mark.asyncio
