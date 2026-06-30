@@ -2032,18 +2032,27 @@ async def test_router_assistant_name_commands_roundtrip(tmp_path) -> None:
     router = FeishuMessageRouter(assistant, client, store)
 
     await router.handle_message(_message("om_assistant_default", "/助手 名称"))
-    await router.handle_message(_message("om_assistant_set", "/助手 命名 小智"))
+    await router.handle_message(_message("om_assistant_set", "/助手 名称 小智"))
+    await router.handle_message(
+        _message("om_assistant_profile", "/助手 简介 简洁直接，擅长整理飞书文档。")
+    )
     await router.handle_message(_message("om_assistant_view", "/助手 名称"))
+    await router.handle_message(_message("om_assistant_profile_reset", "/助手 默认简介"))
     await router.handle_message(_message("om_assistant_reset", "/助手 默认名称"))
     await router.handle_message(_message("om_assistant_view_reset", "/助手 名称"))
 
     assert "当前助手信息" in client.replies[0][1]
-    assert "名称：小智（默认）" in client.replies[0][1]
+    assert "名称：小智" in client.replies[0][1]
+    assert "简介：" in client.replies[0][1]
     assert "已将你的助手名称设置为：小智" in client.replies[1][1]
-    assert "名称：小智（你的个人设置）" in client.replies[2][1]
-    assert "已恢复默认助手名称：小智" in client.replies[3][1]
-    assert "名称：小智（默认）" in client.replies[4][1]
+    assert "已更新你的助手简介" in client.replies[2][1]
+    assert "名称：小智" in client.replies[3][1]
+    assert "简介：简洁直接，擅长整理飞书文档。" in client.replies[3][1]
+    assert "已恢复默认助手简介" in client.replies[4][1]
+    assert "已恢复默认助手名称：小智" in client.replies[5][1]
+    assert "名称：小智" in client.replies[6][1]
     assert await store.get_assistant_name_preference("ou_user") is None
+    assert await store.get_assistant_profile_preference("ou_user") is None
 
     audit_set = await _audit_details(store, AuditEventType.ASSISTANT_NAME_SET.value)
     audit_cleared = await _audit_details(
@@ -2081,6 +2090,11 @@ async def test_router_injects_assistant_name_without_leaking_to_group_chat(tmp_p
         assistant_name="小飞",
         updated_by="ou_user",
     )
+    await store.save_assistant_profile_preference(
+        subject_id="ou_user",
+        assistant_profile="像项目经理一样简洁。",
+        updated_by="ou_user",
+    )
     client = RecordingFeishuClient()
     assistant = SuccessfulAssistant()
     router = FeishuMessageRouter(assistant, client, store, settings=Settings(env="test"))
@@ -2097,7 +2111,9 @@ async def test_router_injects_assistant_name_without_leaking_to_group_chat(tmp_p
     )
 
     assert assistant.requests[0].assistant_name == "小飞"
+    assert assistant.requests[0].assistant_profile == "像项目经理一样简洁。"
     assert assistant.requests[1].assistant_name == "小智"
+    assert assistant.requests[1].assistant_profile == Settings(env="test").assistant_default_profile
 
 
 @pytest.mark.asyncio
@@ -2131,6 +2147,11 @@ async def test_router_replies_to_assistant_name_view_menu(tmp_path) -> None:
         assistant_name="小飞",
         updated_by="ou_user",
     )
+    await store.save_assistant_profile_preference(
+        subject_id="ou_user",
+        assistant_profile="简洁直接，擅长整理飞书文档。",
+        updated_by="ou_user",
+    )
     client = RecordingFeishuClient()
     assistant = SuccessfulAssistant()
     router = FeishuMessageRouter(assistant, client, store)
@@ -2141,8 +2162,11 @@ async def test_router_replies_to_assistant_name_view_menu(tmp_path) -> None:
 
     assert len(client.sent_texts) == 1
     assert "当前助手信息" in client.sent_texts[0][2]
-    assert "名称：小飞（你的个人设置）" in client.sent_texts[0][2]
-    assert "不会修改飞书开放平台里的机器人名称" in client.sent_texts[0][2]
+    assert "名称：小飞" in client.sent_texts[0][2]
+    assert "简介：简洁直接，擅长整理飞书文档。" in client.sent_texts[0][2]
+    assert "作用范围" not in client.sent_texts[0][2]
+    assert "Agent + Tools" not in client.sent_texts[0][2]
+    assert "安全边界" not in client.sent_texts[0][2]
     assert assistant.requests == []
 
 
@@ -2171,7 +2195,8 @@ async def test_router_help_command_uses_assistant_name_without_group_leak(tmp_pa
     )
 
     assert "小飞 菜单入口" in client.replies[0][1]
-    assert "/助手 命名 小飞" in client.replies[0][1]
+    assert "/助手 名称 小飞" in client.replies[0][1]
+    assert "/助手 简介" in client.replies[0][1]
     assert "小智 菜单入口" in client.replies[1][1]
     assert "小飞 菜单入口" not in client.replies[1][1]
     assert assistant.requests == []

@@ -207,6 +207,29 @@ async def test_assistant_name_preference_roundtrip_clear_and_audit(tmp_path) -> 
 
 
 @pytest.mark.asyncio
+async def test_assistant_profile_preference_roundtrip_clear_and_audit(tmp_path) -> None:
+    store = SQLiteStore(tmp_path / "fcgo.sqlite3")
+    await store.init()
+
+    await store.save_assistant_profile_preference(
+        subject_id="ou_user",
+        assistant_profile="简洁直接，擅长整理飞书文档。",
+        updated_by="ou_user",
+    )
+    saved = await store.get_assistant_profile_preference("ou_user")
+
+    assert saved is not None
+    assert saved.assistant_profile == "简洁直接，擅长整理飞书文档。"
+    assert saved.updated_by == "ou_user"
+
+    await store.clear_assistant_profile_preference("ou_user", updated_by="ou_user")
+
+    assert await store.get_assistant_profile_preference("ou_user") is None
+    assert await _audit_count(store, AuditEventType.ASSISTANT_PROFILE_SET.value) == 1
+    assert await _audit_count(store, AuditEventType.ASSISTANT_PROFILE_CLEARED.value) == 1
+
+
+@pytest.mark.asyncio
 async def test_context_preference_roundtrip_and_audit(tmp_path) -> None:
     store = SQLiteStore(tmp_path / "fcgo.sqlite3")
     await store.init()

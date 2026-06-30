@@ -25,6 +25,10 @@ class Settings(BaseSettings):
     sqlite_path: Path = Field(default=Path("data/fcgo.sqlite3"), alias="FCGO_SQLITE_PATH")
     start_long_connection: bool = Field(default=False, alias="FCGO_START_LONG_CONNECTION")
     assistant_default_name: str = Field(default="小智", alias="FCGO_ASSISTANT_DEFAULT_NAME")
+    assistant_default_profile: str = Field(
+        default="简洁、可靠、直接，优先给出可执行的回答。",
+        alias="FCGO_ASSISTANT_DEFAULT_PROFILE",
+    )
     agent_mode: Literal["legacy", "agent"] = Field(default="legacy", alias="FCGO_AGENT_MODE")
     agent_max_steps: int = Field(default=4, alias="FCGO_AGENT_MAX_STEPS")
     agent_tool_timeout_seconds: float = Field(

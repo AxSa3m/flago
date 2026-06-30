@@ -92,6 +92,22 @@ def test_build_assistant_prompt_includes_resource_context_without_provider_sdk_d
     assert "这个课程包含三个项目。" in prompt
 
 
+def test_build_assistant_prompt_includes_assistant_profile() -> None:
+    request = AssistantRequest(
+        actor_id="ou_user",
+        conversation_id="chat-1",
+        conversation_type=ConversationType.PRIVATE,
+        text="帮我总结",
+        assistant_name="小飞",
+        assistant_profile="简洁直接，擅长整理飞书文档。",
+    )
+
+    prompt = build_assistant_prompt(request)
+
+    assert "你是 小飞" in prompt
+    assert "你的语言风格和任务角色简介：简洁直接，擅长整理飞书文档。" in prompt
+
+
 def test_build_assistant_prompt_includes_budgeted_chat_context() -> None:
     request = AssistantRequest(
         actor_id="ou_user",

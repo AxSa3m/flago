@@ -180,6 +180,7 @@ class FeishuMessageRouter:
             conversation_type=message.conversation_type,
             text=message.text,
             assistant_name=await self._assistant_name_for_message(message),
+            assistant_profile=await self._assistant_profile_for_message(message),
             model_provider=model_preference.provider if model_preference else None,
             model=model_preference.model if model_preference else None,
             chat_context_messages=chat_context_messages,
@@ -344,7 +345,7 @@ class FeishuMessageRouter:
         if key.startswith("fcgo.model.use."):
             provider = key.removeprefix("fcgo.model.use.")
             return await self._set_menu_user_model(event, provider, assistant_name=assistant_name)
-        if key == "fcgo.assistant.name.view":
+        if key in {"fcgo.assistant.name.view", "fcgo.assistant.info.view"}:
             return await self._assistant_name_status_text(_menu_actor_id(event))
         if key == "fcgo.auth.start":
             return await self._menu_oauth_text(event, assistant_name=assistant_name)
@@ -466,11 +467,18 @@ class FeishuMessageRouter:
         command = _parse_prefixed_command(message.text, "/助手", "助手")
         if command is None:
             return False
-        if command in {"", "名称", "名字", "查看", "状态"}:
+        if command in {"", "名称", "名字", "简介", "人设", "信息", "查看", "状态"}:
             await self.feishu_client.reply_text(
                 message.chat_id,
                 await self._assistant_name_status_text(message.sender_id),
             )
+            return True
+        if command in {"默认简介", "恢复默认简介", "重置简介", "默认人设", "恢复默认人设"}:
+            await self.store.clear_assistant_profile_preference(
+                message.sender_id,
+                updated_by=message.sender_id,
+            )
+            await self.feishu_client.reply_text(message.chat_id, "已恢复默认助手简介。")
             return True
         if command in {"默认名称", "恢复默认", "默认", "重置名称"}:
             await self.store.clear_assistant_name_preference(
@@ -481,6 +489,19 @@ class FeishuMessageRouter:
                 message.chat_id,
                 f"已恢复默认助手名称：{self.settings.assistant_default_name}。",
             )
+            return True
+        profile = _parse_assistant_profile_command(command)
+        if profile is not None:
+            cleaned_profile, error = _clean_assistant_profile(profile)
+            if error is not None:
+                await self.feishu_client.reply_text(message.chat_id, error)
+                return True
+            await self.store.save_assistant_profile_preference(
+                subject_id=message.sender_id,
+                assistant_profile=cleaned_profile,
+                updated_by=message.sender_id,
+            )
+            await self.feishu_client.reply_text(message.chat_id, "已更新你的助手简介。")
             return True
         name = _parse_assistant_name_command(command)
         if name is not None:
@@ -529,19 +550,18 @@ class FeishuMessageRouter:
         preference = await self.store.get_assistant_name_preference(subject_id)
         if preference is None:
             assistant_name = self.settings.assistant_default_name
-            source = "默认"
         else:
             assistant_name = preference.assistant_name
-            source = "你的个人设置"
+        profile_preference = await self.store.get_assistant_profile_preference(subject_id)
+        assistant_profile = (
+            profile_preference.assistant_profile
+            if profile_preference is not None
+            else self.settings.assistant_default_profile
+        )
         return (
             "当前助手信息：\n"
-            f"- 名称：{assistant_name}（{source}）\n"
-            f"- 默认名称：{self.settings.assistant_default_name}\n"
-            "- 作用范围：只影响你看到的回复文案和模型上下文中的自称，"
-            "不会修改飞书开放平台里的机器人名称。\n"
-            "- 工作方式：按 Agent + Tools 模式理解你的意图；读取、搜索、写入、记忆和模型切换"
-            "会走对应工具和权限检查。\n"
-            "- 安全边界：写入类操作会按当前写入策略执行；修改、删除和不明确目标仍会要求确认。"
+            f"- 名称：{assistant_name}\n"
+            f"- 简介：{assistant_profile}"
         )
 
     async def _assistant_name(self, subject_id: str) -> str:
@@ -554,6 +574,17 @@ class FeishuMessageRouter:
         if message.conversation_type == ConversationType.PRIVATE:
             return await self._assistant_name(message.sender_id)
         return self.settings.feishu_bot_name or self.settings.assistant_default_name
+
+    async def _assistant_profile(self, subject_id: str) -> str:
+        preference = await self.store.get_assistant_profile_preference(subject_id)
+        if preference is not None:
+            return preference.assistant_profile
+        return self.settings.assistant_default_profile
+
+    async def _assistant_profile_for_message(self, message: FeishuMessage) -> str:
+        if message.conversation_type == ConversationType.PRIVATE:
+            return await self._assistant_profile(message.sender_id)
+        return self.settings.assistant_default_profile
 
     async def _handle_memory_command(self, message: FeishuMessage, command: str) -> None:
         subject_id = message.sender_id
@@ -1815,10 +1846,19 @@ def _parse_prefixed_command(text: str, *prefixes: str) -> str | None:
 
 
 def _parse_assistant_name_command(command: str) -> str | None:
-    for prefix in ("命名", "设置名称", "设置名字", "改名", "叫"):
+    for prefix in ("名称", "名字", "命名", "设置名称", "设置名字", "改名", "叫"):
         if command == prefix:
             return ""
-        if command.startswith(prefix):
+        if command.startswith(f"{prefix} "):
+            return command.removeprefix(prefix).strip()
+    return None
+
+
+def _parse_assistant_profile_command(command: str) -> str | None:
+    for prefix in ("简介", "人设", "设置简介", "设置人设", "角色", "语言风格"):
+        if command == prefix:
+            return ""
+        if command.startswith(f"{prefix} "):
             return command.removeprefix(prefix).strip()
     return None
 
@@ -1832,6 +1872,18 @@ def _clean_assistant_name(name: str) -> tuple[str, str | None]:
         return "", "助手名称太长了，请控制在 20 个字符以内。"
     if any(marker in cleaned for marker in ("```", "<script", "</", "[", "]", "(", ")")):
         return "", "助手名称包含不支持的字符，请换一个更简短的名称。"
+    return cleaned, None
+
+
+def _clean_assistant_profile(profile: str) -> tuple[str, str | None]:
+    cleaned = re.sub(r"[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]", "", profile).strip()
+    cleaned = re.sub(r"\n{3,}", "\n\n", cleaned)
+    if not cleaned:
+        return "", "助手简介不能为空。用法：/助手 简介 简洁、直接，擅长整理飞书文档。"
+    if len(cleaned) > 500:
+        return "", "助手简介太长了，请控制在 500 个字符以内。"
+    if any(marker in cleaned.lower() for marker in ("```", "<script", "</script")):
+        return "", "助手简介包含不支持的内容，请换成简短的自然语言描述。"
     return cleaned, None
 
 
@@ -1911,10 +1963,12 @@ def _writeback_confirmation_mode_label(mode: WritebackConfirmationMode) -> str:
 
 def _assistant_command_help() -> str:
     return (
-        "助手名称指令：\n"
-        "- /助手 名称\n"
-        "- /助手 命名 小智\n"
-        "- /助手 默认名称"
+        "助手信息指令：\n"
+        "- /助手 信息\n"
+        "- /助手 名称 小智\n"
+        "- /助手 简介 简洁、直接，擅长整理飞书文档\n"
+        "- /助手 默认名称\n"
+        "- /助手 默认简介"
     )
 
 
@@ -1963,8 +2017,10 @@ def _menu_help_text(assistant_name: str = "小智") -> str:
         "- 记忆：查看、删除、关闭或开启你的长期记忆。\n"
         "- 帮助：查看当前菜单说明。\n\n"
         "未放入当前菜单但仍可直接发送：\n"
-        "- /助手 命名 小飞：设置你的个人助手名称\n"
+        "- /助手 名称 小飞：设置你的个人助手名称\n"
+        "- /助手 简介 简洁、直接，擅长整理飞书文档：设置助手简介\n"
         "- /助手 默认名称：恢复默认助手名称\n"
+        "- /助手 默认简介：恢复默认助手简介\n"
         "- /上下文 查看：查看上下文读取策略\n"
         "- /记忆 记住 输出格式=优先表格：保存一条长期记忆，需要确认\n"
         "- /记忆 修改 语言风格=简洁中文：修改记忆，需要确认\n"

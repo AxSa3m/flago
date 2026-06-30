@@ -15,6 +15,7 @@ def test_context_and_memory_privacy_defaults_are_conservative() -> None:
     assert settings.memory_item_max_chars == 2000
     assert settings.memory_context_max_chars == 4000
     assert settings.assistant_default_name == "小智"
+    assert settings.assistant_default_profile == "简洁、可靠、直接，优先给出可执行的回答。"
     assert settings.agent_mode == "legacy"
     assert settings.agent_max_steps == 4
     assert settings.agent_tool_timeout_seconds == 30

@@ -9,6 +9,7 @@ from fcgo.logging import redact
 from fcgo.models import (
     ActionProposal,
     AssistantNamePreference,
+    AssistantProfilePreference,
     AuditEventType,
     ChatContextMessage,
     ContextPreference,
@@ -76,6 +77,12 @@ class SQLiteStore:
                 CREATE TABLE IF NOT EXISTS assistant_name_preferences (
                     subject_id TEXT PRIMARY KEY,
                     assistant_name TEXT NOT NULL,
+                    updated_by TEXT NOT NULL,
+                    updated_at TEXT NOT NULL
+                );
+                CREATE TABLE IF NOT EXISTS assistant_profile_preferences (
+                    subject_id TEXT PRIMARY KEY,
+                    assistant_profile TEXT NOT NULL,
                     updated_by TEXT NOT NULL,
                     updated_at TEXT NOT NULL
                 );
@@ -517,6 +524,80 @@ class SQLiteStore:
             await db.commit()
         await self.audit(
             AuditEventType.ASSISTANT_NAME_CLEARED,
+            actor_id=updated_by,
+            detail={"subject_id": subject_id},
+        )
+
+    async def save_assistant_profile_preference(
+        self,
+        *,
+        subject_id: str,
+        assistant_profile: str,
+        updated_by: str,
+    ) -> None:
+        now = _now_iso()
+        async with aiosqlite.connect(self.path) as db:
+            await db.execute(
+                """
+                INSERT INTO assistant_profile_preferences(
+                    subject_id, assistant_profile, updated_by, updated_at
+                )
+                VALUES (?, ?, ?, ?)
+                ON CONFLICT(subject_id) DO UPDATE SET
+                    assistant_profile = excluded.assistant_profile,
+                    updated_by = excluded.updated_by,
+                    updated_at = excluded.updated_at
+                """,
+                (subject_id, assistant_profile, updated_by, now),
+            )
+            await db.commit()
+        await self.audit(
+            AuditEventType.ASSISTANT_PROFILE_SET,
+            actor_id=updated_by,
+            detail={
+                "subject_id": subject_id,
+                "assistant_profile_length": len(assistant_profile),
+            },
+        )
+
+    async def get_assistant_profile_preference(
+        self,
+        subject_id: str,
+    ) -> AssistantProfilePreference | None:
+        async with aiosqlite.connect(self.path) as db:
+            rows = await db.execute_fetchall(
+                """
+                SELECT subject_id, assistant_profile, updated_by, updated_at
+                FROM assistant_profile_preferences
+                WHERE subject_id = ?
+                """,
+                (subject_id,),
+            )
+        rows_list = list(rows)
+        if not rows_list:
+            return None
+        row = rows_list[0]
+        return AssistantProfilePreference(
+            subject_id=str(row[0]),
+            assistant_profile=str(row[1]),
+            updated_by=str(row[2]),
+            updated_at=str(row[3]),
+        )
+
+    async def clear_assistant_profile_preference(
+        self,
+        subject_id: str,
+        *,
+        updated_by: str,
+    ) -> None:
+        async with aiosqlite.connect(self.path) as db:
+            await db.execute(
+                "DELETE FROM assistant_profile_preferences WHERE subject_id = ?",
+                (subject_id,),
+            )
+            await db.commit()
+        await self.audit(
+            AuditEventType.ASSISTANT_PROFILE_CLEARED,
             actor_id=updated_by,
             detail={"subject_id": subject_id},
         )

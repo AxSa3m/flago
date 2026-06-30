@@ -89,6 +89,21 @@ async def test_agent_returns_final_response_without_tools() -> None:
 
 
 @pytest.mark.asyncio
+async def test_agent_system_prompt_includes_assistant_profile() -> None:
+    model = FakeAgentModel([_decision(final_response="收到。")])
+    agent = AgentOrchestrator(model)
+    request = _request("你好")
+    request.assistant_name = "小飞"
+    request.assistant_profile = "简洁直接，擅长整理飞书文档。"
+
+    await agent.handle(request)
+
+    system_prompt = model.requests[0].messages[0].content
+    assert "你是 小飞" in system_prompt
+    assert "你的语言风格和任务角色简介：简洁直接，擅长整理飞书文档。" in system_prompt
+
+
+@pytest.mark.asyncio
 async def test_agent_executes_search_tool_then_returns_final_response() -> None:
     searcher = FakeSearcher()
     model = FakeAgentModel(

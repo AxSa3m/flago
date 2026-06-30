@@ -319,10 +319,15 @@ def _build_repair_model_request(
 
 def _system_prompt(request: AssistantRequest, tool_specs: list[dict[str, Any]]) -> str:
     assistant_name = request.assistant_name.strip() or "小智"
+    assistant_profile = request.assistant_profile.strip()
     decision_schema = AgentDecision.model_json_schema()
-    return "\n".join(
+    lines = [
+        f"你是 {assistant_name}，一个接入飞书的工作助手。",
+    ]
+    if assistant_profile:
+        lines.append(f"你的语言风格和任务角色简介：{assistant_profile}")
+    lines.extend(
         [
-            f"你是 {assistant_name}，一个接入飞书的工作助手。",
             "你必须像 Agent 一样先判断用户意图，再决定是否调用工具。",
             "每轮只能输出一个合法 JSON 对象，不要 Markdown，不要代码块，不要额外解释。",
             "JSON 必须符合 AgentDecision schema，只允许包含 final_response、"
@@ -342,6 +347,7 @@ def _system_prompt(request: AssistantRequest, tool_specs: list[dict[str, Any]]) 
             f"Available tools: {json.dumps(tool_specs, ensure_ascii=False)}",
         ]
     )
+    return "\n".join(lines)
 
 
 def _user_prompt(request: AssistantRequest, tool_results: list[ToolResult]) -> str:

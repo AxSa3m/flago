@@ -146,6 +146,7 @@ class AssistantRequest(BaseModel):
     conversation_type: ConversationType
     text: str
     assistant_name: str = "小智"
+    assistant_profile: str = ""
     writeback_enabled: bool = False
     model_provider: str | None = None
     model: str | None = None
@@ -322,6 +323,8 @@ class AuditEventType(StrEnum):
     WRITEBACK_AUTO_CLEARED = "writeback_auto_cleared"
     ASSISTANT_NAME_SET = "assistant_name_set"
     ASSISTANT_NAME_CLEARED = "assistant_name_cleared"
+    ASSISTANT_PROFILE_SET = "assistant_profile_set"
+    ASSISTANT_PROFILE_CLEARED = "assistant_profile_cleared"
     MODEL_PREFERENCE_SET = "model_preference_set"
     MODEL_PREFERENCE_CLEARED = "model_preference_cleared"
     MODEL_GENERATED = "model_generated"
@@ -353,6 +356,13 @@ class ModelPreference(BaseModel):
 class AssistantNamePreference(BaseModel):
     subject_id: str
     assistant_name: str
+    updated_by: str
+    updated_at: str
+
+
+class AssistantProfilePreference(BaseModel):
+    subject_id: str
+    assistant_profile: str
     updated_by: str
     updated_at: str
 

@@ -43,6 +43,7 @@ def build_assistant_model_request(
                 content="\n".join(
                     _system_instructions(
                         request.assistant_name,
+                        assistant_profile=request.assistant_profile,
                         writeback_enabled=request.writeback_enabled,
                     )
                 ),
@@ -60,8 +61,14 @@ def build_assistant_model_request(
     )
 
 
-def _system_instructions(assistant_name: str, *, writeback_enabled: bool) -> list[str]:
+def _system_instructions(
+    assistant_name: str,
+    *,
+    assistant_profile: str = "",
+    writeback_enabled: bool,
+) -> list[str]:
     name = assistant_name.strip() or "小智"
+    profile = assistant_profile.strip()
     writeback_instructions = (
         [
             "写回功能已启用。只有用户明确要求对具体飞书对象执行写入、修改、删除或创建时，才准备写回内容。",
@@ -77,8 +84,13 @@ def _system_instructions(assistant_name: str, *, writeback_enabled: bool) -> lis
             "不要输出写回 JSON，也不要声称已经创建卡片或执行写入。",
         ]
     )
-    return [
+    instructions = [
         f"你是 {name}，一个接入飞书的工作助手。",
+    ]
+    if profile:
+        instructions.append(f"你的语言风格和任务角色简介：{profile}")
+    return [
+        *instructions,
         *SYSTEM_INSTRUCTIONS,
         *writeback_instructions,
     ]
