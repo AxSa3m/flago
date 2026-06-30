@@ -423,10 +423,15 @@ class FeishuOpenAPI:
         *,
         revision_id: int = -1,
     ) -> dict[str, Any]:
-        return await self.delete(
-            f"/open-apis/docx/v1/documents/{document_id}/blocks/{block_id}",
+        return await self.put(
+            f"/open-apis/docs_ai/v1/documents/{document_id}",
             actor_id=actor_id,
-            params={"document_revision_id": revision_id},
+            json_body={
+                "command": "block_delete",
+                "block_id": block_id,
+                "format": "xml",
+                "revision_id": revision_id,
+            },
             require_user_token=True,
             required_scope_groups=(("docx:document", "docx:document:write"),),
         )

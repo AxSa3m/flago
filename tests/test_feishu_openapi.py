@@ -685,8 +685,8 @@ async def test_delete_doc_block_uses_user_write_scope(tmp_path) -> None:
         },
     )
     api = FeishuOpenAPI(_settings(tmp_path), store)
-    route = respx.delete(
-        "https://open.feishu.test/open-apis/docx/v1/documents/docx123/blocks/blk1"
+    route = respx.put(
+        "https://open.feishu.test/open-apis/docs_ai/v1/documents/docx123"
     ).mock(return_value=Response(200, json={"code": 0, "data": {"revision_id": 3}}))
 
     data = await api.delete_doc_block("docx123", "blk1", "ou_user")
@@ -694,7 +694,12 @@ async def test_delete_doc_block_uses_user_write_scope(tmp_path) -> None:
     request = route.calls.last.request
     assert data == {"revision_id": 3}
     assert request.headers["authorization"] == "Bearer u-access"
-    assert request.url.params["document_revision_id"] == "-1"
+    assert json.loads(request.content) == {
+        "command": "block_delete",
+        "block_id": "blk1",
+        "format": "xml",
+        "revision_id": -1,
+    }
 
 
 @pytest.mark.asyncio

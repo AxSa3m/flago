@@ -47,7 +47,7 @@ def _proposal_elements(
     index: int,
     total: int,
 ) -> list[dict[str, object]]:
-    title = "待确认写回" if total == 1 else f"待确认写回 {index}/{total}"
+    title = "待确认写入" if total == 1 else f"待确认写入 {index}/{total}"
     elements: list[dict[str, object]] = [
         {
             "tag": "markdown",
@@ -109,7 +109,7 @@ def _action_label(action_type: WriteActionType) -> str:
     labels = {
         WriteActionType.DOC_CREATE: "创建文档",
         WriteActionType.DOC_APPEND: "追加到文档",
-        WriteActionType.DOC_DELETE_BLOCK: "删除文档新增内容",
+        WriteActionType.DOC_DELETE_BLOCK: "撤回文档写入",
         WriteActionType.SHEET_WRITE_RANGE: "写入电子表格范围",
         WriteActionType.BITABLE_CREATE_RECORD: "创建多维表格记录",
         WriteActionType.BITABLE_UPDATE_RECORD: "更新多维表格记录",

@@ -1156,12 +1156,15 @@ class FeishuMessageRouter:
         except ValueError:
             return "最近一次写入的撤回类型暂不支持。", None
         now = datetime.now(UTC)
+        undo_target = _enriched_undo_target(latest)
         proposal = ActionProposal(
             actor_id=actor_id,
             action_type=action_type,
-            target=latest["undo_target"],
+            target=undo_target,
+            target_title=_target_title_from_mapping(undo_target),
+            target_url=_target_url_from_mapping(undo_target),
             payload=latest["undo_payload"],
-            preview=str(latest.get("undo_preview") or "撤回上一次写回"),
+            preview=_friendly_undo_preview(latest),
             created_at=now,
             expires_at=now + timedelta(seconds=self.settings.pending_action_ttl_seconds),
         )
@@ -1585,11 +1588,65 @@ def _writeback_target_summary(action_type: str, target: object) -> str:
     return "未知目标"
 
 
+def _enriched_undo_target(latest: dict[str, Any]) -> dict[str, Any]:
+    target = dict(latest.get("undo_target") or {})
+    original = latest.get("target")
+    if not isinstance(original, dict):
+        return target
+    for key in ("title", "target_title", "url", "target_url", "type", "token"):
+        if not target.get(key) and original.get(key):
+            target[key] = original[key]
+    return target
+
+
+def _target_title_from_mapping(target: dict[str, Any]) -> str | None:
+    for key in ("target_title", "title", "name", "document_title"):
+        value = target.get(key)
+        if isinstance(value, str) and value.strip():
+            return value.strip()
+    return None
+
+
+def _target_url_from_mapping(target: dict[str, Any]) -> str | None:
+    for key in ("target_url", "url", "link"):
+        value = target.get(key)
+        if isinstance(value, str) and value.strip().startswith(("http://", "https://")):
+            return value.strip()
+    return None
+
+
+def _friendly_undo_preview(latest: dict[str, Any]) -> str:
+    action_type = str(latest.get("undo_action_type") or "")
+    if action_type == WriteActionType.DOC_DELETE_BLOCK.value:
+        target = _enriched_undo_target(latest)
+        title = _target_title_from_mapping(target)
+        target_text = f"《{title}》" if title else "目标文档"
+        original_payload = latest.get("payload")
+        content = ""
+        if isinstance(original_payload, dict):
+            raw_content = original_payload.get("content")
+            content = raw_content if isinstance(raw_content, str) else ""
+        if content.strip():
+            return f"撤回上一次写入：从{target_text}删除刚刚新增的文字：\n{_trim_text(content)}"
+        return f"撤回上一次写入：从{target_text}删除刚刚新增的内容。"
+    preview = latest.get("undo_preview")
+    if isinstance(preview, str) and preview.strip():
+        return preview.replace("写回", "写入")
+    return "撤回上一次写入"
+
+
+def _trim_text(text: str, max_chars: int = 400) -> str:
+    cleaned = text.strip()
+    if len(cleaned) <= max_chars:
+        return cleaned
+    return f"{cleaned[: max_chars - 12].rstrip()}...（已截断）"
+
+
 def _write_action_label(action_type: str) -> str:
     labels = {
         WriteActionType.DOC_CREATE.value: "创建文档",
         WriteActionType.DOC_APPEND.value: "追加文档",
-        WriteActionType.DOC_DELETE_BLOCK.value: "删除文档新增内容",
+        WriteActionType.DOC_DELETE_BLOCK.value: "撤回文档写入",
         WriteActionType.SHEET_WRITE_RANGE.value: "写入电子表格",
         WriteActionType.BITABLE_CREATE_RECORD.value: "新增多维表记录",
         WriteActionType.BITABLE_UPDATE_RECORD.value: "更新多维表记录",

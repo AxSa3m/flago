@@ -304,7 +304,11 @@ async def test_confirm_records_reversible_doc_append_when_block_ids_returned(tmp
     proposal = ActionProposal(
         actor_id="user-1",
         action_type=WriteActionType.DOC_APPEND,
-        target={"document_id": "docx123"},
+        target={
+            "document_id": "docx123",
+            "title": "测试文档",
+            "url": "https://my.feishu.cn/docx/docx123",
+        },
         payload={"content": "新增内容"},
         preview="append doc",
         expires_at=datetime.now(UTC) + timedelta(minutes=5),
@@ -318,11 +322,18 @@ async def test_confirm_records_reversible_doc_append_when_block_ids_returned(tmp
     assert reversible is not None
     assert reversible["action_id"] == proposal.id
     assert reversible["undo_action_type"] == WriteActionType.DOC_DELETE_BLOCK.value
-    assert reversible["undo_target"] == {"document_id": "docx123"}
+    assert reversible["undo_target"] == {
+        "document_id": "docx123",
+        "title": "测试文档",
+        "url": "https://my.feishu.cn/docx/docx123",
+    }
     assert reversible["undo_payload"] == {
         "block_ids": ["blk1", "blk2"],
         "undo_of_action_id": proposal.id,
     }
+    assert reversible["undo_preview"] == (
+        "撤回上一次写入：从《测试文档》删除刚刚新增的文字：\n新增内容"
+    )
 
 
 @pytest.mark.asyncio

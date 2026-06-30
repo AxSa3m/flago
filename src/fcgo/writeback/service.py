@@ -229,6 +229,10 @@ def _writeback_failure_message(detail: str) -> str:
         return "写回失败：多维表格字段名不存在。请确认字段配置，或重新生成写回卡片后再试。"
     if "base:record:delete" in detail:
         return "撤回失败：当前飞书授权缺少删除多维表格记录权限。请重新发送 /授权 后再试。"
+    if ("404" in detail or "not found" in lowered) and (
+        "doc" in lowered or "document" in lowered or "block" in lowered
+    ):
+        return "撤回失败：新增内容可能已被手动删除，或文档结构已变化。请打开目标文档确认当前内容。"
     if "bad request" in lowered or "400" in detail:
         return "写回失败：飞书接口返回请求格式错误。请重新生成写回卡片后再试。"
     if "token" in lowered:
@@ -251,14 +255,24 @@ def _undo_metadata(
         block_ids = _doc_created_block_ids(result)
         if not document_id or not block_ids:
             return {}
+        undo_target = {"document_id": document_id}
+        for key in ("title", "target_title", "url", "target_url", "type", "token"):
+            value = _optional_text(target.get(key))
+            if value:
+                undo_target[key] = value
+        preview = _doc_append_undo_preview(
+            target=target,
+            payload=payload,
+            block_count=len(block_ids),
+        )
         return {
             "action_type": WriteActionType.DOC_DELETE_BLOCK.value,
-            "target": {"document_id": document_id},
+            "target": undo_target,
             "payload": {
                 "block_ids": block_ids,
                 "undo_of_action_id": action_id,
             },
-            "preview": f"撤回上一次写回：删除文档中新追加的 {len(block_ids)} 个内容块",
+            "preview": preview,
         }
     if action_type == WriteActionType.BITABLE_CREATE_RECORD:
         record_id = _bitable_record_id(result)
@@ -321,6 +335,29 @@ def _doc_created_block_ids(result: dict[str, Any]) -> list[str]:
         if isinstance(block_id, str) and block_id.strip() and block_id not in ids:
             ids.append(block_id.strip())
     return ids
+
+
+def _doc_append_undo_preview(
+    *,
+    target: dict[str, Any],
+    payload: dict[str, Any],
+    block_count: int,
+) -> str:
+    title = _optional_text(target.get("title")) or _optional_text(target.get("target_title"))
+    content = _optional_text(payload.get("content"))
+    target_text = f"《{title}》" if title else "目标文档"
+    if content:
+        return f"撤回上一次写入：从{target_text}删除刚刚新增的文字：\n{_trim_preview(content)}"
+    return f"撤回上一次写入：从{target_text}删除刚刚新增的 {block_count} 段内容。"
+
+
+def _trim_preview(text: str, max_chars: int = 400) -> str:
+    cleaned = text.strip()
+    if len(cleaned) <= max_chars:
+        return cleaned
+    return f"{cleaned[: max_chars - 12].rstrip()}...（已截断）"
+
+
 
 
 def _doc_created_block_candidates(result: dict[str, Any]) -> list[Any]:

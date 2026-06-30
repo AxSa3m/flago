@@ -1489,7 +1489,11 @@ async def test_router_undo_prefers_latest_doc_append_over_older_bitable(tmp_path
         action_id="latest-doc",
         actor_id="ou_user",
         action_type=WriteActionType.DOC_APPEND.value,
-        target={"document_id": "docx123"},
+        target={
+            "document_id": "docx123",
+            "title": "测试文档",
+            "url": "https://my.feishu.cn/docx/docx123",
+        },
         payload={"content": "卡片测试成功"},
         result={"children": [{"block_id": "blk1"}]},
         undo_action_type=WriteActionType.DOC_DELETE_BLOCK.value,
@@ -1511,9 +1515,14 @@ async def test_router_undo_prefers_latest_doc_append_over_older_bitable(tmp_path
     ]
     assert saved_actions[0] is not None
     assert saved_actions[0]["action_type"] == WriteActionType.DOC_DELETE_BLOCK.value
-    assert saved_actions[0]["target"] == {"document_id": "docx123"}
+    assert saved_actions[0]["target"] == {
+        "document_id": "docx123",
+        "title": "测试文档",
+        "url": "https://my.feishu.cn/docx/docx123",
+    }
     assert saved_actions[0]["payload"]["block_ids"] == ["blk1"]
-    assert "删除文档中新追加" in str(client.cards[0][1])
+    assert "测试文档" in str(client.cards[0][1])
+    assert "卡片测试成功" in str(client.cards[0][1])
     assert "多维表" not in str(client.cards[0][1])
 
 
