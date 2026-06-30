@@ -1,6 +1,7 @@
 import json
 from collections.abc import Mapping
 from typing import Any
+from urllib.parse import unquote
 
 from fcgo.models import ConversationType, FeishuMention, FeishuMessage
 
@@ -112,8 +113,9 @@ def _message_text(content_obj: Any) -> str:
 
 def _collect_text_parts(value: Any, parts: list[str]) -> None:
     if isinstance(value, str):
-        if value.startswith(("http://", "https://")):
-            parts.append(value)
+        decoded = _decoded_text(value)
+        if decoded.startswith(("http://", "https://")):
+            parts.append(decoded)
         return
     if isinstance(value, list):
         for item in value:
@@ -122,15 +124,69 @@ def _collect_text_parts(value: Any, parts: list[str]) -> None:
     if not isinstance(value, Mapping):
         return
 
+    mention_doc = value.get("mention_doc")
+    if isinstance(mention_doc, Mapping):
+        _collect_mention_doc_parts(mention_doc, parts)
+
     for key in ("text", "content", "href", "url", "link", "preview_url"):
         item = value.get(key)
         if isinstance(item, str) and item:
-            parts.append(item)
+            parts.append(_decoded_text(item))
     for key in ("elements", "children", "items", "tag_content"):
         _collect_text_parts(value.get(key), parts)
     for item in value.values():
         if isinstance(item, list | Mapping):
             _collect_text_parts(item, parts)
+
+
+def _collect_mention_doc_parts(value: Mapping[str, Any], parts: list[str]) -> None:
+    for key in ("url", "href", "link", "preview_url"):
+        url = _decoded_string(value.get(key))
+        if url and url.startswith(("http://", "https://")):
+            parts.append(url)
+            return
+
+    token = _decoded_string(
+        value.get("docs_token")
+        or value.get("doc_token")
+        or value.get("document_id")
+        or value.get("obj_token")
+        or value.get("token")
+    )
+    if not token:
+        return
+    type_hint = (
+        _decoded_string(
+            value.get("docs_type")
+            or value.get("doc_type")
+            or value.get("obj_type")
+            or value.get("type")
+        )
+        or "docx"
+    ).lower()
+    kind = _mention_doc_kind(type_hint)
+    parts.append(f"https://my.feishu.cn/{kind}/{token}")
+
+
+def _mention_doc_kind(type_hint: str) -> str:
+    if type_hint in {"sheet", "sheets", "spreadsheet"}:
+        return "sheets"
+    if type_hint in {"bitable", "base"}:
+        return "base"
+    if type_hint == "wiki":
+        return "wiki"
+    return "docx"
+
+
+def _decoded_string(value: Any) -> str | None:
+    if not isinstance(value, str) or not value:
+        return None
+    return _decoded_text(value)
+
+
+def _decoded_text(value: str) -> str:
+    decoded = unquote(value)
+    return unquote(decoded) if "%" in decoded else decoded
 
 
 def _is_bot_mentioned(

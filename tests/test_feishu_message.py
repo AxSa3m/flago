@@ -127,6 +127,63 @@ def test_parse_post_message_extracts_nested_feishu_link() -> None:
     assert "https://my.feishu.cn/wiki/AiDzwcQLli2EQYkaKyWckTPAnjj?from=navigation" in message.text
 
 
+def test_parse_post_message_extracts_mention_doc_encoded_url() -> None:
+    message = parse_text_message(
+        {
+            "event": {
+                "sender": {"sender_id": {"open_id": "ou_user"}},
+                "message": {
+                    "message_id": "om_doc_mention",
+                    "chat_id": "oc_chat",
+                    "chat_type": "p2p",
+                    "message_type": "post",
+                    "content": (
+                        '{"content":[[{"tag":"text","text":"读取 "},'
+                        '{"tag":"mention_doc","mention_doc":{'
+                        '"title":"测试文档",'
+                        '"url":"https%3A%2F%2Fmy.feishu.cn%2Fdocx%2FUXYPdSrz5ovVk1x1cVqc4ReOnNb"'
+                        "}}]]}"
+                    ),
+                    "mentions": [],
+                },
+            }
+        }
+    )
+
+    assert message is not None
+    assert "读取" in message.text
+    assert "https://my.feishu.cn/docx/UXYPdSrz5ovVk1x1cVqc4ReOnNb" in message.text
+
+
+def test_parse_post_message_builds_mention_doc_url_from_token() -> None:
+    message = parse_text_message(
+        {
+            "event": {
+                "sender": {"sender_id": {"open_id": "ou_user"}},
+                "message": {
+                    "message_id": "om_doc_token",
+                    "chat_id": "oc_chat",
+                    "chat_type": "p2p",
+                    "message_type": "post",
+                    "content": (
+                        '{"content":[[{"tag":"text","text":"读取 "},'
+                        '{"tag":"mention_doc","mention_doc":{'
+                        '"title":"测试文档",'
+                        '"docs_token":"UXYPdSrz5ovVk1x1cVqc4ReOnNb",'
+                        '"docs_type":"docx"'
+                        "}}]]}"
+                    ),
+                    "mentions": [],
+                },
+            }
+        }
+    )
+
+    assert message is not None
+    assert "读取" in message.text
+    assert "https://my.feishu.cn/docx/UXYPdSrz5ovVk1x1cVqc4ReOnNb" in message.text
+
+
 def test_parse_group_message_not_mentioning_configured_bot() -> None:
     message = parse_text_message(
         {
