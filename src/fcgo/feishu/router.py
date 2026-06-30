@@ -2,7 +2,7 @@ import logging
 import re
 from datetime import UTC, datetime, timedelta
 from hashlib import sha256
-from typing import Protocol
+from typing import Any, Protocol
 from uuid import uuid4
 
 from fcgo.agent.protocols import AssistantHandler
@@ -111,7 +111,7 @@ class FeishuMessageRouter:
             if not self.settings.writeback_enabled:
                 await self.feishu_client.reply_text(
                     message.chat_id,
-                    "写入功能当前已暂停，因此撤回写回也暂不可用。",
+                    "写入功能当前已暂停，因此撤回写入也暂不可用。",
                 )
                 return
             await self._reply_latest_undo_card(message)
@@ -216,6 +216,9 @@ class FeishuMessageRouter:
             return
         if event.event_key.strip().lower() == "fcgo.auth.status":
             await self._send_menu_oauth_card(event, receive_id, receive_id_type, force_link=False)
+            return
+        if event.event_key.strip().lower() == "fcgo.writeback.undo":
+            await self._send_menu_undo_card(event, receive_id, receive_id_type)
             return
         text = await self._handle_menu_action(event)
         await self._send_menu_text(receive_id, receive_id_type, text)
@@ -341,6 +344,8 @@ class FeishuMessageRouter:
         if key.startswith("fcgo.model.use."):
             provider = key.removeprefix("fcgo.model.use.")
             return await self._set_menu_user_model(event, provider, assistant_name=assistant_name)
+        if key == "fcgo.assistant.name.view":
+            return await self._assistant_name_status_text(_menu_actor_id(event))
         if key == "fcgo.auth.start":
             return await self._menu_oauth_text(event, assistant_name=assistant_name)
         if key == "fcgo.auth.status":
@@ -414,7 +419,7 @@ class FeishuMessageRouter:
                 await self._writeback_status_text(message, assistant_name=assistant_name),
             )
             return True
-        if normalized in {"历史", "最近", "最近写回"}:
+        if normalized in {"历史", "最近", "最近写入", "最近写回"}:
             await self._reply_writeback_history(message)
             return True
         if normalized in {"自动开启", "开启自动", "自动打开", "打开自动"}:
@@ -523,8 +528,21 @@ class FeishuMessageRouter:
     async def _assistant_name_status_text(self, subject_id: str) -> str:
         preference = await self.store.get_assistant_name_preference(subject_id)
         if preference is None:
-            return f"当前助手名称：{self.settings.assistant_default_name}（默认）。"
-        return f"当前助手名称：{preference.assistant_name}（你的个人设置）。"
+            assistant_name = self.settings.assistant_default_name
+            source = "默认"
+        else:
+            assistant_name = preference.assistant_name
+            source = "你的个人设置"
+        return (
+            "当前助手信息：\n"
+            f"- 名称：{assistant_name}（{source}）\n"
+            f"- 默认名称：{self.settings.assistant_default_name}\n"
+            "- 作用范围：只影响你看到的回复文案和模型上下文中的自称，"
+            "不会修改飞书开放平台里的机器人名称。\n"
+            "- 工作方式：按 Agent + Tools 模式理解你的意图；读取、搜索、写入、记忆和模型切换"
+            "会走对应工具和权限检查。\n"
+            "- 安全边界：写入类操作会按当前写入策略执行；修改、删除和不明确目标仍会要求确认。"
+        )
 
     async def _assistant_name(self, subject_id: str) -> str:
         preference = await self.store.get_assistant_name_preference(subject_id)
@@ -963,6 +981,32 @@ class FeishuMessageRouter:
             return
         await self.feishu_client.send_text_to_user_id(receive_id, text)
 
+    async def _send_menu_undo_card(
+        self,
+        event: FeishuBotMenuEvent,
+        receive_id: str,
+        receive_id_type: str,
+    ) -> None:
+        actor_id = _menu_actor_id(event)
+        if not self.settings.writeback_enabled:
+            await self._send_menu_text(
+                receive_id,
+                receive_id_type,
+                "写入功能当前已暂停，因此撤回写入也暂不可用。",
+            )
+            return
+        text, card = await self._latest_undo_response(
+            actor_id,
+            assistant_name=await self._assistant_name(actor_id),
+        )
+        if card is None:
+            await self._send_menu_text(receive_id, receive_id_type, text)
+            return
+        if receive_id_type == "open_id":
+            await self.feishu_client.send_interactive_card_to_open_id(receive_id, card)
+            return
+        await self.feishu_client.send_interactive_card_to_user_id(receive_id, card)
+
     async def _resolve_model_preference(self, message: FeishuMessage) -> ModelPreference | None:
         if message.conversation_type == ConversationType.PRIVATE:
             user_preference = await self.store.get_model_preference(_user_model_scope(message))
@@ -1003,9 +1047,9 @@ class FeishuMessageRouter:
         else:
             user_setting = "已开启" if preference.enabled else "已关闭"
         lines = [
-            f"{assistant_name} 当前写回策略：{_writeback_confirmation_mode_label(effective_mode)}",
-            f"- 你的自动写回偏好：{user_setting}",
-            "- 服务是否允许用户开启自动写回："
+            f"{assistant_name} 当前写入策略：{_writeback_confirmation_mode_label(effective_mode)}",
+            f"- 你的自动写入偏好：{user_setting}",
+            "- 服务是否允许用户开启自动写入："
             f"{'是' if self.settings.writeback_auto_execute_enabled else '否'}",
             f"- 写入功能：{'已开启' if self.settings.writeback_enabled else '已暂停'}",
         ]
@@ -1022,10 +1066,10 @@ class FeishuMessageRouter:
         assistant_name: str,
     ) -> str:
         if not self.settings.writeback_enabled:
-            return "写入功能当前已暂停，无法开启自动写回。"
+            return "写入功能当前已暂停，无法开启自动写入。"
         if not self.settings.writeback_auto_execute_enabled:
             return (
-                "服务当前未开放用户自动写回开关。需要服务配置 "
+                "服务当前未开放用户自动写入开关。需要服务配置 "
                 "`FCGO_WRITEBACK_AUTO_EXECUTE_ENABLED=true` 后才能开启。"
             )
         await self.store.set_writeback_auto_execute(
@@ -1034,9 +1078,9 @@ class FeishuMessageRouter:
             updated_by=message.sender_id,
         )
         return (
-            f"已开启你的个人自动写回偏好。{assistant_name} "
+            f"已开启你的个人自动写入偏好。{assistant_name} "
             "只会对明确目标的文档开头/末尾追加直接执行；"
-            "修改、删除、表格、多维表和不明确目标仍会生成确认卡片。发送 /写回 自动关闭 可随时关闭。"
+            "修改、删除、表格、多维表和不明确目标仍会生成确认卡片。发送 /写入 自动关闭 可随时关闭。"
         )
 
     async def _disable_writeback_auto_text(
@@ -1050,7 +1094,7 @@ class FeishuMessageRouter:
             enabled=False,
             updated_by=message.sender_id,
         )
-        return f"已关闭你的个人自动写回偏好。{assistant_name} 后续会先生成确认卡片。"
+        return f"已关闭你的个人自动写入偏好。{assistant_name} 后续会先生成确认卡片。"
 
     async def _clear_writeback_auto_text(
         self,
@@ -1062,7 +1106,7 @@ class FeishuMessageRouter:
             message.sender_id,
             updated_by=message.sender_id,
         )
-        return f"已清除你的自动写回偏好。{assistant_name} 将使用服务默认写回策略。"
+        return f"已清除你的自动写入偏好。{assistant_name} 将使用服务默认写入策略。"
 
     async def _reply_oauth_card(self, message: FeishuMessage, *, force_link: bool) -> None:
         if self.oauth is None:
@@ -1085,27 +1129,35 @@ class FeishuMessageRouter:
         )
 
     async def _reply_latest_undo_card(self, message: FeishuMessage) -> None:
-        latest = await self.store.find_latest_reversible_writeback(message.sender_id)
-        if latest is None:
-            await self.feishu_client.reply_text(
-                message.chat_id,
-                (
-                    "暂时没有找到可撤回的写回记录。"
-                    "目前支持撤回最近一次文档追加、多维表新增记录或电子表格范围写入。"
-                ),
-            )
+        text, card = await self._latest_undo_response(
+            message.sender_id,
+            assistant_name=await self._assistant_name_for_message(message),
+        )
+        if card is None:
+            await self.feishu_client.reply_text(message.chat_id, text)
             return
+        await self.feishu_client.send_interactive_card(message.chat_id, card)
+
+    async def _latest_undo_response(
+        self,
+        actor_id: str,
+        *,
+        assistant_name: str,
+    ) -> tuple[str, dict[str, Any] | None]:
+        latest = await self.store.find_latest_reversible_writeback(actor_id)
+        if latest is None:
+            return (
+                "暂时没有找到可撤回的写入记录。"
+                "目前支持撤回最近一次文档追加、多维表新增记录或电子表格范围写入。",
+                None,
+            )
         try:
             action_type = WriteActionType(str(latest["undo_action_type"]))
         except ValueError:
-            await self.feishu_client.reply_text(
-                message.chat_id,
-                "最近一次写回的撤回类型暂不支持。",
-            )
-            return
+            return "最近一次写入的撤回类型暂不支持。", None
         now = datetime.now(UTC)
         proposal = ActionProposal(
-            actor_id=message.sender_id,
+            actor_id=actor_id,
             action_type=action_type,
             target=latest["undo_target"],
             payload=latest["undo_payload"],
@@ -1116,13 +1168,13 @@ class FeishuMessageRouter:
         await self.store.save_pending_action(proposal)
         card = assistant_response_card(
             (
-                "我找到了最近一次可撤回的写回记录。"
+                "我找到了最近一次可撤回的写入记录。"
                 "请确认是否执行撤回；撤回也会经过一次确认。"
             ),
             [proposal],
-            assistant_name=await self._assistant_name_for_message(message),
+            assistant_name=assistant_name,
         )
-        await self.feishu_client.send_interactive_card(message.chat_id, card)
+        return "", card
 
     async def _reply_writeback_history(self, message: FeishuMessage) -> None:
         await self.feishu_client.reply_text(
@@ -1136,8 +1188,8 @@ class FeishuMessageRouter:
             limit=5,
         )
         if not history:
-            return "暂时没有写回执行记录。"
-        lines = ["最近写回："]
+            return "暂时没有写入执行记录。"
+        lines = ["最近写入："]
         for item in history:
             action_type = str(item["action_type"])
             status, reason = _writeback_history_status(item)
@@ -1146,7 +1198,7 @@ class FeishuMessageRouter:
             if reason:
                 line += f"（{reason}）"
             lines.append(line)
-        lines.append("\n发送 /撤回 可撤回最近一次标记为“可撤回”的写回。")
+        lines.append("\n发送 /撤回 可撤回最近一次标记为“可撤回”的写入。")
         return "\n".join(lines)
 
 
@@ -1469,7 +1521,12 @@ def _is_undo_command(text: str) -> bool:
     stripped = text.strip()
     return stripped in {
         "/撤回",
+        "/写入 撤回",
+        "/写回 撤回",
         "撤回",
+        "撤回上一次写入",
+        "撤回最近写入",
+        "撤回上次写入",
         "撤回上一次写回",
         "撤回最近写回",
         "撤回上次写回",
@@ -1478,9 +1535,13 @@ def _is_undo_command(text: str) -> bool:
 
 def _is_writeback_history_command(text: str) -> bool:
     return text.strip() in {
+        "/查看最近写入",
         "/查看最近写回",
+        "/写入 历史",
         "/写回 历史",
+        "查看最近写入",
         "查看最近写回",
+        "最近写入",
         "最近写回",
     }
 
@@ -1642,7 +1703,7 @@ def _draft_only_writeback_text(response: AssistantResponse) -> str:
     lines = []
     if response.text.strip():
         lines.append(response.text.strip())
-    lines.append("当前写回策略为只生成草稿，不会保存待确认动作，也不会执行写入。")
+    lines.append("当前写入策略为只生成草稿，不会保存待确认动作，也不会执行写入。")
     for proposal in response.action_proposals:
         target = proposal.target_title or proposal.target_url or "目标资源"
         lines.append(f"- {_write_action_label(proposal.action_type.value)} · {target}")
@@ -1683,7 +1744,7 @@ def _parse_model_command(text: str) -> str | None:
 
 
 def _parse_writeback_command(text: str) -> str | None:
-    return _parse_prefixed_command(text, "/写回", "写回")
+    return _parse_prefixed_command(text, "/写入", "写入", "/写回", "写回")
 
 
 def _parse_prefixed_command(text: str, *prefixes: str) -> str | None:
@@ -1772,12 +1833,13 @@ def _model_menu_only_text(assistant_name: str = "小智") -> str:
 
 def _writeback_command_help(assistant_name: str = "小智") -> str:
     return (
-        f"{assistant_name} 的写回指令：\n"
-        "- /写回 状态\n"
-        "- /写回 自动开启\n"
-        "- /写回 自动关闭\n"
-        "- /写回 自动清除\n"
-        "- /写回 历史"
+        f"{assistant_name} 的写入指令：\n"
+        "- /写入 状态\n"
+        "- /写入 自动开启\n"
+        "- /写入 自动关闭\n"
+        "- /写入 自动清除\n"
+        "- /写入 历史\n"
+        "- /撤回"
     )
 
 
@@ -1837,15 +1899,20 @@ def _menu_idempotency_key(event: FeishuBotMenuEvent) -> str:
 def _menu_help_text(assistant_name: str = "小智") -> str:
     return (
         f"{assistant_name} 菜单入口：\n"
-        "- 助手：查看、设置或恢复你的助手名称。\n"
+        "- 助手：查看当前助手信息。\n"
         "- 模型：查看可用模型，或设置你的个人默认模型。\n"
         "- 授权：获取飞书 OAuth 授权链接，或查看授权状态。\n"
-        "- 上下文：查看当前上下文读取策略。\n"
-        "- 写回：查看写回策略，或开启/关闭低风险自动写回。\n"
+        "- 写入：查看写入策略、开启/关闭自动写入、查看最近写入或撤回。\n"
         "- 记忆：查看、删除、关闭或开启你的长期记忆。\n"
         "- 帮助：查看当前菜单说明。\n\n"
-        "仍然可以直接发送 /助手 名称、/模型 查看、/授权、/授权 状态、"
-        "/上下文 查看、/写回 状态、/记忆 查看。"
+        "未放入当前菜单但仍可直接发送：\n"
+        "- /助手 命名 小飞：设置你的个人助手名称\n"
+        "- /助手 默认名称：恢复默认助手名称\n"
+        "- /上下文 查看：查看上下文读取策略\n"
+        "- /记忆 记住 输出格式=优先表格：保存一条长期记忆，需要确认\n"
+        "- /记忆 修改 语言风格=简洁中文：修改记忆，需要确认\n"
+        "- /记忆 删除 语言风格：删除单条记忆\n"
+        "- /写入 状态、/写入 历史、/撤回：写入相关文本入口"
     )
 
 
@@ -1863,9 +1930,9 @@ def _privacy_command_help(assistant_name: str = "小智") -> str:
         "- /授权\n"
         "- /授权 状态\n"
         "- /上下文 查看\n"
-        "- /写回 状态\n"
-        "- /写回 自动开启\n"
-        "- /写回 自动关闭\n"
+        "- /写入 状态\n"
+        "- /写入 自动开启\n"
+        "- /写入 自动关闭\n"
         "- /记忆 查看\n"
         "- /记忆 记住 输出格式=优先表格\n"
         "- /记忆 修改 语言风格=简洁中文\n"

@@ -95,7 +95,7 @@ uv run fcgo doctor
 - `FCGO_MEMORY_STORE_RAW_TEXT`，默认 `false`；长期记忆不得保存完整聊天或飞书资源正文
 - `FCGO_WRITEBACK_ENABLED`，默认 `false`；保持关闭时不会生成写回卡片或执行写入
 - `FCGO_WRITEBACK_AUTO_EXECUTE_ENABLED`，默认 `false`；开启后用户才能用 `/写回 自动开启`
-  启用个人低风险自动写回
+  启用个人低风险自动写入
 - `FCGO_WRITEBACK_CONFIRMATION_MODE`，默认 `always`；可选 `always`、`low_risk_direct`、`draft_only`
 
 OpenAI 兼容 Provider 示例：
@@ -198,12 +198,12 @@ FCGO 会把最近聊天做短期 TTL 缓存，并在每次请求前把近期窗�
 
 启用写回实验线后，每次成功执行都会记录操作类型、目标、执行结果和可撤回元数据：
 
-- `/写回 状态`：查看当前写回策略、个人自动写回偏好和服务开关。
-- `/写回 自动开启`：在服务允许时开启个人低风险自动写回。仅明确目标的文档开头/末尾追加会自动执行。
-- `/写回 自动关闭`：关闭个人自动写回，后续恢复确认卡片。
-- `/写回 自动清除`：清除个人偏好，使用服务默认策略。
-- `/查看最近写回`：查看最近 5 次写回及其“可撤回 / 已撤回 / 不可撤回”状态。
-- `/撤回`：为最近一次可安全撤回的写回生成确认卡片，不会自动执行。
+- `/写入 状态`：查看当前写入策略、个人自动写入偏好和服务开关。
+- `/写入 自动开启`：在服务允许时开启个人低风险自动写入。仅明确目标的文档开头/末尾追加会自动执行。
+- `/写入 自动关闭`：关闭个人自动写入，后续恢复确认卡片。
+- `/写入 自动清除`：清除个人偏好，使用服务默认策略。
+- `/查看最近写入`：查看最近 5 次写入及其“可撤回 / 已撤回 / 不可撤回”状态。
+- `/撤回`：为最近一次可安全撤回的写入生成确认卡片，不会自动执行。
 - 多维表新增记录可通过删除新记录撤回。
 - 电子表格范围写入会在写入前保存同范围旧值，撤回时恢复旧值。
 - 文档创建、文档追加、消息发送和未保存旧值的更新/删除操作会明确标记为不可安全撤回。
@@ -215,6 +215,7 @@ FCGO 会把最近聊天做短期 TTL 缓存，并在每次请求前把近期窗�
 飞书开发者后台可以给机器人配置自定义菜单。FCGO 已支持以下事件 key：
 
 ```text
+fcgo.assistant.name.view 查看助手信息
 fcgo.model.view          查看模型状态
 fcgo.model.default       恢复个人默认模型
 fcgo.model.use.gemini    使用 Gemini
@@ -227,11 +228,12 @@ fcgo.model.use.claude    使用 Claude
 fcgo.auth.start          发起飞书授权
 fcgo.auth.status         查看授权状态
 fcgo.context.view        查看上下文策略
-fcgo.writeback.status    查看写回策略
-fcgo.writeback.auto.enable   开启个人自动写回
-fcgo.writeback.auto.disable  关闭个人自动写回
-fcgo.writeback.auto.clear    清除个人自动写回偏好
-fcgo.writeback.history       查看最近写回
+fcgo.writeback.status    查看写入策略
+fcgo.writeback.auto.enable   开启个人自动写入
+fcgo.writeback.auto.disable  关闭个人自动写入
+fcgo.writeback.auto.clear    清除个人自动写入偏好
+fcgo.writeback.history       查看最近写入
+fcgo.writeback.undo          撤回最近写入，需要确认
 fcgo.memory.view         查看长期记忆
 fcgo.memory.delete       清空长期记忆，需要确认
 fcgo.memory.disable      关闭长期记忆
@@ -242,6 +244,9 @@ fcgo.help                查看帮助
 建议菜单结构：
 
 ```text
+助手
+- 助手信息
+
 模型
 - 查看模型
 - Gemini
@@ -256,15 +261,13 @@ fcgo.help                查看帮助
 - 飞书授权
 - 授权状态
 
-上下文
-- 查看上下文
-
-写回
-- 写回状态
-- 自动写回开启
-- 自动写回关闭
-- 写回恢复默认
-- 最近写回
+写入
+- 写入状态
+- 自动写入开启
+- 自动写入关闭
+- 写入恢复默认
+- 最近写入
+- 撤回
 
 记忆
 - 查看记忆

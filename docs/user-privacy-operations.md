@@ -205,6 +205,9 @@
 推荐给机器人配置这些隐私相关菜单项：
 
 ```text
+助手
+- 助手信息        fcgo.assistant.name.view
+
 授权
 - 飞书授权        fcgo.auth.start
 - 授权状态        fcgo.auth.status
@@ -212,12 +215,13 @@
 上下文
 - 查看上下文        fcgo.context.view
 
-写回
-- 写回状态        fcgo.writeback.status
-- 自动写回开启    fcgo.writeback.auto.enable
-- 自动写回关闭    fcgo.writeback.auto.disable
-- 写回恢复默认    fcgo.writeback.auto.clear
-- 最近写回        fcgo.writeback.history
+写入
+- 写入状态        fcgo.writeback.status
+- 自动写入开启    fcgo.writeback.auto.enable
+- 自动写入关闭    fcgo.writeback.auto.disable
+- 写入恢复默认    fcgo.writeback.auto.clear
+- 最近写入        fcgo.writeback.history
+- 撤回            fcgo.writeback.undo
 
 记忆
 - 查看记忆        fcgo.memory.view

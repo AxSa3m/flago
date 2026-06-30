@@ -330,7 +330,7 @@ async def test_router_writeback_auto_command_enables_low_risk_direct(tmp_path) -
     assert preference.enabled is True
     assert writeback_service.confirmed == [(proposal.id, "ou_user")]
     assert client.cards == []
-    assert "已开启你的个人自动写回偏好" in client.replies[0][1]
+    assert "已开启你的个人自动写入偏好" in client.replies[0][1]
     assert "写回已执行" in client.replies[1][1]
 
 
@@ -406,7 +406,7 @@ async def test_router_writeback_auto_command_disabled_restores_cards(tmp_path) -
     assert preference.enabled is False
     assert writeback_service.confirmed == []
     assert len(client.cards) == 1
-    assert "已关闭你的个人自动写回偏好" in client.replies[0][1]
+    assert "已关闭你的个人自动写入偏好" in client.replies[0][1]
 
 
 @pytest.mark.asyncio
@@ -1434,6 +1434,42 @@ async def test_router_sends_undo_card_for_latest_reversible_writeback(tmp_path) 
 
 
 @pytest.mark.asyncio
+async def test_router_sends_undo_card_from_writeback_menu(tmp_path) -> None:
+    store = SQLiteStore(tmp_path / "fcgo.sqlite3")
+    await store.init()
+    await store.save_writeback_execution(
+        action_id="original-action",
+        actor_id="ou_user",
+        action_type=WriteActionType.BITABLE_CREATE_RECORD.value,
+        target={"app_token": "app1", "table_id": "tbl1"},
+        payload={"fields": {"内容": "FCGO 写入测试成功"}},
+        result={"record": {"record_id": "rec1"}},
+        undo_action_type=WriteActionType.BITABLE_DELETE_RECORD.value,
+        undo_target={"app_token": "app1", "table_id": "tbl1", "record_id": "rec1"},
+        undo_payload={"undo_of_action_id": "original-action"},
+        undo_preview="撤回上一次写入：删除多维表格记录 rec1",
+    )
+    client = RecordingFeishuClient()
+    assistant = SuccessfulAssistant()
+    router = FeishuMessageRouter(assistant, client, store, settings=_writeback_settings())
+
+    await router.handle_bot_menu(_menu_event("evt_writeback_undo", "fcgo.writeback.undo"))
+
+    assert assistant.requests == []
+    assert client.sent_texts == []
+    assert len(client.cards) == 1
+    assert client.cards[0][0] == "ou_user"
+    assert "可撤回的写入记录" in str(client.cards[0][1])
+    saved_actions = [
+        await store.get_pending_action(value["action_id"])
+        for value in _card_action_values(client.cards[0][1])
+        if value.get("fcgo_action") == "writeback.confirm"
+    ]
+    assert saved_actions[0] is not None
+    assert saved_actions[0]["action_type"] == WriteActionType.BITABLE_DELETE_RECORD.value
+
+
+@pytest.mark.asyncio
 async def test_router_undo_prefers_latest_doc_append_over_older_bitable(tmp_path) -> None:
     store = SQLiteStore(tmp_path / "fcgo.sqlite3")
     await store.init()
@@ -1524,10 +1560,10 @@ async def test_router_lists_recent_writeback_statuses(tmp_path) -> None:
     assistant = SuccessfulAssistant()
     router = FeishuMessageRouter(assistant, client, store)
 
-    await router.handle_message(_message("om_write_history", "/查看最近写回"))
+    await router.handle_message(_message("om_write_history", "/查看最近写入"))
 
     reply = client.replies[0][1]
-    assert "最近写回" in reply
+    assert "最近写入" in reply
     assert "写入电子表格 · 电子表格 Sheet1!A1:B2 · 可撤回" in reply
     assert "发送消息 · 飞书消息 · 不可撤回" in reply
     assert "飞书消息默认不自动撤回" in reply
@@ -1860,13 +1896,13 @@ async def test_router_writeback_auto_menus_roundtrip(tmp_path) -> None:
 
     assert enabled is not None
     assert enabled.enabled is True
-    assert "已开启你的个人自动写回偏好" in client.sent_texts[0][2]
-    assert "你的自动写回偏好：已开启" in client.sent_texts[1][2]
+    assert "已开启你的个人自动写入偏好" in client.sent_texts[0][2]
+    assert "你的自动写入偏好：已开启" in client.sent_texts[1][2]
     assert disabled is not None
     assert disabled.enabled is False
-    assert "已关闭你的个人自动写回偏好" in client.sent_texts[2][2]
+    assert "已关闭你的个人自动写入偏好" in client.sent_texts[2][2]
     assert await store.get_writeback_auto_execute("ou_user") is None
-    assert "已清除你的自动写回偏好" in client.sent_texts[3][2]
+    assert "已清除你的自动写入偏好" in client.sent_texts[3][2]
 
 
 @pytest.mark.asyncio
@@ -1888,7 +1924,7 @@ async def test_router_writeback_history_menu(tmp_path) -> None:
     await router.handle_bot_menu(_menu_event("evt_writeback_history", "fcgo.writeback.history"))
 
     assert len(client.sent_texts) == 1
-    assert "最近写回" in client.sent_texts[0][2]
+    assert "最近写入" in client.sent_texts[0][2]
     assert "追加文档 · 文档 docx1" in client.sent_texts[0][2]
 
 
@@ -1992,11 +2028,12 @@ async def test_router_assistant_name_commands_roundtrip(tmp_path) -> None:
     await router.handle_message(_message("om_assistant_reset", "/助手 默认名称"))
     await router.handle_message(_message("om_assistant_view_reset", "/助手 名称"))
 
-    assert "当前助手名称：小智（默认）" in client.replies[0][1]
+    assert "当前助手信息" in client.replies[0][1]
+    assert "名称：小智（默认）" in client.replies[0][1]
     assert "已将你的助手名称设置为：小智" in client.replies[1][1]
-    assert "当前助手名称：小智（你的个人设置）" in client.replies[2][1]
+    assert "名称：小智（你的个人设置）" in client.replies[2][1]
     assert "已恢复默认助手名称：小智" in client.replies[3][1]
-    assert "当前助手名称：小智（默认）" in client.replies[4][1]
+    assert "名称：小智（默认）" in client.replies[4][1]
     assert await store.get_assistant_name_preference("ou_user") is None
 
     audit_set = await _audit_details(store, AuditEventType.ASSISTANT_NAME_SET.value)
@@ -2077,6 +2114,30 @@ async def test_router_uses_assistant_name_in_menu_model_and_auth_text(tmp_path) 
 
 
 @pytest.mark.asyncio
+async def test_router_replies_to_assistant_name_view_menu(tmp_path) -> None:
+    store = SQLiteStore(tmp_path / "fcgo.sqlite3")
+    await store.init()
+    await store.save_assistant_name_preference(
+        subject_id="ou_user",
+        assistant_name="小飞",
+        updated_by="ou_user",
+    )
+    client = RecordingFeishuClient()
+    assistant = SuccessfulAssistant()
+    router = FeishuMessageRouter(assistant, client, store)
+
+    await router.handle_bot_menu(
+        _menu_event("evt_assistant_name_view", "fcgo.assistant.name.view")
+    )
+
+    assert len(client.sent_texts) == 1
+    assert "当前助手信息" in client.sent_texts[0][2]
+    assert "名称：小飞（你的个人设置）" in client.sent_texts[0][2]
+    assert "不会修改飞书开放平台里的机器人名称" in client.sent_texts[0][2]
+    assert assistant.requests == []
+
+
+@pytest.mark.asyncio
 async def test_router_help_command_uses_assistant_name_without_group_leak(tmp_path) -> None:
     store = SQLiteStore(tmp_path / "fcgo.sqlite3")
     await store.init()
@@ -2101,7 +2162,7 @@ async def test_router_help_command_uses_assistant_name_without_group_leak(tmp_pa
     )
 
     assert "小飞 菜单入口" in client.replies[0][1]
-    assert "/助手 名称" in client.replies[0][1]
+    assert "/助手 命名 小飞" in client.replies[0][1]
     assert "小智 菜单入口" in client.replies[1][1]
     assert "小飞 菜单入口" not in client.replies[1][1]
     assert assistant.requests == []
