@@ -9,6 +9,7 @@ from pypdf import PdfWriter
 
 from fcgo.config import Settings
 from fcgo.feishu.openapi import DownloadedFile
+from fcgo.model_providers.types import ModelRequest, ModelResponse
 from fcgo.models import AuditEventType, ResourceRef, ResourceType
 from fcgo.resources.reader import FeishuResourceReader, FeishuResourceSearcher, WebResourceReader
 from fcgo.storage import SQLiteStore
@@ -176,6 +177,16 @@ class FakeFeishuAPI:
         return self.search_wiki_payload
 
 
+class FakeVisionModelRouter:
+    def __init__(self, text: str = "图片里写着 Deliverables。") -> None:
+        self.text = text
+        self.calls: list[ModelRequest] = []
+
+    async def generate_model(self, request: ModelRequest) -> ModelResponse:
+        self.calls.append(request)
+        return ModelResponse(text=self.text, provider=request.provider, model=request.model)
+
+
 def _settings(
     *,
     max_resource_chars: int = 120_000,
@@ -185,6 +196,7 @@ def _settings(
     embedded_file_limit: int = 3,
     pdf_default_pages: int = 2,
     pdf_max_pages: int = 10,
+    attachment_vision_enabled: bool = False,
 ) -> Settings:
     return Settings(
         env="test",
@@ -196,6 +208,7 @@ def _settings(
         embedded_file_limit=embedded_file_limit,
         pdf_default_pages=pdf_default_pages,
         pdf_max_pages=pdf_max_pages,
+        attachment_vision_enabled=attachment_vision_enabled,
     )
 
 
@@ -584,6 +597,45 @@ async def test_read_feishu_doc_extracts_image_metadata_and_document_links() -> N
     assert "项目主页 — https://example.com/project" in result.content
     assert "@文档：关联方案 — https://my.feishu.cn/docx/doc123" in result.content
     assert "内嵌网页：https://example.com/dashboard" in result.content
+
+
+@pytest.mark.asyncio
+async def test_read_feishu_doc_describes_image_with_vision_model() -> None:
+    api = FakeFeishuAPI()
+    image = BytesIO()
+    from PIL import Image
+
+    Image.new("RGB", (64, 48), color="white").save(image, format="PNG")
+    api.doc_blocks_payload = [
+        {
+            "block_type": 27,
+            "image": {"token": "image-1"},
+        }
+    ]
+    api.media_payloads["image-1"] = DownloadedFile(
+        content=image.getvalue(),
+        content_type="image/png",
+        filename="image.png",
+    )
+    vision = FakeVisionModelRouter("图片中有英文标题 Deliverables。")
+    reader = FeishuResourceReader(
+        _settings(attachment_vision_enabled=True),
+        api,
+        model_router=vision,
+    )
+    ref = ResourceRef(
+        type=ResourceType.FEISHU_DOC,
+        url="https://docs.feishu.cn/docx/docx123",
+        token="docx123",
+    )
+
+    result = await reader.read(ref, "ou_user")
+
+    assert "[视觉模型理解]" in result.content
+    assert "Deliverables" in result.content
+    assert vision.calls
+    assert vision.calls[0].provider == "gemini"
+    assert vision.calls[0].messages[0].attachments[0].filename == "image.png"
 
 
 @pytest.mark.asyncio

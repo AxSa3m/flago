@@ -68,7 +68,7 @@ def _run_worker() -> None:
     model = _build_model_provider(settings, audit_recorder=store)
     openapi = FeishuOpenAPI(settings, store)
     resource_reader = CompositeResourceReader(
-        FeishuResourceReader(settings, openapi),
+        FeishuResourceReader(settings, openapi, model_router=model),
         WebResourceReader(settings),
     )
     resource_searcher = FeishuResourceSearcher(settings, openapi)

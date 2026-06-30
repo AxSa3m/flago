@@ -1,15 +1,25 @@
 import asyncio
+import base64
 import json
 import logging
 from dataclasses import dataclass
+from io import BytesIO
 from typing import Any
 from urllib.parse import unquote
 
 import httpx
 from bs4 import BeautifulSoup
+from PIL import Image
 
 from fcgo.config import Settings
 from fcgo.feishu.openapi import FeishuOpenAPI
+from fcgo.model_providers.types import (
+    ModelAttachment,
+    ModelMessage,
+    ModelMessageRole,
+    ModelRequest,
+    ProviderCapability,
+)
 from fcgo.models import AuditEventType, ResourceReadResult, ResourceRef, ResourceType
 from fcgo.resources.attachments import extract_attachment
 
@@ -50,9 +60,15 @@ class CompositeResourceReader:
 
 
 class FeishuResourceReader:
-    def __init__(self, settings: Settings, api: FeishuOpenAPI) -> None:
+    def __init__(
+        self,
+        settings: Settings,
+        api: FeishuOpenAPI,
+        model_router: Any | None = None,
+    ) -> None:
         self.settings = settings
         self.api = api
+        self.model_router = model_router
 
     async def read(self, ref: ResourceRef, actor_id: str) -> ResourceReadResult:
         try:
@@ -235,6 +251,15 @@ class FeishuResourceReader:
         except Exception as exc:  # noqa: BLE001 - return actionable attachment error
             return f"- {display_name}：下载失败：{exc}"
         resolved_name = downloaded.filename or display_name
+        if _is_image_file(resolved_name, downloaded.content_type):
+            vision_result = await self._describe_image_with_model(
+                downloaded.content,
+                filename=resolved_name,
+                content_type=downloaded.content_type,
+                actor_id=actor_id,
+            )
+            if vision_result:
+                return vision_result
         try:
             extracted = await asyncio.wait_for(
                 asyncio.to_thread(
@@ -267,6 +292,60 @@ class FeishuResourceReader:
             return f"### {extracted.kind}：{resolved_name}\n{extracted.text}{caption}{note}"
         detail = extracted.note or "没有可提取内容。"
         return f"- {resolved_name}（{extracted.kind}）：{detail}{caption}"
+
+    async def _describe_image_with_model(
+        self,
+        content: bytes,
+        *,
+        filename: str,
+        content_type: str,
+        actor_id: str,
+    ) -> str:
+        if not self.settings.attachment_vision_enabled or self.model_router is None:
+            return ""
+        if len(content) > self.settings.attachment_vision_max_bytes:
+            return ""
+        pixel_count = _image_pixel_count(content)
+        if pixel_count is None or pixel_count > self.settings.attachment_vision_max_pixels:
+            return ""
+        media_type = content_type.split(";", 1)[0].strip() or _image_media_type(filename)
+        if not media_type.startswith("image/"):
+            media_type = _image_media_type(filename)
+        request = ModelRequest(
+            request_id=f"image-vision:{actor_id}:{filename}",
+            provider=self.settings.attachment_vision_provider.strip() or None,
+            model=self.settings.attachment_vision_model,
+            required_capabilities=[ProviderCapability.CHAT, ProviderCapability.VISION_INPUT],
+            max_output_tokens=1024,
+            temperature=0,
+            metadata={"actor_id": actor_id, "purpose": "embedded_image_vision"},
+            messages=[
+                ModelMessage(
+                    role=ModelMessageRole.USER,
+                    content=self.settings.attachment_vision_prompt,
+                    attachments=[
+                        ModelAttachment(
+                            media_type=media_type,
+                            data_base64=base64.b64encode(content).decode("ascii"),
+                            filename=filename,
+                        )
+                    ],
+                )
+            ],
+        )
+        try:
+            response = await self.model_router.generate_model(request)
+        except Exception as exc:  # noqa: BLE001 - fall back to OCR/metadata extraction
+            logger.warning("image_vision_failed filename=%s error=%s", filename, str(exc))
+            return ""
+        text = response.text.strip()
+        if not text:
+            return ""
+        dimensions = _image_dimensions_text(content)
+        header = f"### 图片：{filename}"
+        if dimensions:
+            header = f"{header}\n尺寸：{dimensions}"
+        return f"{header}\n[视觉模型理解]\n{text}"
 
     async def _read_sheet(
         self,
@@ -1316,3 +1395,38 @@ def _column_letter(index: int) -> str:
         index, remainder = divmod(index - 1, 26)
         letters = chr(65 + remainder) + letters
     return letters
+
+
+def _is_image_file(filename: str, content_type: str) -> bool:
+    normalized_type = content_type.split(";", 1)[0].strip().casefold()
+    if normalized_type.startswith("image/"):
+        return True
+    suffix = filename.rsplit(".", 1)[-1].casefold() if "." in filename else ""
+    return suffix in {"avif", "bmp", "gif", "heic", "jpeg", "jpg", "png", "tif", "tiff", "webp"}
+
+
+def _image_media_type(filename: str) -> str:
+    suffix = filename.rsplit(".", 1)[-1].casefold() if "." in filename else ""
+    if suffix in {"jpg", "jpeg"}:
+        return "image/jpeg"
+    if suffix in {"png", "gif", "webp", "bmp", "tiff"}:
+        return f"image/{suffix}"
+    return "image/png"
+
+
+def _image_pixel_count(content: bytes) -> int | None:
+    try:
+        with Image.open(BytesIO(content)) as image:
+            width, height = image.size
+            return width * height
+    except Exception:  # noqa: BLE001 - invalid images fall back to normal attachment path
+        return None
+
+
+def _image_dimensions_text(content: bytes) -> str:
+    try:
+        with Image.open(BytesIO(content)) as image:
+            width, height = image.size
+            return f"{width} × {height}"
+    except Exception:  # noqa: BLE001
+        return ""

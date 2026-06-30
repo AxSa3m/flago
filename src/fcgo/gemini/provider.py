@@ -1,4 +1,5 @@
 import asyncio
+import base64
 import logging
 from time import perf_counter
 from typing import Any
@@ -68,14 +69,14 @@ class GeminiProvider:
 
     async def generate_model(self, request: ModelRequest) -> ModelResponse:
         model = request.model or self.model
-        prompt = render_text_prompt(request)
+        contents: Any = _gemini_contents(request)
         started_at = perf_counter()
         try:
             response = await asyncio.wait_for(
                 asyncio.to_thread(
                     self.client.models.generate_content,
                     model=model,
-                    contents=prompt,
+                    contents=contents,
                     config=self._generate_config(request.max_output_tokens),
                 ),
                 timeout=self.timeout,
@@ -162,6 +163,24 @@ def _gemini_usage(response: Any) -> ModelUsage | None:
         output_tokens=output_tokens,
         total_tokens=total_tokens,
     )
+
+
+def _gemini_contents(request: ModelRequest) -> str | list[types.Part]:
+    if not any(message.attachments for message in request.messages):
+        return render_text_prompt(request)
+
+    parts: list[types.Part] = [types.Part.from_text(text=render_text_prompt(request))]
+    for message in request.messages:
+        for attachment in message.attachments:
+            if attachment.type != "image":
+                continue
+            parts.append(
+                types.Part.from_bytes(
+                    data=base64.b64decode(attachment.data_base64),
+                    mime_type=attachment.media_type,
+                )
+            )
+    return parts
 
 
 def _int_or_none(value: Any) -> int | None:

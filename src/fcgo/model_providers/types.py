@@ -1,5 +1,5 @@
 from enum import StrEnum
-from typing import Any
+from typing import Any, Literal
 
 from pydantic import BaseModel, Field, SecretStr
 
@@ -35,7 +35,15 @@ class ModelMessage(BaseModel):
     role: ModelMessageRole
     content: str
     name: str | None = None
+    attachments: list["ModelAttachment"] = Field(default_factory=list)
     metadata: dict[str, Any] = Field(default_factory=dict)
+
+
+class ModelAttachment(BaseModel):
+    type: Literal["image"] = "image"
+    media_type: str
+    data_base64: str
+    filename: str | None = None
 
 
 class ModelRequest(BaseModel):

@@ -2,6 +2,7 @@ from fcgo.model_providers.claude import ClaudeProvider
 from fcgo.model_providers.openai_compatible import OpenAICompatibleProvider
 from fcgo.model_providers.prompt import build_assistant_model_request, build_assistant_prompt
 from fcgo.model_providers.types import (
+    ModelAttachment,
     ModelMessage,
     ModelMessageRole,
     ModelRequest,
@@ -16,6 +17,7 @@ from fcgo.model_providers.types import (
 
 __all__ = [
     "ModelMessage",
+    "ModelAttachment",
     "ModelMessageRole",
     "ModelRequest",
     "ModelResponse",

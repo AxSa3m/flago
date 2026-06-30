@@ -177,6 +177,33 @@ class Settings(BaseSettings):
         default=20_000_000,
         alias="FCGO_ATTACHMENT_OCR_MAX_PIXELS",
     )
+    attachment_vision_enabled: bool = Field(
+        default=False,
+        alias="FCGO_ATTACHMENT_VISION_ENABLED",
+    )
+    attachment_vision_provider: str = Field(
+        default="gemini",
+        alias="FCGO_ATTACHMENT_VISION_PROVIDER",
+    )
+    attachment_vision_model: str | None = Field(
+        default=None,
+        alias="FCGO_ATTACHMENT_VISION_MODEL",
+    )
+    attachment_vision_prompt: str = Field(
+        default=(
+            "请用中文简洁说明这张图片的内容；如果图片包含可读文字，"
+            "请尽量完整转写关键文字。"
+        ),
+        alias="FCGO_ATTACHMENT_VISION_PROMPT",
+    )
+    attachment_vision_max_bytes: int = Field(
+        default=5 * 1024 * 1024,
+        alias="FCGO_ATTACHMENT_VISION_MAX_BYTES",
+    )
+    attachment_vision_max_pixels: int = Field(
+        default=20_000_000,
+        alias="FCGO_ATTACHMENT_VISION_MAX_PIXELS",
+    )
     embedded_link_limit: int = Field(default=20, alias="FCGO_EMBEDDED_LINK_LIMIT")
     pdf_default_pages: int = Field(default=2, alias="FCGO_PDF_DEFAULT_PAGES")
     pdf_max_pages: int = Field(default=10, alias="FCGO_PDF_MAX_PAGES")

@@ -4,7 +4,13 @@ import pytest
 
 from fcgo.config import Settings
 from fcgo.gemini.provider import GeminiProvider
-from fcgo.model_providers import ModelMessage, ModelMessageRole, ModelRequest, ProviderCapability
+from fcgo.model_providers import (
+    ModelAttachment,
+    ModelMessage,
+    ModelMessageRole,
+    ModelRequest,
+    ProviderCapability,
+)
 from fcgo.models import (
     AssistantRequest,
     ConversationType,
@@ -154,6 +160,40 @@ async def test_gemini_provider_generates_unified_model_response() -> None:
     assert response.usage.total_tokens == 10
     assert fake_models.calls[0]["model"] == "gemini-test"
     assert fake_models.calls[0]["contents"] == "system\n\nuser"
+
+
+@pytest.mark.asyncio
+async def test_gemini_provider_sends_image_parts() -> None:
+    settings = Settings(env="test", gemini_api_key="test-key", gemini_model="gemini-test")
+    provider = GeminiProvider(settings)
+    fake_models = _FakeGeminiModels()
+    provider.client = SimpleNamespace(models=fake_models)
+    request = ModelRequest(
+        request_id="req-image",
+        provider="gemini",
+        model="gemini-test",
+        required_capabilities=[ProviderCapability.CHAT, ProviderCapability.VISION_INPUT],
+        messages=[
+            ModelMessage(
+                role=ModelMessageRole.USER,
+                content="描述图片",
+                attachments=[
+                    ModelAttachment(
+                        media_type="image/png",
+                        data_base64="aW1hZ2U=",
+                        filename="image.png",
+                    )
+                ],
+            )
+        ],
+    )
+
+    response = await provider.generate_model(request)
+
+    assert response.text == "模型回复"
+    contents = fake_models.calls[0]["contents"]
+    assert isinstance(contents, list)
+    assert len(contents) == 2
 
 
 class _FakeGeminiModels:
