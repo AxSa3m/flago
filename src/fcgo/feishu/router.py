@@ -473,21 +473,30 @@ class FeishuMessageRouter:
                 await self._assistant_name_status_text(message.sender_id),
             )
             return True
-        if command in {"默认简介", "恢复默认简介", "重置简介", "默认人设", "恢复默认人设"}:
-            await self.store.clear_assistant_profile_preference(
+        if command in {
+            "默认",
+            "恢复默认",
+            "重置",
+            "默认名称",
+            "恢复默认名称",
+            "重置名称",
+            "默认简介",
+            "恢复默认简介",
+            "重置简介",
+            "默认人设",
+            "恢复默认人设",
+        }:
+            await self.store.clear_assistant_name_preference(
                 message.sender_id,
                 updated_by=message.sender_id,
             )
-            await self.feishu_client.reply_text(message.chat_id, "已恢复默认助手简介。")
-            return True
-        if command in {"默认名称", "恢复默认", "默认", "重置名称"}:
-            await self.store.clear_assistant_name_preference(
+            await self.store.clear_assistant_profile_preference(
                 message.sender_id,
                 updated_by=message.sender_id,
             )
             await self.feishu_client.reply_text(
                 message.chat_id,
-                f"已恢复默认助手名称：{self.settings.assistant_default_name}。",
+                "已恢复默认助手名称和简介。",
             )
             return True
         profile = _parse_assistant_profile_command(command)
@@ -1967,8 +1976,7 @@ def _assistant_command_help() -> str:
         "- /助手 信息\n"
         "- /助手 名称 小智\n"
         "- /助手 简介 简洁、直接，擅长整理飞书文档\n"
-        "- /助手 默认名称\n"
-        "- /助手 默认简介"
+        "- /助手 恢复默认"
     )
 
 
@@ -2019,8 +2027,7 @@ def _menu_help_text(assistant_name: str = "小智") -> str:
         "未放入当前菜单但仍可直接发送：\n"
         "- /助手 名称 小飞：设置你的个人助手名称\n"
         "- /助手 简介 简洁、直接，擅长整理飞书文档：设置助手简介\n"
-        "- /助手 默认名称：恢复默认助手名称\n"
-        "- /助手 默认简介：恢复默认助手简介\n"
+        "- /助手 恢复默认：恢复默认助手名称和简介\n"
         "- /上下文 查看：查看上下文读取策略\n"
         "- /记忆 记住 输出格式=优先表格：保存一条长期记忆，需要确认\n"
         "- /记忆 修改 语言风格=简洁中文：修改记忆，需要确认\n"
