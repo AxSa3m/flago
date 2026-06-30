@@ -248,6 +248,11 @@ class FeishuResourceReader:
                     max_sheet_columns=self.settings.max_sheet_columns,
                     pdf_default_pages=self.settings.pdf_default_pages,
                     pdf_max_pages=self.settings.pdf_max_pages,
+                    ocr_enabled=self.settings.attachment_ocr_enabled,
+                    ocr_command=self.settings.attachment_ocr_command,
+                    ocr_languages=self.settings.attachment_ocr_languages,
+                    ocr_timeout_seconds=self.settings.attachment_ocr_timeout_seconds,
+                    ocr_max_pixels=self.settings.attachment_ocr_max_pixels,
                 ),
                 timeout=self.settings.pdf_extract_timeout_seconds,
             )

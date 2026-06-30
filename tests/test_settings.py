@@ -23,6 +23,11 @@ def test_context_and_memory_privacy_defaults_are_conservative() -> None:
     assert settings.embedded_file_limit == 3
     assert settings.embedded_file_max_bytes == 20 * 1024 * 1024
     assert settings.embedded_file_max_chars == 40_000
+    assert settings.attachment_ocr_enabled is False
+    assert settings.attachment_ocr_command == "tesseract"
+    assert settings.attachment_ocr_languages == "chi_sim+eng"
+    assert settings.attachment_ocr_timeout_seconds == 15
+    assert settings.attachment_ocr_max_pixels == 20_000_000
     assert settings.embedded_link_limit == 20
     assert settings.pdf_default_pages == 2
     assert settings.pdf_max_pages == 10

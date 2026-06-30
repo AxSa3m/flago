@@ -1,7 +1,9 @@
 import json
+import subprocess
+import tempfile
 from dataclasses import dataclass
 from io import BytesIO
-from pathlib import PurePath
+from pathlib import Path, PurePath
 from zipfile import BadZipFile, ZipFile
 
 from bs4 import BeautifulSoup
@@ -107,6 +109,11 @@ def extract_attachment(
     max_sheet_columns: int,
     pdf_default_pages: int,
     pdf_max_pages: int,
+    ocr_enabled: bool = False,
+    ocr_command: str = "tesseract",
+    ocr_languages: str = "chi_sim+eng",
+    ocr_timeout_seconds: float = 15.0,
+    ocr_max_pixels: int = 20_000_000,
 ) -> AttachmentExtraction:
     extension = PurePath(filename).suffix.casefold()
     normalized_type = content_type.split(";", 1)[0].strip().casefold()
@@ -160,7 +167,15 @@ def extract_attachment(
         )
 
     if extension in _IMAGE_EXTENSIONS or normalized_type.startswith("image/"):
-        return _image_metadata(content)
+        return _extract_image(
+            content,
+            ocr_enabled=ocr_enabled,
+            ocr_command=ocr_command,
+            ocr_languages=ocr_languages,
+            ocr_timeout_seconds=ocr_timeout_seconds,
+            ocr_max_pixels=ocr_max_pixels,
+            max_chars=max_chars,
+        )
 
     if extension in _TEXT_EXTENSIONS or _is_text_content_type(normalized_type):
         text = _decode_text(content)
@@ -268,16 +283,100 @@ def _extract_pptx(content: bytes) -> str:
     return "\n\n".join(sections)
 
 
-def _image_metadata(content: bytes) -> AttachmentExtraction:
+def _extract_image(
+    content: bytes,
+    *,
+    ocr_enabled: bool,
+    ocr_command: str,
+    ocr_languages: str,
+    ocr_timeout_seconds: float,
+    ocr_max_pixels: int,
+    max_chars: int,
+) -> AttachmentExtraction:
     with Image.open(BytesIO(content)) as image:
         width, height = image.size
         image_format = image.format or "未知格式"
         mode = image.mode
+        image_for_ocr = image.convert("RGB") if ocr_enabled else None
+        ocr_text, ocr_note = _ocr_image(
+            image_for_ocr,
+            width=width,
+            height=height,
+            ocr_command=ocr_command,
+            ocr_languages=ocr_languages,
+            ocr_timeout_seconds=ocr_timeout_seconds,
+            ocr_max_pixels=ocr_max_pixels,
+            max_chars=max_chars,
+        ) if image_for_ocr is not None else ("", "当前版本未执行 OCR 或视觉内容理解。")
+    metadata = f"格式：{image_format}\n尺寸：{width} × {height}\n颜色模式：{mode}"
+    if ocr_text:
+        return AttachmentExtraction(
+            kind="图片",
+            text=f"{metadata}\n\n[OCR 文本]\n{ocr_text}",
+            note=ocr_note,
+        )
     return AttachmentExtraction(
         kind="图片",
-        text=f"格式：{image_format}\n尺寸：{width} × {height}\n颜色模式：{mode}",
-        note="当前版本未执行 OCR 或视觉内容理解。",
+        text=metadata,
+        note=ocr_note,
     )
+
+
+def _ocr_image(
+    image: Image.Image,
+    *,
+    width: int,
+    height: int,
+    ocr_command: str,
+    ocr_languages: str,
+    ocr_timeout_seconds: float,
+    ocr_max_pixels: int,
+    max_chars: int,
+) -> tuple[str, str]:
+    if width * height > ocr_max_pixels:
+        return "", f"图片超过 OCR 像素上限（{width} × {height}），已跳过 OCR。"
+    if not ocr_command.strip():
+        return "", "未配置 OCR 命令，已跳过 OCR。"
+    try:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            image_path = Path(tmpdir) / "image.png"
+            output_base = Path(tmpdir) / "ocr"
+            image.save(str(image_path), format="PNG")
+            command = [
+                ocr_command,
+                str(image_path),
+                str(output_base),
+                "-l",
+                ocr_languages or "eng",
+            ]
+            subprocess.run(
+                command,
+                check=True,
+                capture_output=True,
+                timeout=max(ocr_timeout_seconds, 1.0),
+            )
+            text_path = Path(f"{output_base}.txt")
+            text = _decode_text(text_path.read_bytes()).strip()
+    except FileNotFoundError:
+        return "", f"未找到 OCR 命令：{ocr_command}。"
+    except subprocess.TimeoutExpired:
+        return "", "OCR 处理超时。"
+    except subprocess.CalledProcessError as exc:
+        detail = _decode_subprocess_error(exc.stderr)
+        return "", f"OCR 处理失败：{detail or type(exc).__name__}。"
+    except Exception as exc:  # noqa: BLE001 - optional OCR must not break image reading
+        return "", f"OCR 处理失败：{type(exc).__name__}。"
+    if not text:
+        return "", "OCR 未识别出文字。"
+    return _limit(text, max_chars), "已执行本地 OCR；结果可能受图片质量影响。"
+
+
+def _decode_subprocess_error(content: bytes) -> str:
+    try:
+        text = _decode_text(content)
+    except Exception:  # noqa: BLE001
+        return ""
+    return " ".join(text.split())[:200]
 
 
 def _decode_text(content: bytes) -> str:

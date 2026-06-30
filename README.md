@@ -134,7 +134,8 @@ auth:user.id:read drive:drive.search:readonly search:docs:read docx:document:rea
 
 - PDF 默认提取前 2 页，也可在问题中指定“第 3 页”。
 - DOCX、XLSX、PPTX、TXT、Markdown、CSV、JSON、HTML 和常见源码文件提取可读文本。
-- 图片返回格式、尺寸和飞书文档中的图片描述；暂不执行 OCR 或视觉内容理解。
+- 图片默认返回格式、尺寸和飞书文档中的图片描述；开启 `FCGO_ATTACHMENT_OCR_ENABLED=true`
+  且本机安装 Tesseract 后，会对图片执行本地 OCR。
 - 音频、视频、压缩包、旧版 Office 和可执行文件只返回类型与安全说明，不执行、不解压、不转码。
 - 普通超链接、`@文档` 和内嵌网页返回飞书 blocks API 提供的显示文本、标题与 URL。
 

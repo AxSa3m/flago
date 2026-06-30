@@ -163,6 +163,20 @@ class Settings(BaseSettings):
         default=40_000,
         alias="FCGO_EMBEDDED_FILE_MAX_CHARS",
     )
+    attachment_ocr_enabled: bool = Field(default=False, alias="FCGO_ATTACHMENT_OCR_ENABLED")
+    attachment_ocr_command: str = Field(default="tesseract", alias="FCGO_ATTACHMENT_OCR_COMMAND")
+    attachment_ocr_languages: str = Field(
+        default="chi_sim+eng",
+        alias="FCGO_ATTACHMENT_OCR_LANGUAGES",
+    )
+    attachment_ocr_timeout_seconds: float = Field(
+        default=15.0,
+        alias="FCGO_ATTACHMENT_OCR_TIMEOUT_SECONDS",
+    )
+    attachment_ocr_max_pixels: int = Field(
+        default=20_000_000,
+        alias="FCGO_ATTACHMENT_OCR_MAX_PIXELS",
+    )
     embedded_link_limit: int = Field(default=20, alias="FCGO_EMBEDDED_LINK_LIMIT")
     pdf_default_pages: int = Field(default=2, alias="FCGO_PDF_DEFAULT_PAGES")
     pdf_max_pages: int = Field(default=10, alias="FCGO_PDF_MAX_PAGES")
