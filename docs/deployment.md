@@ -200,6 +200,11 @@ fcgo.model.use.claude    使用 Claude
 fcgo.auth.start          发起飞书授权
 fcgo.auth.status         查看授权状态
 fcgo.context.view        查看上下文策略
+fcgo.writeback.status    查看写回策略
+fcgo.writeback.auto.enable   开启个人自动写回
+fcgo.writeback.auto.disable  关闭个人自动写回
+fcgo.writeback.auto.clear    清除个人自动写回偏好
+fcgo.writeback.history       查看最近写回
 fcgo.memory.view         查看长期记忆
 fcgo.memory.delete       清空长期记忆，需要确认
 fcgo.memory.disable      关闭长期记忆
@@ -212,6 +217,7 @@ FCGO 会通过 open_id 给操作者发送结果；模型菜单设置的是该用
 文本对话不会触发模型切换；`/模型 查看` 仅用于查看当前配置。
 记忆菜单作用于点击菜单的用户，不会查看或修改其他用户的长期记忆。
 菜单里的 `fcgo.memory.delete` 会发送清空全部长期记忆的确认卡片；按 key 删除单条记忆请使用文本命令。
+写回菜单作用于点击菜单的用户；自动写回只影响该用户个人偏好，不会影响其他用户。
 
 用户授权入口：
 

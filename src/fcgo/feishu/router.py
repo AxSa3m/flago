@@ -351,6 +351,28 @@ class FeishuMessageRouter:
             return await self._enable_menu_context_text(event, assistant_name=assistant_name)
         if key == "fcgo.context.disable":
             return await self._disable_menu_context_text(event, assistant_name=assistant_name)
+        if key == "fcgo.writeback.status":
+            return await self._writeback_status_text(
+                _menu_message(event),
+                assistant_name=assistant_name,
+            )
+        if key == "fcgo.writeback.auto.enable":
+            return await self._enable_writeback_auto_text(
+                _menu_message(event),
+                assistant_name=assistant_name,
+            )
+        if key == "fcgo.writeback.auto.disable":
+            return await self._disable_writeback_auto_text(
+                _menu_message(event),
+                assistant_name=assistant_name,
+            )
+        if key == "fcgo.writeback.auto.clear":
+            return await self._clear_writeback_auto_text(
+                _menu_message(event),
+                assistant_name=assistant_name,
+            )
+        if key == "fcgo.writeback.history":
+            return await self._writeback_history_text(_menu_actor_id(event))
         if key == "fcgo.memory.view":
             return await self._memory_status_text(_menu_actor_id(event))
         if key == "fcgo.memory.disable":
@@ -408,13 +430,9 @@ class FeishuMessageRouter:
             )
             return True
         if normalized in {"自动清除", "清除自动", "清除偏好", "恢复默认"}:
-            await self.store.clear_writeback_auto_execute(
-                message.sender_id,
-                updated_by=message.sender_id,
-            )
             await self.feishu_client.reply_text(
                 message.chat_id,
-                f"已清除你的自动写回偏好。{assistant_name} 将使用服务默认写回策略。",
+                await self._clear_writeback_auto_text(message, assistant_name=assistant_name),
             )
             return True
         await self.feishu_client.reply_text(
@@ -1034,6 +1052,18 @@ class FeishuMessageRouter:
         )
         return f"已关闭你的个人自动写回偏好。{assistant_name} 后续会先生成确认卡片。"
 
+    async def _clear_writeback_auto_text(
+        self,
+        message: FeishuMessage,
+        *,
+        assistant_name: str,
+    ) -> str:
+        await self.store.clear_writeback_auto_execute(
+            message.sender_id,
+            updated_by=message.sender_id,
+        )
+        return f"已清除你的自动写回偏好。{assistant_name} 将使用服务默认写回策略。"
+
     async def _reply_oauth_card(self, message: FeishuMessage, *, force_link: bool) -> None:
         if self.oauth is None:
             await self.feishu_client.reply_text(
@@ -1095,13 +1125,18 @@ class FeishuMessageRouter:
         await self.feishu_client.send_interactive_card(message.chat_id, card)
 
     async def _reply_writeback_history(self, message: FeishuMessage) -> None:
+        await self.feishu_client.reply_text(
+            message.chat_id,
+            await self._writeback_history_text(message.sender_id),
+        )
+
+    async def _writeback_history_text(self, actor_id: str) -> str:
         history = await self.store.list_recent_writeback_executions(
-            message.sender_id,
+            actor_id,
             limit=5,
         )
         if not history:
-            await self.feishu_client.reply_text(message.chat_id, "暂时没有写回执行记录。")
-            return
+            return "暂时没有写回执行记录。"
         lines = ["最近写回："]
         for item in history:
             action_type = str(item["action_type"])
@@ -1112,7 +1147,7 @@ class FeishuMessageRouter:
                 line += f"（{reason}）"
             lines.append(line)
         lines.append("\n发送 /撤回 可撤回最近一次标记为“可撤回”的写回。")
-        await self.feishu_client.reply_text(message.chat_id, "\n".join(lines))
+        return "\n".join(lines)
 
 
 def _model_failure_message(detail: str) -> str:
@@ -1774,6 +1809,19 @@ def _menu_receive_target(event: FeishuBotMenuEvent) -> tuple[str, str]:
 
 def _menu_actor_id(event: FeishuBotMenuEvent) -> str:
     return event.operator_open_id or event.operator_user_id or event.operator_union_id
+
+
+def _menu_message(event: FeishuBotMenuEvent) -> FeishuMessage:
+    actor_id = _menu_actor_id(event)
+    return FeishuMessage(
+        message_id=f"menu:{event.event_id or event.timestamp or event.event_key}",
+        chat_id="",
+        sender_id=actor_id,
+        text="",
+        conversation_type=ConversationType.PRIVATE,
+        conversation_key=f"user:{actor_id}",
+        raw=event.raw,
+    )
 
 
 def _menu_user_scope(event: FeishuBotMenuEvent) -> str:

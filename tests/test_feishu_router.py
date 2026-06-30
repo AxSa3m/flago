@@ -1828,6 +1828,71 @@ async def test_router_context_disable_menu_no_longer_disables_context(tmp_path) 
 
 
 @pytest.mark.asyncio
+async def test_router_writeback_auto_menus_roundtrip(tmp_path) -> None:
+    store = SQLiteStore(tmp_path / "fcgo.sqlite3")
+    await store.init()
+    client = RecordingFeishuClient()
+    assistant = SuccessfulAssistant()
+    router = FeishuMessageRouter(
+        assistant,
+        client,
+        store,
+        settings=Settings(
+            env="test",
+            writeback_enabled=True,
+            writeback_auto_execute_enabled=True,
+            writeback_confirmation_mode=WritebackConfirmationMode.ALWAYS,
+        ),
+    )
+
+    await router.handle_bot_menu(
+        _menu_event("evt_writeback_auto_enable", "fcgo.writeback.auto.enable")
+    )
+    enabled = await store.get_writeback_auto_execute("ou_user")
+    await router.handle_bot_menu(_menu_event("evt_writeback_status", "fcgo.writeback.status"))
+    await router.handle_bot_menu(
+        _menu_event("evt_writeback_auto_disable", "fcgo.writeback.auto.disable")
+    )
+    disabled = await store.get_writeback_auto_execute("ou_user")
+    await router.handle_bot_menu(
+        _menu_event("evt_writeback_auto_clear", "fcgo.writeback.auto.clear")
+    )
+
+    assert enabled is not None
+    assert enabled.enabled is True
+    assert "已开启你的个人自动写回偏好" in client.sent_texts[0][2]
+    assert "你的自动写回偏好：已开启" in client.sent_texts[1][2]
+    assert disabled is not None
+    assert disabled.enabled is False
+    assert "已关闭你的个人自动写回偏好" in client.sent_texts[2][2]
+    assert await store.get_writeback_auto_execute("ou_user") is None
+    assert "已清除你的自动写回偏好" in client.sent_texts[3][2]
+
+
+@pytest.mark.asyncio
+async def test_router_writeback_history_menu(tmp_path) -> None:
+    store = SQLiteStore(tmp_path / "fcgo.sqlite3")
+    await store.init()
+    await store.save_writeback_execution(
+        action_id="doc-action",
+        actor_id="ou_user",
+        action_type=WriteActionType.DOC_APPEND.value,
+        target={"document_id": "docx1", "title": "测试文档"},
+        payload={"content": "hello"},
+        result={"ok": True},
+    )
+    client = RecordingFeishuClient()
+    assistant = SuccessfulAssistant()
+    router = FeishuMessageRouter(assistant, client, store)
+
+    await router.handle_bot_menu(_menu_event("evt_writeback_history", "fcgo.writeback.history"))
+
+    assert len(client.sent_texts) == 1
+    assert "最近写回" in client.sent_texts[0][2]
+    assert "追加文档 · 文档 docx1" in client.sent_texts[0][2]
+
+
+@pytest.mark.asyncio
 async def test_router_replies_to_memory_view_menu(tmp_path) -> None:
     store = SQLiteStore(tmp_path / "fcgo.sqlite3")
     await store.init()

@@ -212,6 +212,13 @@
 上下文
 - 查看上下文        fcgo.context.view
 
+写回
+- 写回状态        fcgo.writeback.status
+- 自动写回开启    fcgo.writeback.auto.enable
+- 自动写回关闭    fcgo.writeback.auto.disable
+- 写回恢复默认    fcgo.writeback.auto.clear
+- 最近写回        fcgo.writeback.history
+
 记忆
 - 查看记忆        fcgo.memory.view
 - 删除记忆        fcgo.memory.delete

@@ -227,6 +227,11 @@ fcgo.model.use.claude    使用 Claude
 fcgo.auth.start          发起飞书授权
 fcgo.auth.status         查看授权状态
 fcgo.context.view        查看上下文策略
+fcgo.writeback.status    查看写回策略
+fcgo.writeback.auto.enable   开启个人自动写回
+fcgo.writeback.auto.disable  关闭个人自动写回
+fcgo.writeback.auto.clear    清除个人自动写回偏好
+fcgo.writeback.history       查看最近写回
 fcgo.memory.view         查看长期记忆
 fcgo.memory.delete       清空长期记忆，需要确认
 fcgo.memory.disable      关闭长期记忆
@@ -253,6 +258,13 @@ fcgo.help                查看帮助
 
 上下文
 - 查看上下文
+
+写回
+- 写回状态
+- 自动写回开启
+- 自动写回关闭
+- 写回恢复默认
+- 最近写回
 
 记忆
 - 查看记忆
