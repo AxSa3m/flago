@@ -126,6 +126,8 @@ def test_gemini_provider_exposes_unified_provider_config() -> None:
     assert provider.model == "gemini-test"
     assert ProviderCapability.CHAT in provider.capabilities
     assert ProviderCapability.VISION_INPUT in provider.capabilities
+    assert ProviderCapability.AUDIO_INPUT in provider.capabilities
+    assert ProviderCapability.VIDEO_INPUT in provider.capabilities
     assert provider.provider_config.default_model == "gemini-test"
     assert provider.provider_config.base_url == "https://gemini.local"
     assert provider.provider_config.http_proxy == "http://127.0.0.1:7890"

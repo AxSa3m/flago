@@ -4,7 +4,7 @@ import json
 import logging
 from dataclasses import dataclass
 from io import BytesIO
-from typing import Any
+from typing import Any, Literal
 from urllib.parse import unquote
 
 import httpx
@@ -260,6 +260,18 @@ class FeishuResourceReader:
             )
             if vision_result:
                 return vision_result
+        if _is_audio_file(resolved_name, downloaded.content_type) or _is_video_file(
+            resolved_name,
+            downloaded.content_type,
+        ):
+            media_result = await self._describe_media_with_model(
+                downloaded.content,
+                filename=resolved_name,
+                content_type=downloaded.content_type,
+                actor_id=actor_id,
+            )
+            if media_result:
+                return media_result
         try:
             extracted = await asyncio.wait_for(
                 asyncio.to_thread(
@@ -346,6 +358,61 @@ class FeishuResourceReader:
         if dimensions:
             header = f"{header}\n尺寸：{dimensions}"
         return f"{header}\n[视觉模型理解]\n{text}"
+
+    async def _describe_media_with_model(
+        self,
+        content: bytes,
+        *,
+        filename: str,
+        content_type: str,
+        actor_id: str,
+    ) -> str:
+        if not self.settings.attachment_media_understanding_enabled or self.model_router is None:
+            return ""
+        if len(content) > self.settings.attachment_media_understanding_max_bytes:
+            return ""
+        media_kind: Literal["audio", "video"] = (
+            "audio" if _is_audio_file(filename, content_type) else "video"
+        )
+        capability = (
+            ProviderCapability.AUDIO_INPUT
+            if media_kind == "audio"
+            else ProviderCapability.VIDEO_INPUT
+        )
+        media_type = content_type.split(";", 1)[0].strip() or _media_type(filename, media_kind)
+        request = ModelRequest(
+            request_id=f"media-understanding:{actor_id}:{filename}",
+            provider=self.settings.attachment_media_understanding_provider.strip() or None,
+            model=self.settings.attachment_media_understanding_model,
+            required_capabilities=[ProviderCapability.CHAT, capability],
+            max_output_tokens=2048,
+            temperature=0,
+            metadata={"actor_id": actor_id, "purpose": "embedded_media_understanding"},
+            messages=[
+                ModelMessage(
+                    role=ModelMessageRole.USER,
+                    content=self.settings.attachment_media_understanding_prompt,
+                    attachments=[
+                        ModelAttachment(
+                            type=media_kind,
+                            media_type=media_type,
+                            data_base64=base64.b64encode(content).decode("ascii"),
+                            filename=filename,
+                        )
+                    ],
+                )
+            ],
+        )
+        try:
+            response = await self.model_router.generate_model(request)
+        except Exception as exc:  # noqa: BLE001 - fall back to metadata extraction
+            logger.warning("media_understanding_failed filename=%s error=%s", filename, str(exc))
+            return ""
+        text = response.text.strip()
+        if not text:
+            return ""
+        label = "音频" if media_kind == "audio" else "视频"
+        return f"### {label}：{filename}\n[多模态模型理解]\n{text}"
 
     async def _read_sheet(
         self,
@@ -1405,6 +1472,22 @@ def _is_image_file(filename: str, content_type: str) -> bool:
     return suffix in {"avif", "bmp", "gif", "heic", "jpeg", "jpg", "png", "tif", "tiff", "webp"}
 
 
+def _is_audio_file(filename: str, content_type: str) -> bool:
+    normalized_type = content_type.split(";", 1)[0].strip().casefold()
+    if normalized_type.startswith("audio/"):
+        return True
+    suffix = filename.rsplit(".", 1)[-1].casefold() if "." in filename else ""
+    return suffix in {"aac", "flac", "m4a", "mp3", "ogg", "wav", "wma"}
+
+
+def _is_video_file(filename: str, content_type: str) -> bool:
+    normalized_type = content_type.split(";", 1)[0].strip().casefold()
+    if normalized_type.startswith("video/"):
+        return True
+    suffix = filename.rsplit(".", 1)[-1].casefold() if "." in filename else ""
+    return suffix in {"avi", "flv", "m4v", "mkv", "mov", "mp4", "mpeg", "mpg", "webm", "wmv"}
+
+
 def _image_media_type(filename: str) -> str:
     suffix = filename.rsplit(".", 1)[-1].casefold() if "." in filename else ""
     if suffix in {"jpg", "jpeg"}:
@@ -1412,6 +1495,25 @@ def _image_media_type(filename: str) -> str:
     if suffix in {"png", "gif", "webp", "bmp", "tiff"}:
         return f"image/{suffix}"
     return "image/png"
+
+
+def _media_type(filename: str, kind: str) -> str:
+    suffix = filename.rsplit(".", 1)[-1].casefold() if "." in filename else ""
+    if kind == "audio":
+        return {
+            "mp3": "audio/mpeg",
+            "m4a": "audio/mp4",
+            "ogg": "audio/ogg",
+            "wav": "audio/wav",
+            "flac": "audio/flac",
+        }.get(suffix, "audio/mpeg")
+    return {
+        "mp4": "video/mp4",
+        "mov": "video/quicktime",
+        "webm": "video/webm",
+        "mpeg": "video/mpeg",
+        "mpg": "video/mpeg",
+    }.get(suffix, "video/mp4")
 
 
 def _image_pixel_count(content: bytes) -> int | None:

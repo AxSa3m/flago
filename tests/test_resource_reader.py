@@ -197,6 +197,7 @@ def _settings(
     pdf_default_pages: int = 2,
     pdf_max_pages: int = 10,
     attachment_vision_enabled: bool = False,
+    attachment_media_understanding_enabled: bool = False,
 ) -> Settings:
     return Settings(
         env="test",
@@ -209,6 +210,7 @@ def _settings(
         pdf_default_pages=pdf_default_pages,
         pdf_max_pages=pdf_max_pages,
         attachment_vision_enabled=attachment_vision_enabled,
+        attachment_media_understanding_enabled=attachment_media_understanding_enabled,
     )
 
 
@@ -636,6 +638,42 @@ async def test_read_feishu_doc_describes_image_with_vision_model() -> None:
     assert vision.calls
     assert vision.calls[0].provider == "gemini"
     assert vision.calls[0].messages[0].attachments[0].filename == "image.png"
+
+
+@pytest.mark.asyncio
+async def test_read_feishu_doc_describes_audio_with_multimodal_model() -> None:
+    api = FakeFeishuAPI()
+    api.doc_blocks_payload = [
+        {
+            "block_type": 23,
+            "file": {"token": "audio-1", "name": "访谈.mp3"},
+        }
+    ]
+    api.media_payloads["audio-1"] = DownloadedFile(
+        content=b"ID3 fake audio",
+        content_type="audio/mpeg",
+        filename="访谈.mp3",
+    )
+    model = FakeVisionModelRouter("音频中提到项目进度和交付时间。")
+    reader = FeishuResourceReader(
+        _settings(attachment_media_understanding_enabled=True),
+        api,
+        model_router=model,
+    )
+    ref = ResourceRef(
+        type=ResourceType.FEISHU_DOC,
+        url="https://docs.feishu.cn/docx/docx123",
+        token="docx123",
+    )
+
+    result = await reader.read(ref, "ou_user")
+
+    assert "[多模态模型理解]" in result.content
+    assert "项目进度" in result.content
+    assert model.calls
+    assert model.calls[0].provider == "gemini"
+    assert model.calls[0].messages[0].attachments[0].type == "audio"
+    assert model.calls[0].messages[0].attachments[0].media_type == "audio/mpeg"
 
 
 @pytest.mark.asyncio

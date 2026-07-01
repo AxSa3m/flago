@@ -204,6 +204,29 @@ class Settings(BaseSettings):
         default=20_000_000,
         alias="FCGO_ATTACHMENT_VISION_MAX_PIXELS",
     )
+    attachment_media_understanding_enabled: bool = Field(
+        default=False,
+        alias="FCGO_ATTACHMENT_MEDIA_UNDERSTANDING_ENABLED",
+    )
+    attachment_media_understanding_provider: str = Field(
+        default="gemini",
+        alias="FCGO_ATTACHMENT_MEDIA_UNDERSTANDING_PROVIDER",
+    )
+    attachment_media_understanding_model: str | None = Field(
+        default=None,
+        alias="FCGO_ATTACHMENT_MEDIA_UNDERSTANDING_MODEL",
+    )
+    attachment_media_understanding_prompt: str = Field(
+        default=(
+            "请用中文简洁说明这个媒体文件的主要内容；如果是音频，请尽量转写关键语句；"
+            "如果是视频，请概述画面和可听内容。"
+        ),
+        alias="FCGO_ATTACHMENT_MEDIA_UNDERSTANDING_PROMPT",
+    )
+    attachment_media_understanding_max_bytes: int = Field(
+        default=20 * 1024 * 1024,
+        alias="FCGO_ATTACHMENT_MEDIA_UNDERSTANDING_MAX_BYTES",
+    )
     embedded_link_limit: int = Field(default=20, alias="FCGO_EMBEDDED_LINK_LIMIT")
     pdf_default_pages: int = Field(default=2, alias="FCGO_PDF_DEFAULT_PAGES")
     pdf_max_pages: int = Field(default=10, alias="FCGO_PDF_MAX_PAGES")

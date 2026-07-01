@@ -186,6 +186,8 @@ FCGO 会把最近聊天做短期 TTL 缓存，并在每次请求前把近期窗�
 文档内嵌图片默认只返回图片元数据；如需让多模态模型直接理解图片，可设置
 `FCGO_ATTACHMENT_VISION_ENABLED=true`，并使用支持视觉输入的 Provider，例如 `gemini`。
 视觉理解失败时会回退到本地 OCR 或图片元数据。
+音频和视频附件默认只返回安全说明；如需让多模态模型转写或理解内容，可设置
+`FCGO_ATTACHMENT_MEDIA_UNDERSTANDING_ENABLED=true`，并使用支持音视频输入的 Provider。
 
 ## 飞书模型指令
 

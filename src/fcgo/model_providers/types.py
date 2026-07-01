@@ -17,6 +17,8 @@ class ProviderCapability(StrEnum):
     JSON_OUTPUT = "json_output"
     STREAMING = "streaming"
     VISION_INPUT = "vision_input"
+    AUDIO_INPUT = "audio_input"
+    VIDEO_INPUT = "video_input"
     LONG_CONTEXT = "long_context"
     IMAGE_GENERATION = "image_generation"
     VIDEO_GENERATION = "video_generation"
@@ -40,7 +42,7 @@ class ModelMessage(BaseModel):
 
 
 class ModelAttachment(BaseModel):
-    type: Literal["image"] = "image"
+    type: Literal["image", "audio", "video"] = "image"
     media_type: str
     data_base64: str
     filename: str | None = None

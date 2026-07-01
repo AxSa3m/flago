@@ -139,6 +139,8 @@ def _gemini_provider_config(settings: Settings) -> ProviderConfig:
             ProviderCapability.CHAT,
             ProviderCapability.JSON_OUTPUT,
             ProviderCapability.VISION_INPUT,
+            ProviderCapability.AUDIO_INPUT,
+            ProviderCapability.VIDEO_INPUT,
             ProviderCapability.LONG_CONTEXT,
         ],
         extra={"thinking_budget": settings.gemini_thinking_budget},
@@ -172,7 +174,7 @@ def _gemini_contents(request: ModelRequest) -> str | list[types.Part]:
     parts: list[types.Part] = [types.Part.from_text(text=render_text_prompt(request))]
     for message in request.messages:
         for attachment in message.attachments:
-            if attachment.type != "image":
+            if attachment.type not in {"image", "audio", "video"}:
                 continue
             parts.append(
                 types.Part.from_bytes(
