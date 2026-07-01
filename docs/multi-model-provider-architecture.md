@@ -153,6 +153,17 @@ Seedance、ComfyUI API 不是普通聊天模型。它们应该作为媒体或工
 
 这类任务通常有更高成本和更长耗时，默认应要求用户显式触发，必要时用飞书卡片确认。
 
+当前代码已新增独立的 `fcgo.media_workflows` 协议层，不进入普通 `ModelRouter.generate_model`
+聊天路径：
+
+- `MediaWorkflowRequest`：提交图像生成、视频生成或工作流执行请求。
+- `MediaWorkflowResult`：返回 job 状态、输出资产、文本说明和错误。
+- `MediaWorkflowProviderConfig`：描述媒体/工作流 Provider 的 base URL、API key、默认模型和能力。
+- `MediaWorkflowRegistry`：按 Provider 名称与能力解析执行器。
+- `MockMediaWorkflowProvider`：用于 mock 测试，不依赖真实 Seedance、ComfyUI、Coze 或 Dify API。
+
+真实 Seedance、ComfyUI、Coze、Dify adapter 仍需后续子任务实现；本阶段只固定接口和配置边界。
+
 ## 能力矩阵草案
 
 | Provider 类型 | 示例 | 聊天 | 工具调用 | JSON 输出 | 视觉输入 | 媒体生成 | 异步任务 |

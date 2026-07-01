@@ -9,6 +9,7 @@ FCGO 是一个 **Python 3.13 + uv 本地飞书工作助手**。它通过飞书�
 
 - Python/uv 项目骨架、配置、日志和 SQLite 本地存储
 - 多模型 Provider 协议、运行时路由、Gemini Provider 和 OpenAI-compatible Provider
+- 媒体/工作流 Provider 接口层和 mock 测试；真实 Seedance、ComfyUI、Coze、Dify adapter 待后续实现
 - 飞书消息路由、长连接 worker 骨架、消息回复客户端
 - 飞书 OAuth 回调和 token 持久化骨架
 - 飞书文档/表格/多维表格读取，以及普通网页链接正文提取

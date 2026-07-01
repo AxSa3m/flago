@@ -139,6 +139,21 @@ DEEPSEEK_MODEL=your-model-name
 FCGO_OPENAI_COMPATIBLE_HTTP_PROXY=http://127.0.0.1:7890
 ```
 
+媒体与工作流 Provider 当前只完成接口设计和 mock 测试，真实 Seedance、ComfyUI、Coze、Dify
+API adapter 仍需后续子任务实现。以下配置只作为后续真实接入的占位，不会出现在普通聊天模型菜单中：
+
+```env
+SEEDANCE_API_KEY=
+SEEDANCE_BASE_URL=
+SEEDANCE_MODEL=
+COMFYUI_BASE_URL=
+COMFYUI_API_KEY=
+COZE_API_KEY=
+COZE_BASE_URL=
+DIFY_API_KEY=
+DIFY_BASE_URL=
+```
+
 ## 3. 飞书应用配置
 
 在飞书开放平台创建自建应用，并启用机器人能力。

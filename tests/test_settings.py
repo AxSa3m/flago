@@ -37,6 +37,15 @@ def test_context_and_memory_privacy_defaults_are_conservative() -> None:
     assert settings.web_max_bytes == 1_000_000
     assert settings.web_allowed_hosts == ""
     assert settings.web_blocked_hosts == ""
+    assert settings.seedance_api_key.get_secret_value() == ""
+    assert settings.seedance_base_url == ""
+    assert settings.seedance_model == ""
+    assert settings.comfyui_base_url == ""
+    assert settings.comfyui_api_key.get_secret_value() == ""
+    assert settings.coze_api_key.get_secret_value() == ""
+    assert settings.coze_base_url == ""
+    assert settings.dify_api_key.get_secret_value() == ""
+    assert settings.dify_base_url == ""
     assert settings.oauth_enable_offline_access is False
     assert "offline_access" not in settings.oauth_scope_list
     assert "base:table:read" in settings.oauth_scope_list

@@ -148,6 +148,19 @@ class Settings(BaseSettings):
     )
     anthropic_http_proxy: str | None = Field(default=None, alias="ANTHROPIC_HTTP_PROXY")
 
+    seedance_api_key: SecretStr = Field(default=SecretStr(""), alias="SEEDANCE_API_KEY")
+    seedance_base_url: str = Field(default="", alias="SEEDANCE_BASE_URL")
+    seedance_model: str = Field(default="", alias="SEEDANCE_MODEL")
+
+    comfyui_base_url: str = Field(default="", alias="COMFYUI_BASE_URL")
+    comfyui_api_key: SecretStr = Field(default=SecretStr(""), alias="COMFYUI_API_KEY")
+
+    coze_api_key: SecretStr = Field(default=SecretStr(""), alias="COZE_API_KEY")
+    coze_base_url: str = Field(default="", alias="COZE_BASE_URL")
+
+    dify_api_key: SecretStr = Field(default=SecretStr(""), alias="DIFY_API_KEY")
+    dify_base_url: str = Field(default="", alias="DIFY_BASE_URL")
+
     max_resource_chars: int = Field(default=120_000, alias="FCGO_MAX_RESOURCE_CHARS")
     max_message_chars: int = Field(default=20_000, alias="FCGO_MAX_MESSAGE_CHARS")
     max_sheet_rows: int = Field(default=200, alias="FCGO_MAX_SHEET_ROWS")
