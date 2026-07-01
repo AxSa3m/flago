@@ -162,6 +162,7 @@ async def test_gemini_provider_generates_unified_model_response() -> None:
     assert response.usage.total_tokens == 10
     assert fake_models.calls[0]["model"] == "gemini-test"
     assert fake_models.calls[0]["contents"] == "system\n\nuser"
+    assert fake_models.calls[0]["config"].max_output_tokens == 32
 
 
 @pytest.mark.asyncio
@@ -198,12 +199,76 @@ async def test_gemini_provider_sends_image_parts() -> None:
     assert len(contents) == 2
 
 
+@pytest.mark.asyncio
+async def test_gemini_provider_sends_tools_and_adapts_function_calls() -> None:
+    settings = Settings(env="test", gemini_api_key="test-key", gemini_model="gemini-test")
+    provider = GeminiProvider(settings)
+    fake_models = _FakeGeminiModels(
+        response=SimpleNamespace(
+            text="",
+            function_calls=[
+                SimpleNamespace(
+                    id="gemini-search",
+                    name="search_resources",
+                    args={"query": "测试文档", "limit": 3},
+                )
+            ],
+            usage_metadata=SimpleNamespace(
+                prompt_token_count=8,
+                candidates_token_count=2,
+                total_token_count=10,
+            ),
+        )
+    )
+    provider.client = SimpleNamespace(models=fake_models)
+    request = ModelRequest(
+        request_id="req-tools",
+        provider="gemini",
+        model="gemini-test",
+        temperature=0,
+        messages=[ModelMessage(role=ModelMessageRole.USER, content="帮我找测试文档")],
+        tools=[
+            {
+                "name": "search_resources",
+                "description": "Search resources.",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "query": {"type": "string"},
+                        "limit": {"type": "integer"},
+                    },
+                    "required": ["query"],
+                },
+            }
+        ],
+        tool_choice="auto",
+    )
+
+    response = await provider.generate_model(request)
+
+    assert response.text == ""
+    assert len(response.tool_calls) == 1
+    assert response.tool_calls[0].id == "gemini-search"
+    assert response.tool_calls[0].name == "search_resources"
+    assert response.tool_calls[0].arguments == {"query": "测试文档", "limit": 3}
+    config = fake_models.calls[0]["config"]
+    assert config.temperature == 0
+    assert config.tools
+    declarations = config.tools[0].function_declarations
+    assert declarations[0].name == "search_resources"
+    assert declarations[0].parameters_json_schema["required"] == ["query"]
+    assert config.tool_config.function_calling_config.mode.value == "AUTO"
+
+
 class _FakeGeminiModels:
-    def __init__(self) -> None:
+    def __init__(self, response: SimpleNamespace | None = None) -> None:
         self.calls: list[dict[str, object]] = []
+        self.response = response
 
     def generate_content(self, **kwargs: object) -> SimpleNamespace:
         self.calls.append(kwargs)
+        if self.response is not None:
+            return self.response
         return SimpleNamespace(
             text="模型回复",
             usage_metadata=SimpleNamespace(

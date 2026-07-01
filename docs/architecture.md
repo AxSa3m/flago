@@ -44,7 +44,7 @@
 
 第二阶段可以为支持原生 function calling 的 Provider 添加 adapter。adapter 只负责把原生 tool call 转换成内部
 `ToolCall`，并把内部 `ToolResult` 转回 Provider tool result message；Agent Core、Tool Registry 和安全策略不变。
-当前 OpenAI-compatible Provider 已支持发送 `tools/tool_choice`，并将响应中的原生 `tool_calls` 归一到内部
+当前 OpenAI-compatible Provider 与 Gemini Provider 已支持发送原生工具声明，并将响应中的原生工具调用归一到内部
 `ToolCall`；默认仍保留 JSON parser 作为跨 Provider 基线。
 
 当前 Tool Registry 暴露：

@@ -18,6 +18,7 @@ from fcgo.model_providers.prompt import (
 from fcgo.model_providers.types import (
     ModelRequest,
     ModelResponse,
+    ModelToolCall,
     ModelUsage,
     ProviderCapability,
     ProviderConfig,
@@ -77,7 +78,7 @@ class GeminiProvider:
                     self.client.models.generate_content,
                     model=model,
                     contents=contents,
-                    config=self._generate_config(request.max_output_tokens),
+                    config=self._generate_config(request),
                 ),
                 timeout=self.timeout,
             )
@@ -100,10 +101,11 @@ class GeminiProvider:
             provider=self.name,
             model=model,
             usage=usage,
+            tool_calls=_gemini_tool_calls(response),
             raw={"latency_ms": latency_ms},
         )
 
-    def _generate_config(self, max_output_tokens: int | None = None) -> types.GenerateContentConfig:
+    def _generate_config(self, request: ModelRequest) -> types.GenerateContentConfig:
         thinking_config = None
         if self.thinking_budget is not None:
             thinking_config = types.ThinkingConfig(
@@ -111,9 +113,17 @@ class GeminiProvider:
                 include_thoughts=False,
             )
         config: dict[str, Any] = {}
-        output_limit = max_output_tokens or self.max_output_tokens
+        output_limit = request.max_output_tokens or self.max_output_tokens
         if output_limit is not None:
             config["max_output_tokens"] = output_limit
+        if request.temperature is not None:
+            config["temperature"] = request.temperature
+        gemini_tools = _gemini_tools(request.tools)
+        if gemini_tools:
+            config["tools"] = gemini_tools
+            tool_config = _gemini_tool_config(request.tool_choice, request.tools)
+            if tool_config is not None:
+                config["tool_config"] = tool_config
         if thinking_config is not None:
             config["thinking_config"] = thinking_config
         return types.GenerateContentConfig(**config)
@@ -138,6 +148,7 @@ def _gemini_provider_config(settings: Settings) -> ProviderConfig:
         capabilities=[
             ProviderCapability.CHAT,
             ProviderCapability.JSON_OUTPUT,
+            ProviderCapability.TOOL_CALLING,
             ProviderCapability.VISION_INPUT,
             ProviderCapability.AUDIO_INPUT,
             ProviderCapability.VIDEO_INPUT,
@@ -165,6 +176,87 @@ def _gemini_usage(response: Any) -> ModelUsage | None:
         output_tokens=output_tokens,
         total_tokens=total_tokens,
     )
+
+
+def _gemini_tools(tool_specs: list[dict[str, Any]]) -> list[types.Tool] | None:
+    declarations: list[types.FunctionDeclaration] = []
+    for spec in tool_specs:
+        name = str(spec.get("name") or "").strip()
+        if not name:
+            continue
+        description = str(spec.get("description") or "").strip()
+        parameters = spec.get("parameters")
+        if not isinstance(parameters, dict):
+            parameters = {"type": "object", "properties": {}}
+        declarations.append(
+            types.FunctionDeclaration(
+                name=name,
+                description=description or None,
+                parameters_json_schema=parameters,
+            )
+        )
+    if not declarations:
+        return None
+    return [types.Tool(function_declarations=declarations)]
+
+
+def _gemini_tool_config(
+    tool_choice: str | None,
+    tool_specs: list[dict[str, Any]],
+) -> types.ToolConfig | None:
+    if not tool_specs or not tool_choice:
+        return None
+    normalized = tool_choice.strip().lower()
+    if normalized == "auto":
+        mode = types.FunctionCallingConfigMode.AUTO
+    elif normalized == "none":
+        mode = types.FunctionCallingConfigMode.NONE
+    elif normalized in {"required", "any"}:
+        mode = types.FunctionCallingConfigMode.ANY
+    else:
+        return None
+    return types.ToolConfig(
+        function_calling_config=types.FunctionCallingConfig(mode=mode)
+    )
+
+
+def _gemini_tool_calls(response: Any) -> list[ModelToolCall]:
+    raw_calls = getattr(response, "function_calls", None)
+    if raw_calls is None:
+        raw_calls = _function_calls_from_candidates(response)
+    if not isinstance(raw_calls, list):
+        return []
+    calls: list[ModelToolCall] = []
+    for index, raw_call in enumerate(raw_calls):
+        name = getattr(raw_call, "name", None)
+        if not isinstance(name, str) or not name.strip():
+            continue
+        args = getattr(raw_call, "args", None)
+        calls.append(
+            ModelToolCall(
+                id=str(getattr(raw_call, "id", None) or f"gemini-call-{index + 1}"),
+                name=name.strip(),
+                arguments=args if isinstance(args, dict) else {},
+            )
+        )
+    return calls
+
+
+def _function_calls_from_candidates(response: Any) -> list[Any]:
+    calls: list[Any] = []
+    candidates = getattr(response, "candidates", None)
+    if not isinstance(candidates, list):
+        return calls
+    for candidate in candidates:
+        content = getattr(candidate, "content", None)
+        parts = getattr(content, "parts", None)
+        if not isinstance(parts, list):
+            continue
+        for part in parts:
+            function_call = getattr(part, "function_call", None)
+            if function_call is not None:
+                calls.append(function_call)
+    return calls
 
 
 def _gemini_contents(request: ModelRequest) -> str | list[types.Part]:
