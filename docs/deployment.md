@@ -273,7 +273,11 @@ FCGO_PDF_DEFAULT_PAGES=2
 FCGO_PDF_MAX_PAGES=10
 FCGO_PDF_EXTRACT_TIMEOUT_SECONDS=20
 FCGO_MAX_SHEET_COLUMNS=26
+FCGO_WEB_READ_ENABLED=true
 FCGO_WEB_TIMEOUT_SECONDS=20
+FCGO_WEB_MAX_BYTES=1000000
+FCGO_WEB_ALLOWED_HOSTS=
+FCGO_WEB_BLOCKED_HOSTS=
 ```
 
 内嵌对象读取说明：
@@ -302,8 +306,11 @@ FCGO_WEB_TIMEOUT_SECONDS=20
 SQLite 或审计 detail。如果搜索响应包含可打开 URL，会直接使用飞书返回的地址；否则使用
 `FEISHU_DOCS_BASE_URL` 和资源 token 生成链接。
 
-普通网页链接会按 `FCGO_WEB_TIMEOUT_SECONDS` 抓取，并只读取 `text/html`、`text/plain`
-和 `application/xhtml+xml` 这类可读文本内容；二进制或过大的内容会被安全跳过。
+普通网页链接只有在用户或 Agent 明确读取外链时才会抓取，不会自动递归读取飞书文档里的所有外链。
+`FCGO_WEB_READ_ENABLED=false` 可关闭普通网页读取。开启时会按 `FCGO_WEB_TIMEOUT_SECONDS` 抓取，并只读取
+`text/html`、`text/plain` 和 `application/xhtml+xml` 这类可读文本内容；本机、内网、保留地址、二进制或
+超过 `FCGO_WEB_MAX_BYTES` 的内容会被安全跳过。`FCGO_WEB_ALLOWED_HOSTS` 可限制只读指定域名，
+`FCGO_WEB_BLOCKED_HOSTS` 可禁止指定域名；多个域名可用空格或逗号分隔。
 
 上下文与记忆隐私默认值：
 

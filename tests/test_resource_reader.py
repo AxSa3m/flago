@@ -198,6 +198,10 @@ def _settings(
     pdf_max_pages: int = 10,
     attachment_vision_enabled: bool = False,
     attachment_media_understanding_enabled: bool = False,
+    web_read_enabled: bool = True,
+    web_max_bytes: int = 1_000_000,
+    web_allowed_hosts: str = "",
+    web_blocked_hosts: str = "",
 ) -> Settings:
     return Settings(
         env="test",
@@ -211,6 +215,10 @@ def _settings(
         pdf_max_pages=pdf_max_pages,
         attachment_vision_enabled=attachment_vision_enabled,
         attachment_media_understanding_enabled=attachment_media_understanding_enabled,
+        web_read_enabled=web_read_enabled,
+        web_max_bytes=web_max_bytes,
+        web_allowed_hosts=web_allowed_hosts,
+        web_blocked_hosts=web_blocked_hosts,
     )
 
 
@@ -1178,6 +1186,64 @@ async def test_read_web_resource_rejects_binary_content_type() -> None:
     result = await reader.read(ref, "ou_user")
 
     assert result.error == "不支持读取该网页内容类型：application/pdf"
+
+
+@pytest.mark.asyncio
+async def test_read_web_resource_can_be_disabled() -> None:
+    reader = WebResourceReader(_settings(web_read_enabled=False))
+    ref = ResourceRef(type=ResourceType.WEB, url="https://example.com/article")
+
+    result = await reader.read(ref, "ou_user")
+
+    assert result.error == "网页外链读取已关闭"
+
+
+@pytest.mark.asyncio
+async def test_read_web_resource_blocks_private_address() -> None:
+    reader = WebResourceReader(_settings())
+    ref = ResourceRef(type=ResourceType.WEB, url="http://127.0.0.1:8000/healthz")
+
+    result = await reader.read(ref, "ou_user")
+
+    assert result.error == "为避免访问本机或内网地址，已跳过该网页链接"
+
+
+@pytest.mark.asyncio
+async def test_read_web_resource_rejects_url_outside_allowlist() -> None:
+    reader = WebResourceReader(_settings(web_allowed_hosts="trusted.example"))
+    ref = ResourceRef(type=ResourceType.WEB, url="https://example.com/article")
+
+    result = await reader.read(ref, "ou_user")
+
+    assert result.error == "该网页域名不在允许读取范围内"
+
+
+@pytest.mark.asyncio
+async def test_read_web_resource_rejects_blocked_host() -> None:
+    reader = WebResourceReader(_settings(web_blocked_hosts="example.com"))
+    ref = ResourceRef(type=ResourceType.WEB, url="https://example.com/article")
+
+    result = await reader.read(ref, "ou_user")
+
+    assert result.error == "该网页域名已被配置为禁止读取"
+
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_read_web_resource_rejects_declared_large_content() -> None:
+    respx.get("https://example.com/large").mock(
+        return_value=Response(
+            200,
+            headers={"content-type": "text/plain", "content-length": "2000"},
+            text="small",
+        )
+    )
+    reader = WebResourceReader(_settings(web_max_bytes=1000))
+    ref = ResourceRef(type=ResourceType.WEB, url="https://example.com/large")
+
+    result = await reader.read(ref, "ou_user")
+
+    assert result.error == "网页内容过大，已按安全限制跳过读取"
 
 
 @pytest.mark.asyncio

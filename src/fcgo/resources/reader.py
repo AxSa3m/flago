@@ -1,11 +1,13 @@
 import asyncio
 import base64
+import ipaddress
 import json
 import logging
+import socket
 from dataclasses import dataclass
 from io import BytesIO
 from typing import Any, Literal
-from urllib.parse import unquote
+from urllib.parse import unquote, urlparse
 
 import httpx
 from bs4 import BeautifulSoup
@@ -635,6 +637,9 @@ class WebResourceReader:
     async def read(self, ref: ResourceRef, actor_id: str) -> ResourceReadResult:  # noqa: ARG002
         if ref.type != ResourceType.WEB:
             return ResourceReadResult(ref=ref, error="不是普通网页链接")
+        control_error = await _web_read_control_error(ref.url, self.settings)
+        if control_error:
+            return ResourceReadResult(ref=ref, error=control_error)
         try:
             async with httpx.AsyncClient(
                 timeout=self.settings.web_timeout_seconds,
@@ -646,13 +651,17 @@ class WebResourceReader:
             ) as client:
                 response = await client.get(ref.url)
                 response.raise_for_status()
+            content_length = response.headers.get("content-length")
+            declared_size = _int_or_none(content_length)
+            if declared_size is not None and declared_size > self.settings.web_max_bytes:
+                return ResourceReadResult(ref=ref, error="网页内容过大，已按安全限制跳过读取")
             content_type = response.headers.get("content-type", "").lower()
             if content_type and not _is_readable_web_content(content_type):
                 return ResourceReadResult(
                     ref=ref,
                     error=f"不支持读取该网页内容类型：{content_type.split(';', 1)[0]}",
                 )
-            if len(response.content) > self.settings.max_resource_chars * 4:
+            if len(response.content) > self.settings.web_max_bytes:
                 return ResourceReadResult(
                     ref=ref,
                     error="网页内容过大，已按安全限制跳过读取",
@@ -685,6 +694,92 @@ def _resource_error_type(error: str | None) -> str | None:
     if "格式" in error or "解析" in error or "parse" in lowered:
         return "invalid_response"
     return "read_failed"
+
+
+async def _web_read_control_error(url: str, settings: Settings) -> str | None:
+    if not settings.web_read_enabled:
+        return "网页外链读取已关闭"
+    parsed = urlparse(url)
+    if parsed.scheme not in {"http", "https"}:
+        return "只支持读取 http 或 https 网页链接"
+    hostname = (parsed.hostname or "").strip().casefold()
+    if not hostname:
+        return "网页链接缺少有效域名"
+    allowed_hosts = _split_host_rules(settings.web_allowed_hosts)
+    blocked_hosts = _split_host_rules(settings.web_blocked_hosts)
+    if blocked_hosts and _host_matches_any(hostname, blocked_hosts):
+        return "该网页域名已被配置为禁止读取"
+    if allowed_hosts and not _host_matches_any(hostname, allowed_hosts):
+        return "该网页域名不在允许读取范围内"
+    if _host_is_private_address(hostname):
+        return "为避免访问本机或内网地址，已跳过该网页链接"
+    addresses = await asyncio.to_thread(_resolve_host_addresses, hostname)
+    if not addresses:
+        return "无法解析网页域名，已跳过读取"
+    if any(_ip_is_private_or_local(address) for address in addresses):
+        return "为避免访问本机或内网地址，已跳过该网页链接"
+    return None
+
+
+def _split_host_rules(value: str) -> list[str]:
+    return [
+        item.strip().casefold()
+        for item in value.replace(",", " ").split()
+        if item.strip()
+    ]
+
+
+def _host_matches_any(hostname: str, rules: list[str]) -> bool:
+    return any(_host_matches_rule(hostname, rule) for rule in rules)
+
+
+def _host_matches_rule(hostname: str, rule: str) -> bool:
+    normalized = rule.removeprefix("*.").strip(".")
+    if not normalized:
+        return False
+    return hostname == normalized or hostname.endswith(f".{normalized}")
+
+
+def _host_is_private_address(hostname: str) -> bool:
+    try:
+        return _ip_is_private_or_local(ipaddress.ip_address(hostname))
+    except ValueError:
+        return False
+
+
+def _resolve_host_addresses(hostname: str) -> list[ipaddress.IPv4Address | ipaddress.IPv6Address]:
+    try:
+        infos = socket.getaddrinfo(hostname, None, type=socket.SOCK_STREAM)
+    except socket.gaierror:
+        return []
+    addresses: list[ipaddress.IPv4Address | ipaddress.IPv6Address] = []
+    for info in infos:
+        raw_address = info[4][0]
+        try:
+            address = ipaddress.ip_address(raw_address)
+        except ValueError:
+            continue
+        if address not in addresses:
+            addresses.append(address)
+    return addresses
+
+
+def _ip_is_private_or_local(address: ipaddress.IPv4Address | ipaddress.IPv6Address) -> bool:
+    return (
+        address.is_private
+        or address.is_loopback
+        or address.is_link_local
+        or address.is_multicast
+        or address.is_reserved
+        or address.is_unspecified
+    )
+
+
+def _int_or_none(value: object) -> int | None:
+    try:
+        return int(str(value))
+    except (TypeError, ValueError):
+        return None
 
 
 def _limit_text(text: str, limit: int) -> tuple[str, bool]:

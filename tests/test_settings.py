@@ -32,6 +32,11 @@ def test_context_and_memory_privacy_defaults_are_conservative() -> None:
     assert settings.pdf_default_pages == 2
     assert settings.pdf_max_pages == 10
     assert settings.pdf_extract_timeout_seconds == 20
+    assert settings.web_read_enabled is True
+    assert settings.web_timeout_seconds == 20
+    assert settings.web_max_bytes == 1_000_000
+    assert settings.web_allowed_hosts == ""
+    assert settings.web_blocked_hosts == ""
     assert settings.oauth_enable_offline_access is False
     assert "offline_access" not in settings.oauth_scope_list
     assert "base:table:read" in settings.oauth_scope_list

@@ -243,7 +243,11 @@ class Settings(BaseSettings):
         default=3,
         alias="FCGO_RESOURCE_SEARCH_READ_LIMIT",
     )
+    web_read_enabled: bool = Field(default=True, alias="FCGO_WEB_READ_ENABLED")
     web_timeout_seconds: float = Field(default=20.0, alias="FCGO_WEB_TIMEOUT_SECONDS")
+    web_max_bytes: int = Field(default=1_000_000, alias="FCGO_WEB_MAX_BYTES")
+    web_allowed_hosts: str = Field(default="", alias="FCGO_WEB_ALLOWED_HOSTS")
+    web_blocked_hosts: str = Field(default="", alias="FCGO_WEB_BLOCKED_HOSTS")
     context_recent_message_limit: int = Field(
         default=50,
         alias="FCGO_CONTEXT_RECENT_MESSAGE_LIMIT",

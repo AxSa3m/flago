@@ -140,7 +140,9 @@ auth:user.id:read drive:drive.search:readonly search:docs:read docx:document:rea
 - 普通超链接、`@文档` 和内嵌网页返回飞书 blocks API 提供的显示文本、标题与 URL。
 
 飞书不会通过 blocks API 统一返回任意外链的预览正文。FCGO 不会把链接显示文本当成已经读取的网页内容，
-也不会自动递归抓取文档中的所有外链。
+也不会自动递归抓取文档中的所有外链。普通网页读取只在用户或 Agent 明确读取外链时触发，并会拦截本机、
+内网和保留地址；可通过 `FCGO_WEB_READ_ENABLED`、`FCGO_WEB_ALLOWED_HOSTS`、`FCGO_WEB_BLOCKED_HOSTS`
+和 `FCGO_WEB_MAX_BYTES` 控制读取范围。
 
 可发送 `/授权 状态` 检查当前用户是否已授权、是否缺少 scope，以及是否需要重新授权。
 
