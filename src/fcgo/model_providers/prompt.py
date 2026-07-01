@@ -54,12 +54,13 @@ def build_assistant_model_request(
                 content=_build_user_content(request),
                 attachments=[
                     ModelAttachment(
+                        type=attachment.type,
                         media_type=attachment.media_type,
                         data_base64=attachment.data_base64,
                         filename=attachment.filename,
                     )
                     for attachment in request.attachments
-                    if attachment.type == "image"
+                    if attachment.type in {"image", "audio", "video"}
                 ],
             ),
         ],
@@ -72,9 +73,14 @@ def build_assistant_model_request(
 
 
 def _required_capabilities(request: AssistantRequest) -> list[ProviderCapability]:
-    if request.attachments:
-        return [ProviderCapability.CHAT, ProviderCapability.VISION_INPUT]
-    return [ProviderCapability.CHAT]
+    capabilities = [ProviderCapability.CHAT]
+    if any(attachment.type == "image" for attachment in request.attachments):
+        capabilities.append(ProviderCapability.VISION_INPUT)
+    if any(attachment.type == "audio" for attachment in request.attachments):
+        capabilities.append(ProviderCapability.AUDIO_INPUT)
+    if any(attachment.type == "video" for attachment in request.attachments):
+        capabilities.append(ProviderCapability.VIDEO_INPUT)
+    return capabilities
 
 
 def _system_instructions(

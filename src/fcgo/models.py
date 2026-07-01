@@ -148,7 +148,7 @@ class MemoryItem(BaseModel):
 
 
 class AssistantAttachment(BaseModel):
-    type: Literal["image"] = "image"
+    type: Literal["image", "audio", "video"] = "image"
     media_type: str
     data_base64: str
     filename: str | None = None

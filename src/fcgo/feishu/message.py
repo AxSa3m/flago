@@ -27,7 +27,7 @@ def parse_text_message(
     message = _get(event_obj, "message", {})
     sender = _get(event_obj, "sender", {})
     message_type = _get(message, "message_type") or _get(message, "msg_type")
-    if message_type not in {"text", "post", "image"}:
+    if message_type not in {"text", "post", "image", "audio", "media", "video"}:
         return None
 
     content = _get(message, "content") or "{}"
@@ -45,7 +45,7 @@ def parse_text_message(
     attachments = _message_attachments(content_obj, message_type=str(message_type))
     normalized_text = _strip_mentions(text, mentions)
     if attachments and not normalized_text:
-        normalized_text = "请描述这张图片。"
+        normalized_text = _default_attachment_text(attachments)
     thread_id = _get(message, "thread_id") or None
     root_id = _get(message, "root_id") or None
     parent_id = _get(message, "parent_id") or None
@@ -101,7 +101,13 @@ def _message_attachments(content_obj: Any, *, message_type: str) -> list[FeishuM
     attachments: list[FeishuMessageAttachment] = []
     seen: set[str] = set()
 
-    def add(key: Any, *, filename: Any = None, content_type: Any = None) -> None:
+    def add(
+        key: Any,
+        *,
+        attachment_type: str,
+        filename: Any = None,
+        content_type: Any = None,
+    ) -> None:
         if not isinstance(key, str) or not key.strip():
             return
         normalized_key = key.strip()
@@ -111,7 +117,7 @@ def _message_attachments(content_obj: Any, *, message_type: str) -> list[FeishuM
         attachments.append(
             FeishuMessageAttachment(
                 key=normalized_key,
-                type="image",
+                type=attachment_type,
                 filename=str(filename).strip() if filename else None,
                 content_type=str(content_type).strip() if content_type else None,
             )
@@ -128,24 +134,62 @@ def _message_attachments(content_obj: Any, *, message_type: str) -> list[FeishuM
         if message_type == "image" or tag in {"img", "image"}:
             add(
                 value.get("image_key") or value.get("file_key") or value.get("key"),
+                attachment_type="image",
                 filename=value.get("file_name") or value.get("filename") or value.get("name"),
                 content_type=value.get("content_type") or value.get("mime_type"),
             )
-        for nested_key in ("image", "img"):
-            nested = value.get(nested_key)
-        if isinstance(nested, Mapping):
-            filename = nested.get("file_name") or nested.get("filename") or nested.get("name")
+        if message_type in {"media", "video"} or tag in {"media", "video"}:
             add(
-                nested.get("image_key") or nested.get("file_key") or nested.get("key"),
-                filename=filename,
-                content_type=nested.get("content_type") or nested.get("mime_type"),
+                value.get("file_key")
+                or value.get("video_key")
+                or value.get("media_key")
+                or value.get("key"),
+                attachment_type="video",
+                filename=value.get("file_name") or value.get("filename") or value.get("name"),
+                content_type=value.get("content_type") or value.get("mime_type"),
             )
+        if message_type == "audio" or tag == "audio":
+            add(
+                value.get("file_key")
+                or value.get("audio_key")
+                or value.get("media_key")
+                or value.get("key"),
+                attachment_type="audio",
+                filename=value.get("file_name") or value.get("filename") or value.get("name"),
+                content_type=value.get("content_type") or value.get("mime_type"),
+            )
+        for nested_key, attachment_type in (
+            ("image", "image"),
+            ("img", "image"),
+            ("video", "video"),
+            ("audio", "audio"),
+        ):
+            nested = value.get(nested_key)
+            if isinstance(nested, Mapping):
+                filename = nested.get("file_name") or nested.get("filename") or nested.get("name")
+                add(
+                    nested.get(f"{attachment_type}_key")
+                    or nested.get("file_key")
+                    or nested.get("media_key")
+                    or nested.get("key"),
+                    attachment_type=attachment_type,
+                    filename=filename,
+                    content_type=nested.get("content_type") or nested.get("mime_type"),
+                )
         for item in value.values():
             if isinstance(item, list | Mapping):
                 visit(item)
 
     visit(content_obj)
     return attachments
+
+
+def _default_attachment_text(attachments: list[FeishuMessageAttachment]) -> str:
+    if any(attachment.type == "video" for attachment in attachments):
+        return "请描述这个视频。"
+    if any(attachment.type == "audio" for attachment in attachments):
+        return "请转写或概述这段音频。"
+    return "请描述这张图片。"
 
 
 def _strip_mentions(text: str, mentions: list[FeishuMention]) -> str:

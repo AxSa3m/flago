@@ -100,6 +100,18 @@ class FakeMessageResourceAPI:
         max_bytes: int,
     ) -> DownloadedFile:
         self.calls.append((message_id, file_key, resource_type, max_bytes))
+        if file_key.startswith("video"):
+            return DownloadedFile(
+                content=b"video-bytes",
+                content_type="video/mp4",
+                filename="视频.mp4",
+            )
+        if file_key.startswith("audio"):
+            return DownloadedFile(
+                content=b"audio-bytes",
+                content_type="audio/mpeg",
+                filename="音频.mp3",
+            )
         return DownloadedFile(content=b"image-bytes", content_type="image/png", filename="图.png")
 
 
@@ -194,6 +206,38 @@ async def test_router_downloads_current_message_image_for_assistant(tmp_path) ->
     assert assistant.requests[0].model_provider == "gemini"
     assert assistant.requests[0].attachments[0].media_type == "image/png"
     assert assistant.requests[0].attachments[0].filename == "图.png"
+
+
+@pytest.mark.asyncio
+async def test_router_downloads_current_message_video_for_assistant(tmp_path) -> None:
+    store = SQLiteStore(tmp_path / "fcgo.sqlite3")
+    await store.init()
+    assistant = SuccessfulAssistant()
+    client = RecordingFeishuClient()
+    resources = FakeMessageResourceAPI()
+    router = FeishuMessageRouter(
+        assistant,
+        client,
+        store,
+        settings=Settings(env="test", attachment_media_understanding_enabled=True),
+        message_resource_api=resources,
+    )
+    message = _message("om_video_question", "这个视频内容是什么？")
+    message.attachments.append(
+        FeishuMessageAttachment(key="video_v2_abc", type="video", filename="测试.mp4")
+    )
+
+    await router.handle_message(message)
+
+    assert resources.calls == [
+        ("om_video_question", "video_v2_abc", "file", 20 * 1024 * 1024)
+    ]
+    assert len(assistant.requests) == 1
+    assert len(assistant.requests[0].attachments) == 1
+    assert assistant.requests[0].model_provider == "gemini"
+    assert assistant.requests[0].attachments[0].type == "video"
+    assert assistant.requests[0].attachments[0].media_type == "video/mp4"
+    assert assistant.requests[0].attachments[0].filename == "测试.mp4"
 
 
 @pytest.mark.asyncio

@@ -219,10 +219,10 @@ def test_parse_non_text_message_returns_none() -> None:
             "event": {
                 "sender": {"sender_id": {"open_id": "ou_user"}},
                 "message": {
-                    "message_id": "om_audio",
+                    "message_id": "om_file",
                     "chat_id": "oc_chat",
                     "chat_type": "p2p",
-                    "message_type": "audio",
+                    "message_type": "file",
                     "content": "{}",
                 },
             }
@@ -230,6 +230,53 @@ def test_parse_non_text_message_returns_none() -> None:
     )
 
     assert message is None
+
+
+def test_parse_audio_message_extracts_file_key() -> None:
+    message = parse_text_message(
+        {
+            "event": {
+                "sender": {"sender_id": {"open_id": "ou_user"}},
+                "message": {
+                    "message_id": "om_audio",
+                    "chat_id": "oc_chat",
+                    "chat_type": "p2p",
+                    "message_type": "audio",
+                    "content": '{"file_key":"audio_v2_abc"}',
+                },
+            }
+        }
+    )
+
+    assert message is not None
+    assert message.text == "请转写或概述这段音频。"
+    assert len(message.attachments) == 1
+    assert message.attachments[0].key == "audio_v2_abc"
+    assert message.attachments[0].type == "audio"
+
+
+def test_parse_video_message_extracts_file_key() -> None:
+    message = parse_text_message(
+        {
+            "event": {
+                "sender": {"sender_id": {"open_id": "ou_user"}},
+                "message": {
+                    "message_id": "om_video",
+                    "chat_id": "oc_chat",
+                    "chat_type": "p2p",
+                    "message_type": "media",
+                    "content": '{"file_key":"video_v2_abc","file_name":"测试.mp4"}',
+                },
+            }
+        }
+    )
+
+    assert message is not None
+    assert message.text == "请描述这个视频。"
+    assert len(message.attachments) == 1
+    assert message.attachments[0].key == "video_v2_abc"
+    assert message.attachments[0].type == "video"
+    assert message.attachments[0].filename == "测试.mp4"
 
 
 def test_parse_image_message_extracts_image_key() -> None:

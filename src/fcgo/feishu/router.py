@@ -3,7 +3,7 @@ import logging
 import re
 from datetime import UTC, datetime, timedelta
 from hashlib import sha256
-from typing import Any, Protocol
+from typing import Any, Literal, Protocol
 from uuid import uuid4
 
 from fcgo.agent.protocols import AssistantHandler
@@ -24,6 +24,7 @@ from fcgo.models import (
     ConversationType,
     FeishuBotMenuEvent,
     FeishuMessage,
+    FeishuMessageAttachment,
     MemoryItem,
     ModelPreference,
     WriteActionType,
@@ -228,38 +229,41 @@ class FeishuMessageRouter:
     ) -> list[AssistantAttachment]:
         if not message.attachments or self.message_resource_api is None:
             return []
-        if not self.settings.attachment_vision_enabled:
-            return []
         items: list[AssistantAttachment] = []
         for attachment in message.attachments:
-            if attachment.type != "image":
+            if not _attachment_model_understanding_enabled(attachment, self.settings):
                 continue
             try:
                 downloaded = await self.message_resource_api.download_message_resource(
                     message.message_id,
                     attachment.key,
-                    resource_type="image",
-                    max_bytes=self.settings.attachment_vision_max_bytes,
+                    resource_type=_message_resource_type(attachment),
+                    max_bytes=_attachment_max_bytes(attachment, self.settings),
                 )
             except Exception as exc:  # noqa: BLE001
                 logger.warning(
-                    "message_image_download_failed message_id=%s key=%s error=%s",
+                    "message_attachment_download_failed message_id=%s key=%s type=%s error=%s",
                     message.message_id,
                     attachment.key,
+                    attachment.type,
                     redact(str(exc)),
                 )
                 continue
             media_type = (
                 attachment.content_type
                 or getattr(downloaded, "content_type", "")
-                or "image/png"
+                or _default_attachment_media_type(attachment)
             )
             content = getattr(downloaded, "content", b"")
             if not isinstance(content, bytes) or not content:
                 continue
             items.append(
                 AssistantAttachment(
-                    media_type=str(media_type).split(";", 1)[0].strip() or "image/png",
+                    type=_assistant_attachment_type(attachment),
+                    media_type=(
+                        str(media_type).split(";", 1)[0].strip()
+                        or _default_attachment_media_type(attachment)
+                    ),
                     data_base64=base64.b64encode(content).decode("ascii"),
                     filename=attachment.filename or getattr(downloaded, "filename", None),
                 )
@@ -1996,7 +2000,9 @@ def _request_model_provider(
     *,
     settings: Settings,
 ) -> str | None:
-    if attachments:
+    if _has_media_attachment(attachments):
+        return settings.attachment_media_understanding_provider.strip() or None
+    if _has_image_attachment(attachments):
         return settings.attachment_vision_provider.strip() or None
     return model_preference.provider if model_preference else None
 
@@ -2007,9 +2013,60 @@ def _request_model(
     *,
     settings: Settings,
 ) -> str | None:
-    if attachments:
+    if _has_media_attachment(attachments):
+        return settings.attachment_media_understanding_model
+    if _has_image_attachment(attachments):
         return settings.attachment_vision_model
     return model_preference.model if model_preference else None
+
+
+def _attachment_model_understanding_enabled(
+    attachment: FeishuMessageAttachment,
+    settings: Settings,
+) -> bool:
+    if attachment.type == "image":
+        return settings.attachment_vision_enabled
+    if attachment.type in {"audio", "video"}:
+        return settings.attachment_media_understanding_enabled
+    return False
+
+
+def _attachment_max_bytes(attachment: FeishuMessageAttachment, settings: Settings) -> int:
+    if attachment.type == "image":
+        return settings.attachment_vision_max_bytes
+    return settings.attachment_media_understanding_max_bytes
+
+
+def _message_resource_type(attachment: FeishuMessageAttachment) -> str:
+    if attachment.type in {"audio", "video"}:
+        return "file"
+    return "image"
+
+
+def _assistant_attachment_type(
+    attachment: FeishuMessageAttachment,
+) -> Literal["image", "audio", "video"]:
+    if attachment.type == "audio":
+        return "audio"
+    if attachment.type == "video":
+        return "video"
+    return "image"
+
+
+def _default_attachment_media_type(attachment: FeishuMessageAttachment) -> str:
+    if attachment.type == "audio":
+        return "audio/mpeg"
+    if attachment.type == "video":
+        return "video/mp4"
+    return "image/png"
+
+
+def _has_media_attachment(attachments: list[AssistantAttachment]) -> bool:
+    return any(attachment.type in {"audio", "video"} for attachment in attachments)
+
+
+def _has_image_attachment(attachments: list[AssistantAttachment]) -> bool:
+    return any(attachment.type == "image" for attachment in attachments)
 
 
 def _resolved_model_spec(
