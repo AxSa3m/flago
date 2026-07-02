@@ -654,6 +654,43 @@ def mount_admin_routes(
         query = urlencode({"model_test": "ok", "provider": provider})
         return RedirectResponse(f"{next_path}?{query}", status_code=303)
 
+    @app.post("/admin/model/default")
+    async def admin_set_default_model_provider(request: Request) -> RedirectResponse:
+        if not await _bootstrap_setup_allowed(request, store):
+            await _require_admin_user(request, store)
+        form = await _form_params(request)
+        _require_csrf(request, form)
+        provider_key = _clean_identifier(form.get("provider", ""))
+        next_path = _safe_admin_next_path(form.get("next", "/admin"))
+        provider = _model_provider_by_key(_admin_view_settings(settings), provider_key)
+        if provider is None or not provider.configured:
+            raise HTTPException(status_code=400, detail="只能切换到已配置的模型接口")
+        updates: dict[str, str | None] = {
+            "FCGO_DEFAULT_PROVIDER": provider.key,
+            "FCGO_DEFAULT_MODEL": provider.model or None,
+        }
+        _write_validated_env_settings(settings, updates)
+        return RedirectResponse(f"{next_path}?saved=model-default", status_code=303)
+
+    @app.post("/admin/model/delete")
+    async def admin_delete_model_provider(request: Request) -> RedirectResponse:
+        if not await _bootstrap_setup_allowed(request, store):
+            await _require_admin_user(request, store)
+        form = await _form_params(request)
+        _require_csrf(request, form)
+        provider_key = _clean_identifier(form.get("provider", ""))
+        next_path = _safe_admin_next_path(form.get("next", "/admin"))
+        if provider_key == _admin_view_settings(settings).default_provider:
+            raise HTTPException(
+                status_code=400,
+                detail="系统默认模型接口不能删除，请先切换系统默认",
+            )
+        env_names = _model_provider_env_names(provider_key)
+        if not env_names:
+            raise HTTPException(status_code=400, detail="未知模型接口")
+        _write_validated_env_settings(settings, dict.fromkeys(env_names, None))
+        return RedirectResponse(f"{next_path}?saved=model-delete", status_code=303)
+
     @app.post("/admin/media/test")
     async def admin_test_media(request: Request) -> Response:
         if not await _bootstrap_setup_allowed(request, store):
@@ -684,6 +721,20 @@ def mount_admin_routes(
             return JSONResponse({"ok": True, "provider": provider, "message": "接口可达"})
         query = urlencode({"media_test": "ok", "provider": provider})
         return RedirectResponse(f"{next_path}?{query}", status_code=303)
+
+    @app.post("/admin/media/delete")
+    async def admin_delete_media_provider(request: Request) -> RedirectResponse:
+        if not await _bootstrap_setup_allowed(request, store):
+            await _require_admin_user(request, store)
+        form = await _form_params(request)
+        _require_csrf(request, form)
+        provider_key = _clean_identifier(form.get("provider", ""))
+        next_path = _safe_admin_next_path(form.get("next", "/admin"))
+        env_names = _media_provider_env_names(provider_key)
+        if not env_names:
+            raise HTTPException(status_code=400, detail="未知媒体或工作流接口")
+        _write_validated_env_settings(settings, dict.fromkeys(env_names, None))
+        return RedirectResponse(f"{next_path}?saved=media-delete", status_code=303)
 
     @app.get("/admin/logout")
     async def admin_logout(request: Request) -> RedirectResponse:
@@ -1048,6 +1099,15 @@ def _write_env_file(env_path: Path, updates: Mapping[str, str | None]) -> None:
     env_path.write_text("\n".join(output).rstrip() + "\n", encoding="utf-8")
 
 
+def _write_validated_env_settings(
+    settings: Settings,
+    updates: Mapping[str, str | None],
+) -> None:
+    env_path = _env_file_path(settings)
+    _validate_env_updates(settings, env_path, updates)
+    _write_env_file(env_path, updates)
+
+
 def _env_values(env_path: Path) -> dict[str, str]:
     if not env_path.exists():
         return {}
@@ -1292,7 +1352,6 @@ async def _admin_page(
             <p>当前登录：<code>{escape(user_open_id)}</code></p>
           </div>
           <div class="top-actions">
-            <a class="ghost" href="/admin/setup">首次配置向导</a>
             <a class="ghost" href="/admin/advanced">高级配置</a>
             <a class="ghost" href="/admin/logout">退出</a>
           </div>
@@ -1707,6 +1766,36 @@ def _model_provider_options(settings: Settings) -> list[ModelProviderOption]:
     return providers
 
 
+def _model_provider_by_key(settings: Settings, provider_key: str) -> ModelProviderOption | None:
+    return next(
+        (
+            provider
+            for provider in _model_provider_options(settings)
+            if provider.key == provider_key
+        ),
+        None,
+    )
+
+
+def _model_provider_env_names(provider_key: str) -> tuple[str, ...]:
+    for raw in MODEL_PROVIDER_SPECS:
+        if raw["key"] == provider_key:
+            return (
+                str(raw["display_name"]),
+                str(raw["api_key"]),
+                str(raw["base_url"]),
+                str(raw["model"]),
+            )
+    return ()
+
+
+def _media_provider_env_names(provider_key: str) -> tuple[str, ...]:
+    for key, _label, env_names in MEDIA_PROVIDER_GROUPS:
+        if key == provider_key:
+            return env_names
+    return ()
+
+
 def _validated_personal_model(
     settings: Settings,
     provider: str,
@@ -1831,6 +1920,39 @@ def _configured_provider_cards(
             badges.append('<span class="badge">系统默认</span>')
         if provider.key == personal_default_provider:
             badges.append('<span class="badge">你的默认</span>')
+        default_button = (
+            ""
+            if provider.key == system_default_provider
+            else f"""
+                <button
+                  type="submit"
+                  class="secondary small"
+                  formaction="/admin/model/default"
+                  formmethod="post"
+                  name="provider"
+                  value="{escape(provider.key)}"
+                >
+                  设为系统默认
+                </button>
+            """
+        )
+        delete_button = (
+            ""
+            if provider.key == system_default_provider
+            else f"""
+                <button
+                  type="submit"
+                  class="secondary danger small"
+                  formaction="/admin/model/delete"
+                  formmethod="post"
+                  name="provider"
+                  value="{escape(provider.key)}"
+                  onclick="return confirm('确定删除这个模型接口配置吗？')"
+                >
+                  删除
+                </button>
+            """
+        )
         cards.append(
             f"""
             <div class="provider-card">
@@ -1840,6 +1962,13 @@ def _configured_provider_cards(
               {"".join(badges)}
               <p>{escape(model)}</p>
               <div class="inline-actions">
+                <button
+                  type="button"
+                  class="secondary small open-model-dialog"
+                  data-config-provider="{escape(provider.key)}"
+                >
+                  编辑
+                </button>
                 <button
                   type="submit"
                   class="secondary small"
@@ -1852,6 +1981,8 @@ def _configured_provider_cards(
                 >
                   测试连接
                 </button>
+                {default_button}
+                {delete_button}
                 <span class="test-result-slot">{test_result}</span>
               </div>
             </div>
@@ -2075,6 +2206,13 @@ def _configured_media_cards(settings: Settings, request: Request) -> str:
               <span class="ok">已配置</span>
               <div class="inline-actions">
                 <button
+                  type="button"
+                  class="secondary small open-media-dialog"
+                  data-config-provider="{escape(key)}"
+                >
+                  编辑
+                </button>
+                <button
                   type="submit"
                   class="secondary small"
                   formaction="/admin/media/test"
@@ -2085,6 +2223,17 @@ def _configured_media_cards(settings: Settings, request: Request) -> str:
                   data-test-action="media"
                 >
                   测试连接
+                </button>
+                <button
+                  type="submit"
+                  class="secondary danger small"
+                  formaction="/admin/media/delete"
+                  formmethod="post"
+                  name="provider"
+                  value="{escape(key)}"
+                  onclick="return confirm('确定删除这个媒体或工作流接口配置吗？')"
+                >
+                  删除
                 </button>
                 <span class="test-result-slot">{test_result}</span>
               </div>
@@ -2241,8 +2390,17 @@ def _model_options_script(providers: list[ModelProviderOption]) -> str:
         refreshProviderConfigPanel();
       }}
       const modelDialog = document.getElementById("model-config-dialog");
+      function openModelConfig(provider) {{
+        if (configSelector && provider) {{
+          configSelector.value = provider;
+          refreshProviderConfigPanel();
+        }}
+        if (modelDialog) modelDialog.showModal();
+      }}
       document.querySelectorAll(".open-model-dialog").forEach((button) => {{
-        button.addEventListener("click", () => modelDialog && modelDialog.showModal());
+        button.addEventListener("click", () => {{
+          openModelConfig(button.dataset.configProvider || "");
+        }});
       }});
       document.querySelectorAll(".close-model-dialog").forEach((button) => {{
         button.addEventListener("click", () => modelDialog && modelDialog.close());
@@ -2259,8 +2417,17 @@ def _model_options_script(providers: list[ModelProviderOption]) -> str:
         refreshMediaConfigPanel();
       }}
       const mediaDialog = document.getElementById("media-config-dialog");
+      function openMediaConfig(provider) {{
+        if (mediaSelector && provider) {{
+          mediaSelector.value = provider;
+          refreshMediaConfigPanel();
+        }}
+        if (mediaDialog) mediaDialog.showModal();
+      }}
       document.querySelectorAll(".open-media-dialog").forEach((button) => {{
-        button.addEventListener("click", () => mediaDialog && mediaDialog.showModal());
+        button.addEventListener("click", () => {{
+          openMediaConfig(button.dataset.configProvider || "");
+        }});
       }});
       document.querySelectorAll(".close-media-dialog").forEach((button) => {{
         button.addEventListener("click", () => mediaDialog && mediaDialog.close());

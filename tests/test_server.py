@@ -272,6 +272,7 @@ def test_admin_page_updates_all_config_form_and_lists_menus(tmp_path, monkeypatc
             "env__FCGO_WRITEBACK_ENABLED": "true",
             "env__FCGO_WRITEBACK_CONFIRMATION_MODE": "low_risk_direct",
             "env__GEMINI_DISPLAY_NAME": "小智专用 Gemini",
+            "env__GEMINI_API_KEY": "gemini-key",
             "env__DEEPSEEK_API_KEY": "sk-deepseek-test",
             "env__COMFYUI_DISPLAY_NAME": "本地 Comfy 工作流",
             "env__COMFYUI_BASE_URL": "http://127.0.0.1:8188",
@@ -298,6 +299,42 @@ def test_admin_page_updates_all_config_form_and_lists_menus(tmp_path, monkeypatc
                 "accept": "application/json",
             },
         )
+        set_gemini_default = client.post(
+            "/admin/model/default",
+            content=urlencode(
+                {
+                    "csrf": csrf.group(1),
+                    "next": "/admin",
+                    "provider": "gemini",
+                }
+            ),
+            headers={"content-type": "application/x-www-form-urlencoded"},
+            follow_redirects=False,
+        )
+        delete_default_model = client.post(
+            "/admin/model/delete",
+            content=urlencode(
+                {
+                    "csrf": csrf.group(1),
+                    "next": "/admin",
+                    "provider": "gemini",
+                }
+            ),
+            headers={"content-type": "application/x-www-form-urlencoded"},
+            follow_redirects=False,
+        )
+        delete_media = client.post(
+            "/admin/media/delete",
+            content=urlencode(
+                {
+                    "csrf": csrf.group(1),
+                    "next": "/admin",
+                    "provider": "comfyui",
+                }
+            ),
+            headers={"content-type": "application/x-www-form-urlencoded"},
+            follow_redirects=False,
+        )
         mismatch = client.post(
             "/admin/config",
             content=urlencode(
@@ -312,6 +349,11 @@ def test_admin_page_updates_all_config_form_and_lists_menus(tmp_path, monkeypatc
         )
 
     assert response.status_code == 303
+    assert set_gemini_default.status_code == 303
+    assert "saved=model-default" in set_gemini_default.headers["location"]
+    assert delete_default_model.status_code == 400
+    assert delete_media.status_code == 303
+    assert "saved=media-delete" in delete_media.headers["location"]
     assert mismatch.status_code == 400
     assert test_model.status_code == 303
     assert "model_test=ok" in test_model.headers["location"]
@@ -333,7 +375,7 @@ def test_admin_page_updates_all_config_form_and_lists_menus(tmp_path, monkeypatc
     admin_text = admin.text
     setup_text = setup.text
     advanced_text = advanced.text
-    assert "首次配置向导" in admin_text
+    assert "首次配置向导" not in admin_text
     assert "首次配置向导" in setup_text
     assert "保存向导配置" in setup_text
     assert 'name="config_scope" value="setup"' in setup_text
@@ -358,9 +400,14 @@ def test_admin_page_updates_all_config_form_and_lists_menus(tmp_path, monkeypatc
     assert "添加或配置模型接口" in admin_text
     assert "model-config-dialog" in admin_text
     assert "open-model-dialog" in admin_text
+    assert 'data-config-provider="gemini"' in admin_text
+    assert "/admin/model/default" in admin_text
+    assert "/admin/model/delete" in admin_text
     assert "data-test-action=\"model\"" in admin_text
     assert "添加或配置媒体/工作流接口" in admin_text
     assert "media-config-dialog" in admin_text
+    assert 'data-config-provider="comfyui"' in saved_admin.text
+    assert "/admin/media/delete" in saved_admin.text
     assert "data-test-action=\"media\"" in saved_admin.text
     assert 'value="assistant">保存</button>' in admin_text
     assert "input-action-row" in advanced_text
@@ -381,10 +428,12 @@ def test_admin_page_updates_all_config_form_and_lists_menus(tmp_path, monkeypatc
     saved_env = env_path.read_text(encoding="utf-8")
     assert "FCGO_BASE_URL=https://fcgo.example.test" in saved_env
     assert "FCGO_AGENT_MODE=agent" in saved_env
+    assert "FCGO_DEFAULT_PROVIDER=gemini" in saved_env
     assert "FCGO_WRITEBACK_ENABLED=true" in saved_env
     assert "FCGO_WRITEBACK_CONFIRMATION_MODE=low_risk_direct" in saved_env
     assert "GEMINI_DISPLAY_NAME=" in saved_env
     assert "DEEPSEEK_API_KEY=sk-deepseek-test" in saved_env
+    assert "COMFYUI_BASE_URL=" not in saved_env
     model_preference = asyncio.run(store.get_model_preference("user:ou_admin"))
     assert model_preference is not None
     assert model_preference.provider == "gemini"
