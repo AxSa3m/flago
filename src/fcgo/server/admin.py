@@ -356,6 +356,26 @@ def mount_admin_routes(
             await _admin_page(request, _admin_view_settings(settings), store, user_open_id)
         )
 
+    @app.get("/admin/setup")
+    async def admin_setup_home(request: Request) -> HTMLResponse:
+        if not settings.admin_enabled:
+            return HTMLResponse(
+                _message_page("本地配置后台未启用", "请检查 FCGO_ADMIN_ENABLED。"),
+                404,
+            )
+        user_open_id = _session_open_id(request)
+        if not user_open_id:
+            return HTMLResponse(_login_page(settings))
+        owner_open_id = await _owner_open_id(store)
+        if owner_open_id and owner_open_id != user_open_id:
+            return HTMLResponse(
+                _message_page("无权访问", "当前飞书用户不是本地配置后台管理员。"),
+                403,
+            )
+        return HTMLResponse(
+            await _setup_admin_page(request, _admin_view_settings(settings), user_open_id)
+        )
+
     @app.get("/admin/advanced")
     async def admin_advanced_home(request: Request) -> HTMLResponse:
         if not settings.admin_enabled:
@@ -698,7 +718,7 @@ def _require_csrf(request: Request, form: Mapping[str, str]) -> None:
 
 
 def _safe_admin_next_path(value: str) -> str:
-    if value in {"/admin", "/admin/advanced"}:
+    if value in {"/admin", "/admin/advanced", "/admin/setup"}:
         return value
     return "/admin"
 
@@ -805,7 +825,16 @@ def _save_env_settings(
 
 
 def _validate_config_scope(scope: str) -> None:
-    if scope not in {"all", "assistant", "basic", "feishu", "capabilities", "model", "media"}:
+    if scope not in {
+        "all",
+        "assistant",
+        "basic",
+        "feishu",
+        "capabilities",
+        "model",
+        "media",
+        "setup",
+    }:
         raise HTTPException(status_code=400, detail=f"不支持的配置范围：{scope}")
 
 
@@ -853,6 +882,38 @@ def _config_scope_env_names(scope: str) -> set[str] | None:
         env_names = set()
         for _key, _label, group_env_names in MEDIA_PROVIDER_GROUPS:
             env_names.update(group_env_names)
+        return env_names
+    if scope == "setup":
+        env_names = {
+            "FEISHU_APP_ID",
+            "FEISHU_APP_SECRET",
+            "FEISHU_VERIFICATION_TOKEN",
+            "FEISHU_ENCRYPT_KEY",
+            "FEISHU_BOT_OPEN_ID",
+            "FEISHU_BOT_NAME",
+            "FCGO_OAUTH_ENABLE_OFFLINE_ACCESS",
+            "FCGO_BASE_URL",
+            "FCGO_ENV",
+            "FCGO_AGENT_MODE",
+            "FCGO_DEFAULT_PROVIDER",
+            "FCGO_DEFAULT_MODEL",
+            "FCGO_RESOURCE_SEARCH_ENABLED",
+            "FCGO_ATTACHMENT_VISION_ENABLED",
+            "FCGO_ATTACHMENT_MEDIA_UNDERSTANDING_ENABLED",
+            "FCGO_ATTACHMENT_OCR_ENABLED",
+            "FCGO_WEB_READ_ENABLED",
+            "FCGO_WRITEBACK_ENABLED",
+            "FCGO_WRITEBACK_CONFIRMATION_MODE",
+        }
+        for raw in MODEL_PROVIDER_SPECS:
+            env_names.update(
+                {
+                    str(raw["display_name"]),
+                    str(raw["api_key"]),
+                    str(raw["base_url"]),
+                    str(raw["model"]),
+                }
+            )
         return env_names
     return set()
 
@@ -1188,6 +1249,7 @@ async def _admin_page(
             <p>当前登录：<code>{escape(user_open_id)}</code></p>
           </div>
           <div class="top-actions">
+            <a class="ghost" href="/admin/setup">首次配置向导</a>
             <a class="ghost" href="/admin/advanced">高级配置</a>
             <a class="ghost" href="/admin/logout">退出</a>
           </div>
@@ -1267,6 +1329,169 @@ async def _admin_page(
     )
 
 
+async def _setup_admin_page(
+    request: Request,
+    settings: Settings,
+    user_open_id: str,
+) -> str:
+    csrf = str(request.session.get("admin_csrf") or "")
+    if not csrf:
+        csrf = token_urlsafe(24)
+        request.session["admin_csrf"] = csrf
+    provider_options = _model_provider_options(settings)
+    return _layout(
+        "首次配置向导",
+        f"""
+        <header class="topbar">
+          <div>
+            <h1>首次配置向导</h1>
+            <p>当前登录：<code>{escape(user_open_id)}</code></p>
+          </div>
+          <div class="top-actions">
+            <a class="ghost" href="/admin">返回后台</a>
+            <a class="ghost" href="/admin/advanced">高级配置</a>
+            <a class="ghost" href="/admin/logout">退出</a>
+          </div>
+        </header>
+
+        <form method="post" action="/admin/config" class="page-form">
+          <input type="hidden" name="csrf" value="{escape(csrf)}" />
+          <input type="hidden" name="next" value="/admin/setup" />
+          {_saved_banner(request)}
+
+          <section class="toolbar">
+            <p>按顺序完成这些配置后，小白用户就可以启动机器人并进行基础测试。</p>
+            <div class="toolbar-actions">
+              <button type="submit" name="config_scope" value="setup">保存向导配置</button>
+              <button type="reset" class="secondary">重置</button>
+            </div>
+          </section>
+
+          <section class="wide">
+            <article>
+              <h2>配置进度</h2>
+              <div class="setup-status-grid">
+                {_setup_status_cards(settings, provider_options)}
+              </div>
+            </article>
+          </section>
+
+          <section class="grid">
+            <article>
+              <h2>1. 服务地址</h2>
+              <p class="hint">这里决定飞书 OAuth 回调地址和用户打开后台时看到的服务地址。</p>
+              <div class="settings-list one-column">
+                {_setting_fields_for(settings, ("FCGO_ENV", "FCGO_BASE_URL", "FCGO_AGENT_MODE"))}
+              </div>
+              <div class="setup-copy">
+                <span>OAuth 回调地址</span>
+                <code>{escape(_admin_redirect_uri(settings))}</code>
+              </div>
+            </article>
+
+            <article>
+              <h2>2. 飞书应用</h2>
+              <p class="hint">
+                先填写飞书开放平台里的 App ID 和 App Secret；事件校验信息可按你的事件模式补充。
+              </p>
+              <div class="settings-list one-column">
+                {_setting_fields_for(
+                    settings,
+                    (
+                        "FEISHU_APP_ID",
+                        "FEISHU_APP_SECRET",
+                        "FEISHU_VERIFICATION_TOKEN",
+                        "FEISHU_ENCRYPT_KEY",
+                        "FEISHU_BOT_OPEN_ID",
+                        "FEISHU_BOT_NAME",
+                        "FCGO_OAUTH_ENABLE_OFFLINE_ACCESS",
+                    ),
+                )}
+              </div>
+            </article>
+          </section>
+
+          <section class="wide">
+            <article>
+              <h2>3. 模型接口</h2>
+              <p class="hint">
+                至少配置一个模型 Provider，并点击测试连接确认 Key、地址和模型名可用。
+              </p>
+              <div class="settings-list">
+                {_system_default_model_fields(settings, provider_options)}
+              </div>
+              <div class="provider-cards">
+                {_configured_provider_cards(
+                    provider_options,
+                    system_default_provider=_specs_by_env(settings)["FCGO_DEFAULT_PROVIDER"].value,
+                    personal_default_provider="",
+                    request=request,
+                ) or '<p class="hint">还没有配置可用模型接口。请点击下面的按钮添加。</p>'}
+              </div>
+              <button type="button" class="secondary open-model-dialog">
+                添加或配置模型接口
+              </button>
+              {_model_config_dialog(settings, provider_options)}
+            </article>
+          </section>
+
+          <section class="grid">
+            <article>
+              <h2>4. 常用能力</h2>
+              <p class="hint">首次安装建议先保留默认值；确认机器人可用后再按需调整。</p>
+              <div class="settings-list one-column">
+                {_setting_fields_for(
+                    settings,
+                    (
+                        "FCGO_RESOURCE_SEARCH_ENABLED",
+                        "FCGO_ATTACHMENT_VISION_ENABLED",
+                        "FCGO_ATTACHMENT_MEDIA_UNDERSTANDING_ENABLED",
+                        "FCGO_ATTACHMENT_OCR_ENABLED",
+                        "FCGO_WEB_READ_ENABLED",
+                        "FCGO_WRITEBACK_ENABLED",
+                        "FCGO_WRITEBACK_CONFIRMATION_MODE",
+                    ),
+                )}
+              </div>
+            </article>
+
+            <article>
+              <h2>5. 飞书菜单</h2>
+              <p class="hint">
+                至少建议在飞书开发者后台添加下面三个入口，后续可以在普通后台查看完整菜单表。
+              </p>
+              <table class="menu-table compact-table">
+                <tbody>
+                  <tr><th>本地配置网页</th><td><code>fcgo.admin.open</code></td></tr>
+                  <tr><th>使用说明</th><td><code>fcgo.help</code></td></tr>
+                  <tr><th>授权状态</th><td><code>fcgo.auth.status</code></td></tr>
+                </tbody>
+              </table>
+              <p class="hint">完整菜单清单在普通后台的“机器人菜单功能”区块。</p>
+            </article>
+          </section>
+
+          <section class="wide">
+            <article>
+              <h2>6. 最终检查</h2>
+              <ol class="setup-checklist">
+                <li>保存向导配置。</li>
+                <li>重启本地服务，让全局环境参数生效。</li>
+                <li>回到本页面测试模型连接。</li>
+                <li>在飞书里点击“本地配置网页”菜单，确认能打开后台。</li>
+                <li>发送“帮助”或“帮我搜索飞书文档 测试”做一次机器人验证。</li>
+              </ol>
+            </article>
+          </section>
+
+          {_model_options_script(provider_options)}
+          {_clear_button_script()}
+          {_card_reset_script()}
+        </form>
+        """,
+    )
+
+
 async def _advanced_admin_page(
     request: Request,
     settings: Settings,
@@ -1285,6 +1510,7 @@ async def _advanced_admin_page(
             <p>当前登录：<code>{escape(user_open_id)}</code></p>
           </div>
           <div class="top-actions">
+            <a class="ghost" href="/admin/setup">首次配置向导</a>
             <a class="ghost" href="/admin">返回普通配置</a>
             <a class="ghost" href="/admin/logout">退出</a>
           </div>
@@ -1328,6 +1554,57 @@ def _saved_banner(request: Request) -> str:
     if not messages:
         return ""
     return '<div class="banner">' + "<br />".join(messages) + "</div>"
+
+
+def _setup_status_cards(settings: Settings, providers: list[ModelProviderOption]) -> str:
+    specs = _specs_by_env(settings)
+    feishu_ready = (
+        specs["FEISHU_APP_ID"].configured
+        and specs["FEISHU_APP_SECRET"].configured
+    )
+    base_ready = bool(specs["FCGO_BASE_URL"].value.strip())
+    model_ready = any(provider.configured for provider in providers)
+    default_provider = specs["FCGO_DEFAULT_PROVIDER"].value
+    default_ready = any(
+        provider.key == default_provider and provider.configured
+        for provider in providers
+    )
+    return "\n".join(
+        (
+            _setup_status_card(
+                "服务地址",
+                base_ready,
+                "用于生成 OAuth 回调地址和后台链接。",
+            ),
+            _setup_status_card(
+                "飞书应用",
+                feishu_ready,
+                "需要 App ID 和 App Secret。",
+            ),
+            _setup_status_card(
+                "模型接口",
+                model_ready,
+                "至少配置一个可用模型 Provider。",
+            ),
+            _setup_status_card(
+                "默认模型",
+                default_ready,
+                "系统默认 Provider 应指向已配置接口。",
+            ),
+        )
+    )
+
+
+def _setup_status_card(title: str, ok: bool, description: str) -> str:
+    status = "已完成" if ok else "待配置"
+    css_class = "ok" if ok else "missing"
+    return f"""
+    <div class="setup-status-card">
+      <strong>{escape(title)}</strong>
+      <span class="{css_class}">{status}</span>
+      <p>{escape(description)}</p>
+    </div>
+    """
 
 
 def _model_provider_options(settings: Settings) -> list[ModelProviderOption]:
@@ -2565,6 +2842,51 @@ def _layout(title: str, body: str) -> str:
       line-height: 1.6;
     }}
     .hint {{ margin-top: 14px; color: var(--muted); font-size: 14px; }}
+    .setup-status-grid {{
+      display: grid;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      gap: 12px;
+    }}
+    .setup-status-card {{
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 14px;
+      background: linear-gradient(180deg, #ffffff, var(--panel));
+    }}
+    .setup-status-card strong {{
+      display: block;
+      margin-bottom: 8px;
+    }}
+    .setup-status-card p {{
+      margin: 8px 0 0;
+      font-size: 13px;
+      line-height: 1.6;
+    }}
+    .setup-copy {{
+      display: grid;
+      gap: 8px;
+      margin-top: 14px;
+      padding: 12px;
+      border: 1px dashed var(--border-strong);
+      border-radius: 10px;
+      background: #fbfcff;
+    }}
+    .setup-copy span {{
+      color: var(--muted);
+      font-size: 13px;
+    }}
+    .setup-copy code {{
+      overflow-wrap: anywhere;
+    }}
+    .setup-checklist {{
+      margin: 0;
+      padding-left: 20px;
+      color: var(--text);
+      line-height: 1.9;
+    }}
+    .compact-table th {{
+      width: 150px;
+    }}
     .provider-cards {{
       display: grid;
       grid-template-columns: repeat(3, minmax(0, 1fr));
@@ -2698,6 +3020,7 @@ def _layout(title: str, body: str) -> str:
       .settings-list {{ grid-template-columns: 1fr; }}
       .input-action-row {{ grid-template-columns: 1fr; }}
       .input-action-row .clear-button {{ width: 100%; }}
+      .setup-status-grid {{ grid-template-columns: 1fr; }}
       .provider-cards,
       .provider-cards.compact {{ grid-template-columns: 1fr; }}
     }}

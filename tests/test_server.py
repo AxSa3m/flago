@@ -176,7 +176,11 @@ def test_admin_login_binds_owner_and_allows_assistant_update(tmp_path) -> None:
 def test_admin_page_updates_all_config_form_and_lists_menus(tmp_path, monkeypatch) -> None:
     env_path = tmp_path / ".env"
     settings = _settings(tmp_path).model_copy(
-        update={"admin_config_path": env_path, "gemini_api_key": "gemini-key"}
+        update={
+            "admin_config_path": env_path,
+            "gemini_api_key": "gemini-key",
+            "comfyui_base_url": "http://127.0.0.1:8188",
+        }
     )
     store = SQLiteStore(settings.sqlite_path)
     asyncio.run(store.init())
@@ -216,6 +220,7 @@ def test_admin_page_updates_all_config_form_and_lists_menus(tmp_path, monkeypatc
             params={"code": "code-1", "state": query["state"][0]},
         )
         admin = client.get("/admin")
+        setup = client.get("/admin/setup")
         advanced = client.get("/admin/advanced")
         csrf = re.search(r'name="csrf" value="([^"]+)"', admin.text)
         assert csrf is not None
@@ -326,7 +331,15 @@ def test_admin_page_updates_all_config_form_and_lists_menus(tmp_path, monkeypatc
     assert "模型连通性测试通过" not in tested_admin.text
     assert calls and calls[0].provider == "gemini"
     admin_text = admin.text
+    setup_text = setup.text
     advanced_text = advanced.text
+    assert "首次配置向导" in admin_text
+    assert "首次配置向导" in setup_text
+    assert "保存向导配置" in setup_text
+    assert 'name="config_scope" value="setup"' in setup_text
+    assert "OAuth 回调地址" in setup_text
+    assert "配置进度" in setup_text
+    assert "fcgo.admin.open" in setup_text
     assert "测试完成" not in admin_text
     assert 'showTransientResult(slot, "pending", "测试中...")' in admin_text
     assert 'data-provider="gemini"' in admin_text
