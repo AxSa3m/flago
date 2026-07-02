@@ -1,12 +1,15 @@
 import asyncio
+import re
 from datetime import UTC, datetime, timedelta
 from typing import Any
+from urllib.parse import parse_qs, urlencode, urlparse
 
 import respx
 from fastapi.testclient import TestClient
 from httpx import ConnectError, Response
 
 from fcgo.config import Settings
+from fcgo.model_providers.types import ModelResponse
 from fcgo.models import ActionProposal, PendingActionStatus, WriteActionType
 from fcgo.server import create_app
 from fcgo.storage import SQLiteStore
@@ -105,6 +108,274 @@ def test_oauth_callback_returns_failure_page_for_missing_params(tmp_path) -> Non
     assert "授权失败" in response.text
     assert "缺少必要参数" in response.text
     assert "关闭页面" in response.text
+
+
+@respx.mock
+def test_admin_login_binds_owner_and_allows_assistant_update(tmp_path) -> None:
+    settings = _settings(tmp_path)
+    respx.post("https://open.feishu.test/open-apis/authen/v2/oauth/token").mock(
+        return_value=Response(
+            200,
+            json={
+                "code": 0,
+                "data": {
+                    "access_token": "u-access",
+                    "refresh_token": "u-refresh",
+                    "expires_in": 7200,
+                    "refresh_expires_in": 86400,
+                    "scope": " ".join(settings.oauth_scope_list),
+                },
+            },
+        )
+    )
+    respx.get("https://open.feishu.test/open-apis/authen/v1/user_info").mock(
+        return_value=Response(200, json={"code": 0, "data": {"open_id": "ou_admin"}})
+    )
+
+    with TestClient(create_app(settings)) as client:
+        home = client.get("/admin")
+        login = client.get("/admin/login", follow_redirects=False)
+        location = login.headers["location"]
+        query = parse_qs(urlparse(location).query)
+        callback = client.get(
+            "/admin/oauth/callback",
+            params={"code": "code-1", "state": query["state"][0]},
+        )
+        admin = client.get("/admin")
+        csrf = re.search(r'name="csrf" value="([^"]+)"', admin.text)
+        assert csrf is not None
+        update = client.post(
+            "/admin/assistant",
+            content=(
+                f"csrf={csrf.group(1)}&assistant_name=小飞&"
+                "assistant_profile=简洁直接"
+            ),
+            headers={"content-type": "application/x-www-form-urlencoded"},
+            follow_redirects=False,
+        )
+
+    store = SQLiteStore(settings.sqlite_path)
+    preference = asyncio.run(store.get_assistant_name_preference("ou_admin"))
+    profile = asyncio.run(store.get_assistant_profile_preference("ou_admin"))
+    owner = asyncio.run(store.get_app_setting("admin_owner_open_id"))
+    assert "使用飞书登录" in home.text
+    assert login.status_code == 303
+    assert query["redirect_uri"] == ["http://localhost:8000/admin/oauth/callback"]
+    assert callback.status_code == 200
+    assert "登录成功" in callback.text
+    assert "ou_admin" in admin.text
+    assert update.status_code == 303
+    assert owner == "ou_admin"
+    assert preference is not None
+    assert preference.assistant_name == "小飞"
+    assert profile is not None
+    assert profile.assistant_profile == "简洁直接"
+
+
+@respx.mock
+def test_admin_page_updates_all_config_form_and_lists_menus(tmp_path, monkeypatch) -> None:
+    env_path = tmp_path / ".env"
+    settings = _settings(tmp_path).model_copy(
+        update={"admin_config_path": env_path, "gemini_api_key": "gemini-key"}
+    )
+    store = SQLiteStore(settings.sqlite_path)
+    asyncio.run(store.init())
+    asyncio.run(
+        store.save_memory_item(
+            id="memory-1",
+            subject_id="ou_admin",
+            kind="长期记忆",
+            content="旧的长期记忆",
+            source="test",
+        )
+    )
+    respx.post("https://open.feishu.test/open-apis/authen/v2/oauth/token").mock(
+        return_value=Response(
+            200,
+            json={
+                "code": 0,
+                "data": {
+                    "access_token": "u-access",
+                    "refresh_token": "u-refresh",
+                    "expires_in": 7200,
+                    "refresh_expires_in": 86400,
+                    "scope": " ".join(settings.oauth_scope_list),
+                },
+            },
+        )
+    )
+    respx.get("https://open.feishu.test/open-apis/authen/v1/user_info").mock(
+        return_value=Response(200, json={"code": 0, "data": {"open_id": "ou_admin"}})
+    )
+
+    with TestClient(create_app(settings)) as client:
+        login = client.get("/admin/login", follow_redirects=False)
+        query = parse_qs(urlparse(login.headers["location"]).query)
+        client.get(
+            "/admin/oauth/callback",
+            params={"code": "code-1", "state": query["state"][0]},
+        )
+        admin = client.get("/admin")
+        advanced = client.get("/admin/advanced")
+        csrf = re.search(r'name="csrf" value="([^"]+)"', admin.text)
+        assert csrf is not None
+        calls: list[Any] = []
+
+        class FakeRouter:
+            async def generate_model(self, request):
+                calls.append(request)
+                return ModelResponse(text="OK", provider=request.provider, model=request.model)
+
+        monkeypatch.setattr("fcgo.server.admin.build_model_router", lambda settings: FakeRouter())
+        test_model = client.post(
+            "/admin/model/test",
+            content=urlencode(
+                {
+                    "csrf": csrf.group(1),
+                    "next": "/admin",
+                    "provider": "gemini",
+                }
+            ),
+            headers={"content-type": "application/x-www-form-urlencoded"},
+            follow_redirects=False,
+        )
+        test_model_json = client.post(
+            "/admin/model/test",
+            content=urlencode(
+                {
+                    "csrf": csrf.group(1),
+                    "next": "/admin",
+                    "provider": "gemini",
+                }
+            ),
+            headers={
+                "content-type": "application/x-www-form-urlencoded",
+                "accept": "application/json",
+            },
+        )
+        tested_admin = client.get(test_model.headers["location"])
+        payload = {
+            "csrf": csrf.group(1),
+            "assistant_name": "小智",
+            "assistant_profile": "简洁直接",
+            "memory_enabled": "false",
+            "memory_content": "更新后的长期记忆",
+            "personal_provider": "gemini",
+            "personal_model": "gemini-2.5-flash",
+            "env__FCGO_BASE_URL": "https://fcgo.example.test",
+            "env__FCGO_AGENT_MODE": "agent",
+            "env__FCGO_WRITEBACK_ENABLED": "true",
+            "env__FCGO_WRITEBACK_CONFIRMATION_MODE": "low_risk_direct",
+            "env__GEMINI_DISPLAY_NAME": "小智专用 Gemini",
+            "env__DEEPSEEK_API_KEY": "sk-deepseek-test",
+            "env__COMFYUI_DISPLAY_NAME": "本地 Comfy 工作流",
+            "env__COMFYUI_BASE_URL": "http://127.0.0.1:8188",
+        }
+        response = client.post(
+            "/admin/config",
+            content=urlencode(payload),
+            headers={"content-type": "application/x-www-form-urlencoded"},
+            follow_redirects=False,
+        )
+        saved_admin = client.get("/admin")
+        respx.get("http://127.0.0.1:8188").mock(return_value=Response(200))
+        test_media_json = client.post(
+            "/admin/media/test",
+            content=urlencode(
+                {
+                    "csrf": csrf.group(1),
+                    "next": "/admin",
+                    "provider": "comfyui",
+                }
+            ),
+            headers={
+                "content-type": "application/x-www-form-urlencoded",
+                "accept": "application/json",
+            },
+        )
+        mismatch = client.post(
+            "/admin/config",
+            content=urlencode(
+                {
+                    **payload,
+                    "personal_provider": "deepseek",
+                    "personal_model": "gemini-2.5-flash",
+                }
+            ),
+            headers={"content-type": "application/x-www-form-urlencoded"},
+            follow_redirects=False,
+        )
+
+    assert response.status_code == 303
+    assert mismatch.status_code == 400
+    assert test_model.status_code == 303
+    assert "model_test=ok" in test_model.headers["location"]
+    assert test_model_json.status_code == 200
+    assert test_model_json.json() == {
+        "ok": True,
+        "provider": "gemini",
+        "message": "连接正常",
+    }
+    assert test_media_json.status_code == 200
+    assert test_media_json.json() == {
+        "ok": True,
+        "provider": "comfyui",
+        "message": "接口可达",
+    }
+    assert "连接正常" in tested_admin.text
+    assert "模型连通性测试通过" not in tested_admin.text
+    assert calls and calls[0].provider == "gemini"
+    admin_text = admin.text
+    advanced_text = advanced.text
+    assert "测试完成" not in admin_text
+    assert 'showTransientResult(slot, "pending", "测试中...")' in admin_text
+    assert 'data-provider="gemini"' in admin_text
+    assert "button.dataset.provider || button.value" in admin_text
+    assert "new URLSearchParams()" in admin_text
+    assert '"Content-Type": "application/x-www-form-urlencoded;charset=UTF-8"' in admin_text
+    assert 'const fallback = ok ? "连接正常" : "连接失败";' in admin_text
+    assert "FCGO_BASE_URL" in admin_text
+    assert "DEEPSEEK_API_KEY" in admin_text
+    assert "旧的长期记忆" in admin_text
+    assert "fcgo.writeback.undo" in admin_text
+    assert "fcgo.admin.open" in admin_text
+    assert "添加或配置模型接口" in admin_text
+    assert "model-config-dialog" in admin_text
+    assert "open-model-dialog" in admin_text
+    assert "data-test-action=\"model\"" in admin_text
+    assert "添加或配置媒体/工作流接口" in admin_text
+    assert "media-config-dialog" in admin_text
+    assert "data-test-action=\"media\"" in saved_admin.text
+    assert 'value="assistant">保存</button>' in admin_text
+    assert "input-action-row" in advanced_text
+    assert "重置所有配置" in admin_text
+    assert "高级配置" in admin_text
+    assert "机器人菜单功能" in admin_text
+    assert "飞书资源搜索" in admin_text
+    assert "dev 用于本地开发" in admin_text
+    assert "所有写入都先确认" in admin_text
+    assert 'id="personal-provider"' in admin_text
+    assert 'id="personal-model"' in admin_text
+    assert "FCGO_ADMIN_ENABLED" not in admin_text
+    assert "cli_test" not in admin_text
+    assert str(env_path) not in admin_text
+    assert "全部高级参数" in advanced_text
+    assert "FCGO_SQLITE_PATH" in advanced_text
+    assert "clear-button" in advanced_text
+    saved_env = env_path.read_text(encoding="utf-8")
+    assert "FCGO_BASE_URL=https://fcgo.example.test" in saved_env
+    assert "FCGO_AGENT_MODE=agent" in saved_env
+    assert "FCGO_WRITEBACK_ENABLED=true" in saved_env
+    assert "FCGO_WRITEBACK_CONFIRMATION_MODE=low_risk_direct" in saved_env
+    assert "GEMINI_DISPLAY_NAME=" in saved_env
+    assert "DEEPSEEK_API_KEY=sk-deepseek-test" in saved_env
+    model_preference = asyncio.run(store.get_model_preference("user:ou_admin"))
+    assert model_preference is not None
+    assert model_preference.provider == "gemini"
+    assert model_preference.model == "gemini-2.5-flash"
+    assert asyncio.run(store.is_memory_enabled("ou_admin")) is False
+    memory_items = asyncio.run(store.list_memory_items("ou_admin"))
+    assert [item.content for item in memory_items] == ["更新后的长期记忆"]
 
 
 def test_card_callback_confirms_pending_action(tmp_path, monkeypatch) -> None:

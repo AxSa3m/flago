@@ -2291,6 +2291,29 @@ async def test_router_help_command_uses_assistant_name_without_group_leak(tmp_pa
 
 
 @pytest.mark.asyncio
+async def test_router_opens_admin_page_from_menu_and_command(tmp_path) -> None:
+    store = SQLiteStore(tmp_path / "fcgo.sqlite3")
+    await store.init()
+    client = RecordingFeishuClient()
+    assistant = SuccessfulAssistant()
+    router = FeishuMessageRouter(
+        assistant,
+        client,
+        store,
+        settings=Settings(env="test", base_url="https://fcgo.example.test"),
+    )
+
+    await router.handle_bot_menu(_menu_event("evt_admin_open", "fcgo.admin.open"))
+    await router.handle_message(_message("om_admin_open", "/配置"))
+
+    assert len(client.cards) == 2
+    assert "本地配置网页" in str(client.cards[0][1])
+    assert "https://fcgo.example.test/admin" in str(client.cards[0][1])
+    assert "打开配置后台" in str(client.cards[1][1])
+    assert assistant.requests == []
+
+
+@pytest.mark.asyncio
 async def test_router_ignores_duplicate_menu_event(tmp_path) -> None:
     store = SQLiteStore(tmp_path / "fcgo.sqlite3")
     await store.init()

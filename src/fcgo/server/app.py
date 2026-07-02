@@ -6,12 +6,14 @@ from typing import Any
 
 from fastapi import FastAPI, HTTPException, Query
 from fastapi.responses import HTMLResponse
+from starlette.middleware.sessions import SessionMiddleware
 
 from fcgo.config import Settings, get_settings
 from fcgo.feishu.card_callback import is_url_verification, parse_card_callback
 from fcgo.feishu.client import FeishuClient
 from fcgo.feishu.oauth import FeishuOAuthService
 from fcgo.feishu.openapi import FeishuOpenAPI
+from fcgo.server.admin import mount_admin_routes
 from fcgo.storage import SQLiteStore
 from fcgo.writeback.executor import FeishuWriteExecutor
 from fcgo.writeback.service import WritebackService
@@ -31,6 +33,14 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app = FastAPI(title=settings.assistant_default_name, version="0.1.0", lifespan=lifespan)
     oauth = FeishuOAuthService(settings, store)
     openapi = FeishuOpenAPI(settings, store)
+    if settings.admin_enabled:
+        app.add_middleware(
+            SessionMiddleware,
+            secret_key=_admin_session_secret(settings),
+            same_site="lax",
+            https_only=settings.env == "prod",
+        )
+        mount_admin_routes(app, settings=settings, store=store, oauth=oauth)
     feishu_client = _maybe_build_feishu_client(settings)
     writeback = (
         WritebackService(store, FeishuWriteExecutor(openapi, feishu_client), settings)
@@ -158,6 +168,14 @@ def _maybe_build_feishu_client(settings: Settings) -> FeishuClient | None:
     if not settings.feishu_app_id or not settings.feishu_app_secret.get_secret_value():
         return None
     return FeishuClient(settings)
+
+
+def _admin_session_secret(settings: Settings) -> str:
+    return (
+        settings.admin_session_secret.get_secret_value()
+        or settings.feishu_app_secret.get_secret_value()
+        or "fcgo-local-admin-session"
+    )
 
 
 def _oauth_result_page(

@@ -226,6 +226,7 @@ FCGO 会把最近聊天做短期 TTL 缓存，并在每次请求前把近期窗�
 
 ```text
 fcgo.assistant.name.view 查看助手信息
+fcgo.assistant.info.view 查看助手信息（兼容 key）
 fcgo.model.view          查看模型状态
 fcgo.model.default       恢复个人默认模型
 fcgo.model.use.gemini    使用 Gemini
@@ -238,6 +239,8 @@ fcgo.model.use.claude    使用 Claude
 fcgo.auth.start          发起飞书授权
 fcgo.auth.status         查看授权状态
 fcgo.context.view        查看上下文策略
+fcgo.context.enable      兼容入口：上下文默认开启
+fcgo.context.disable     兼容入口：上下文默认开启
 fcgo.writeback.status    查看写入策略
 fcgo.writeback.auto.enable   开启个人自动写入
 fcgo.writeback.auto.disable  关闭个人自动写入
@@ -249,6 +252,7 @@ fcgo.memory.delete       清空长期记忆，需要确认
 fcgo.memory.disable      关闭长期记忆
 fcgo.memory.enable       开启长期记忆
 fcgo.help                查看帮助
+fcgo.admin.open          打开本地配置网页
 ```
 
 建议菜单结构：
@@ -287,9 +291,11 @@ fcgo.help                查看帮助
 
 帮助
 - 使用说明
+- 本地配置网页
 ```
 
 菜单点击会设置个人默认模型；文本命令不会修改模型偏好。
+“本地配置网页”会打开 `/admin`，首次打开需要使用飞书登录；首次成功登录的飞书用户会绑定为本机后台管理员。
 
 ## 写入功能
 

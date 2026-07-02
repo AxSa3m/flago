@@ -24,6 +24,12 @@ class Settings(BaseSettings):
     base_url: str = Field(default="http://127.0.0.1:8000", alias="FCGO_BASE_URL")
     sqlite_path: Path = Field(default=Path("data/fcgo.sqlite3"), alias="FCGO_SQLITE_PATH")
     start_long_connection: bool = Field(default=False, alias="FCGO_START_LONG_CONNECTION")
+    admin_enabled: bool = Field(default=True, alias="FCGO_ADMIN_ENABLED")
+    admin_config_path: Path = Field(default=Path(".env"), alias="FCGO_ADMIN_CONFIG_PATH")
+    admin_session_secret: SecretStr = Field(
+        default=SecretStr(""),
+        alias="FCGO_ADMIN_SESSION_SECRET",
+    )
     assistant_default_name: str = Field(default="小智", alias="FCGO_ASSISTANT_DEFAULT_NAME")
     assistant_default_profile: str = Field(
         default="简洁、可靠、直接，优先给出可执行的回答。",
@@ -88,6 +94,7 @@ class Settings(BaseSettings):
     )
 
     gemini_api_key: SecretStr = Field(default=SecretStr(""), alias="GEMINI_API_KEY")
+    gemini_display_name: str = Field(default="Gemini", alias="GEMINI_DISPLAY_NAME")
     gemini_model: str = Field(default="gemini-2.5-flash", alias="GEMINI_MODEL")
     gemini_timeout_seconds: float = Field(default=60.0, alias="GEMINI_TIMEOUT_SECONDS")
     gemini_max_output_tokens: int | None = Field(
@@ -112,10 +119,12 @@ class Settings(BaseSettings):
     )
 
     openai_api_key: SecretStr = Field(default=SecretStr(""), alias="OPENAI_API_KEY")
+    openai_display_name: str = Field(default="OpenAI", alias="OPENAI_DISPLAY_NAME")
     openai_base_url: str = Field(default="https://api.openai.com/v1", alias="OPENAI_BASE_URL")
     openai_model: str = Field(default="", alias="OPENAI_MODEL")
 
     deepseek_api_key: SecretStr = Field(default=SecretStr(""), alias="DEEPSEEK_API_KEY")
+    deepseek_display_name: str = Field(default="DeepSeek", alias="DEEPSEEK_DISPLAY_NAME")
     deepseek_base_url: str = Field(
         default="https://api.deepseek.com",
         alias="DEEPSEEK_BASE_URL",
@@ -123,18 +132,22 @@ class Settings(BaseSettings):
     deepseek_model: str = Field(default="deepseek-chat", alias="DEEPSEEK_MODEL")
 
     qwen_api_key: SecretStr = Field(default=SecretStr(""), alias="QWEN_API_KEY")
+    qwen_display_name: str = Field(default="Qwen", alias="QWEN_DISPLAY_NAME")
     qwen_base_url: str = Field(default="", alias="QWEN_BASE_URL")
     qwen_model: str = Field(default="", alias="QWEN_MODEL")
 
     doubao_api_key: SecretStr = Field(default=SecretStr(""), alias="DOUBAO_API_KEY")
+    doubao_display_name: str = Field(default="Doubao", alias="DOUBAO_DISPLAY_NAME")
     doubao_base_url: str = Field(default="", alias="DOUBAO_BASE_URL")
     doubao_model: str = Field(default="", alias="DOUBAO_MODEL")
 
     minimax_api_key: SecretStr = Field(default=SecretStr(""), alias="MINIMAX_API_KEY")
+    minimax_display_name: str = Field(default="Minimax", alias="MINIMAX_DISPLAY_NAME")
     minimax_base_url: str = Field(default="", alias="MINIMAX_BASE_URL")
     minimax_model: str = Field(default="", alias="MINIMAX_MODEL")
 
     anthropic_api_key: SecretStr = Field(default=SecretStr(""), alias="ANTHROPIC_API_KEY")
+    anthropic_display_name: str = Field(default="Claude", alias="ANTHROPIC_DISPLAY_NAME")
     anthropic_base_url: str = Field(
         default="https://api.anthropic.com",
         alias="ANTHROPIC_BASE_URL",
@@ -149,16 +162,20 @@ class Settings(BaseSettings):
     anthropic_http_proxy: str | None = Field(default=None, alias="ANTHROPIC_HTTP_PROXY")
 
     seedance_api_key: SecretStr = Field(default=SecretStr(""), alias="SEEDANCE_API_KEY")
+    seedance_display_name: str = Field(default="Seedance", alias="SEEDANCE_DISPLAY_NAME")
     seedance_base_url: str = Field(default="", alias="SEEDANCE_BASE_URL")
     seedance_model: str = Field(default="", alias="SEEDANCE_MODEL")
 
+    comfyui_display_name: str = Field(default="ComfyUI", alias="COMFYUI_DISPLAY_NAME")
     comfyui_base_url: str = Field(default="", alias="COMFYUI_BASE_URL")
     comfyui_api_key: SecretStr = Field(default=SecretStr(""), alias="COMFYUI_API_KEY")
 
     coze_api_key: SecretStr = Field(default=SecretStr(""), alias="COZE_API_KEY")
+    coze_display_name: str = Field(default="Coze", alias="COZE_DISPLAY_NAME")
     coze_base_url: str = Field(default="", alias="COZE_BASE_URL")
 
     dify_api_key: SecretStr = Field(default=SecretStr(""), alias="DIFY_API_KEY")
+    dify_display_name: str = Field(default="Dify", alias="DIFY_DISPLAY_NAME")
     dify_base_url: str = Field(default="", alias="DIFY_BASE_URL")
 
     max_resource_chars: int = Field(default=120_000, alias="FCGO_MAX_RESOURCE_CHARS")

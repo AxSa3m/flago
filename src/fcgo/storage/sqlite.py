@@ -47,6 +47,12 @@ class SQLiteStore:
                     value TEXT NOT NULL,
                     created_at TEXT NOT NULL
                 );
+                CREATE TABLE IF NOT EXISTS app_settings (
+                    key TEXT PRIMARY KEY,
+                    value_json TEXT NOT NULL,
+                    updated_by TEXT NOT NULL,
+                    updated_at TEXT NOT NULL
+                );
                 CREATE TABLE IF NOT EXISTS pending_actions (
                     id TEXT PRIMARY KEY,
                     actor_id TEXT NOT NULL,
@@ -228,6 +234,33 @@ class SQLiteStore:
             return True
         except aiosqlite.IntegrityError:
             return False
+
+    async def get_app_setting(self, key: str) -> Any | None:
+        async with aiosqlite.connect(self.path) as db:
+            rows = await db.execute_fetchall(
+                "SELECT value_json FROM app_settings WHERE key = ?",
+                (key,),
+            )
+        rows_list = list(rows)
+        if not rows_list:
+            return None
+        return json.loads(rows_list[0][0])
+
+    async def set_app_setting(self, key: str, value: Any, *, updated_by: str) -> None:
+        now = _now_iso()
+        async with aiosqlite.connect(self.path) as db:
+            await db.execute(
+                """
+                INSERT INTO app_settings(key, value_json, updated_by, updated_at)
+                VALUES (?, ?, ?, ?)
+                ON CONFLICT(key) DO UPDATE SET
+                    value_json = excluded.value_json,
+                    updated_by = excluded.updated_by,
+                    updated_at = excluded.updated_at
+                """,
+                (key, _json_dumps(value), updated_by, now),
+            )
+            await db.commit()
 
     async def save_pending_action(self, proposal: ActionProposal) -> None:
         async with aiosqlite.connect(self.path) as db:

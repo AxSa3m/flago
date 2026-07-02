@@ -108,6 +108,8 @@ class FeishuMessageRouter:
                 "请缩短问题，或改为发送文档/表格链接让我按需读取。",
             )
             return
+        if await self._maybe_handle_admin_command(message):
+            return
         if await self._maybe_handle_help_command(message):
             return
         if await self._maybe_handle_auth_command(message):
@@ -294,8 +296,24 @@ class FeishuMessageRouter:
         if event.event_key.strip().lower() == "fcgo.writeback.undo":
             await self._send_menu_undo_card(event, receive_id, receive_id_type)
             return
+        if event.event_key.strip().lower() == "fcgo.admin.open":
+            await self._send_menu_admin_card(event, receive_id, receive_id_type)
+            return
         text = await self._handle_menu_action(event)
         await self._send_menu_text(receive_id, receive_id_type, text)
+
+    async def _maybe_handle_admin_command(self, message: FeishuMessage) -> bool:
+        command = _parse_prefixed_command(message.text, "/配置", "配置", "/后台", "后台")
+        if command is None:
+            return False
+        await self.feishu_client.send_interactive_card(
+            message.chat_id,
+            _admin_open_card(
+                _admin_url(self.settings),
+                assistant_name=await self._assistant_name_for_message(message),
+            ),
+        )
+        return True
 
     async def _maybe_handle_help_command(self, message: FeishuMessage) -> bool:
         command = _parse_prefixed_command(message.text, "/帮助", "帮助", "/help", "help")
@@ -1094,6 +1112,21 @@ class FeishuMessageRouter:
             return
         await self.feishu_client.send_text_to_user_id(receive_id, text)
 
+    async def _send_menu_admin_card(
+        self,
+        event: FeishuBotMenuEvent,
+        receive_id: str,
+        receive_id_type: str,
+    ) -> None:
+        card = _admin_open_card(
+            _admin_url(self.settings),
+            assistant_name=await self._assistant_name(_menu_actor_id(event)),
+        )
+        if receive_id_type == "open_id":
+            await self.feishu_client.send_interactive_card_to_open_id(receive_id, card)
+            return
+        await self.feishu_client.send_interactive_card_to_user_id(receive_id, card)
+
     async def _send_menu_undo_card(
         self,
         event: FeishuBotMenuEvent,
@@ -1631,6 +1664,40 @@ def _oauth_status_card(
         },
         "elements": elements,
     }
+
+
+def _admin_open_card(admin_url: str, *, assistant_name: str = "小智") -> dict[str, object]:
+    return {
+        "config": {"wide_screen_mode": True},
+        "header": {
+            "template": "blue",
+            "title": {"tag": "plain_text", "content": "本地配置网页"},
+        },
+        "elements": [
+            {
+                "tag": "markdown",
+                "content": (
+                    f"打开 {assistant_name} 的本地配置网页。"
+                    "首次打开需要使用飞书登录；首次登录的飞书用户会绑定为本机后台管理员。"
+                ),
+            },
+            {
+                "tag": "action",
+                "actions": [
+                    {
+                        "tag": "button",
+                        "text": {"tag": "plain_text", "content": "打开配置后台"},
+                        "type": "primary",
+                        "url": admin_url,
+                    }
+                ],
+            },
+        ],
+    }
+
+
+def _admin_url(settings: Settings) -> str:
+    return f"{settings.base_url.rstrip('/')}/admin"
 
 
 def _is_undo_command(text: str) -> bool:
@@ -2171,8 +2238,9 @@ def _menu_help_text(assistant_name: str = "小智") -> str:
         "- 授权：获取飞书 OAuth 授权链接，或查看授权状态。\n"
         "- 写入：查看写入策略、开启/关闭自动写入、查看最近写入或撤回。\n"
         "- 记忆：查看、删除、关闭或开启你的长期记忆。\n"
-        "- 帮助：查看当前菜单说明。\n\n"
+        "- 帮助：查看当前菜单说明，或打开本地配置网页。\n\n"
         "未放入当前菜单但仍可直接发送：\n"
+        "- /配置 或 /后台：打开本地配置网页\n"
         "- /助手 名称 小飞：设置你的个人助手名称\n"
         "- /助手 简介 简洁、直接，擅长整理飞书文档：设置助手简介\n"
         "- /助手 恢复默认：恢复默认助手名称和简介\n"

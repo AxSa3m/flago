@@ -63,14 +63,14 @@ class FeishuOAuthService:
         await self.store.audit(AuditEventType.OAUTH_AUTHORIZED, actor_id=subject_id)
         return {**token, "_subject_id": subject_id}
 
-    async def exchange_code(self, code: str) -> dict[str, Any]:
+    async def exchange_code(self, code: str, *, redirect_uri: str | None = None) -> dict[str, Any]:
         url = f"{self.settings.feishu_base_url.rstrip('/')}/open-apis/authen/v2/oauth/token"
         payload = {
             "grant_type": "authorization_code",
             "code": code,
             "client_id": self.settings.feishu_app_id,
             "client_secret": self.settings.feishu_app_secret.get_secret_value(),
-            "redirect_uri": self.settings.oauth_redirect_uri,
+            "redirect_uri": redirect_uri or self.settings.oauth_redirect_uri,
         }
         async with httpx.AsyncClient(
             timeout=20,

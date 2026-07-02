@@ -231,6 +231,7 @@
 
 帮助
 - 使用说明        fcgo.help
+- 本地配置网页    fcgo.admin.open
 ```
 
 菜单事件需要订阅 `application.bot.menu_v6`，并启用长连接事件接收。
