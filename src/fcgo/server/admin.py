@@ -337,7 +337,7 @@ def mount_admin_routes(
     oauth: FeishuOAuthService,
 ) -> None:
     @app.get("/admin")
-    async def admin_home(request: Request) -> HTMLResponse:
+    async def admin_home(request: Request) -> Response:
         if not settings.admin_enabled:
             return HTMLResponse(
                 _message_page("本地配置后台未启用", "请检查 FCGO_ADMIN_ENABLED。"),
@@ -345,6 +345,8 @@ def mount_admin_routes(
             )
         user_open_id = _session_open_id(request)
         if not user_open_id:
+            if await _bootstrap_setup_allowed(request, store):
+                return RedirectResponse("/admin/setup", status_code=303)
             return HTMLResponse(_login_page(settings))
         owner_open_id = await _owner_open_id(store)
         if owner_open_id and owner_open_id != user_open_id:
@@ -365,6 +367,15 @@ def mount_admin_routes(
             )
         user_open_id = _session_open_id(request)
         if not user_open_id:
+            if await _bootstrap_setup_allowed(request, store):
+                return HTMLResponse(
+                    await _setup_admin_page(
+                        request,
+                        _admin_view_settings(settings),
+                        "本机首次配置",
+                        bootstrap=True,
+                    )
+                )
             return HTMLResponse(_login_page(settings))
         owner_open_id = await _owner_open_id(store)
         if owner_open_id and owner_open_id != user_open_id:
@@ -373,7 +384,12 @@ def mount_admin_routes(
                 403,
             )
         return HTMLResponse(
-            await _setup_admin_page(request, _admin_view_settings(settings), user_open_id)
+            await _setup_admin_page(
+                request,
+                _admin_view_settings(settings),
+                user_open_id,
+                bootstrap=False,
+            )
         )
 
     @app.get("/admin/advanced")
@@ -397,9 +413,13 @@ def mount_admin_routes(
         )
 
     @app.get("/admin/login")
-    async def admin_login() -> RedirectResponse:
+    async def admin_login(request: Request) -> RedirectResponse:
         state = token_urlsafe(32)
-        authorization_url = _admin_authorization_url(settings, state)
+        authorization_url = _admin_authorization_url(
+            settings,
+            state,
+            redirect_uri=_admin_redirect_uri_from_request(request),
+        )
         await store.save_oauth_state(
             state=state,
             subject_id=ADMIN_LOGIN_SUBJECT,
@@ -419,7 +439,10 @@ def mount_admin_routes(
         if subject != ADMIN_LOGIN_SUBJECT:
             return HTMLResponse(_message_page("登录失败", "登录链接已失效，请重新打开后台。"), 400)
         try:
-            token = await oauth.exchange_code(code, redirect_uri=_admin_redirect_uri(settings))
+            token = await oauth.exchange_code(
+                code,
+                redirect_uri=_admin_redirect_uri_from_request(request),
+            )
             user_info = await _fetch_feishu_user_info(settings, token)
         except Exception as exc:  # noqa: BLE001 - render a local admin login failure
             logger.exception("admin_oauth_login_failed")
@@ -503,11 +526,14 @@ def mount_admin_routes(
 
     @app.post("/admin/config")
     async def admin_update_config(request: Request) -> RedirectResponse:
-        user_open_id = await _require_admin_user(request, store)
         form = await _form_params(request)
         _require_csrf(request, form)
         config_scope = _clean_identifier(form.get("config_scope", "all")) or "all"
         _validate_config_scope(config_scope)
+        if config_scope == "setup" and await _bootstrap_setup_allowed(request, store):
+            user_open_id = "bootstrap-local"
+        else:
+            user_open_id = await _require_admin_user(request, store)
         view_settings = _admin_view_settings(settings)
         if config_scope in {"all", "assistant"}:
             name = _clean_short_text(form.get("assistant_name", ""), max_chars=20)
@@ -571,7 +597,8 @@ def mount_admin_routes(
 
     @app.post("/admin/model/test")
     async def admin_test_model(request: Request) -> Response:
-        await _require_admin_user(request, store)
+        if not await _bootstrap_setup_allowed(request, store):
+            await _require_admin_user(request, store)
         form = await _form_params(request)
         _require_csrf(request, form)
         provider = _clean_identifier(form.get("provider", ""))
@@ -629,7 +656,8 @@ def mount_admin_routes(
 
     @app.post("/admin/media/test")
     async def admin_test_media(request: Request) -> Response:
-        await _require_admin_user(request, store)
+        if not await _bootstrap_setup_allowed(request, store):
+            await _require_admin_user(request, store)
         form = await _form_params(request)
         _require_csrf(request, form)
         provider = _clean_identifier(form.get("provider", ""))
@@ -668,10 +696,10 @@ def oauth_login_expires_at(settings: Settings) -> datetime:
     return datetime.now(UTC) + timedelta(seconds=settings.oauth_state_ttl_seconds)
 
 
-def _admin_authorization_url(settings: Settings, state: str) -> str:
+def _admin_authorization_url(settings: Settings, state: str, *, redirect_uri: str) -> str:
     params = {
         "app_id": settings.feishu_app_id,
-        "redirect_uri": _admin_redirect_uri(settings),
+        "redirect_uri": redirect_uri,
         "state": state,
     }
     if settings.oauth_scope_list:
@@ -684,9 +712,24 @@ def _admin_redirect_uri(settings: Settings) -> str:
     return f"{settings.base_url.rstrip('/')}/admin/oauth/callback"
 
 
+def _admin_redirect_uri_from_request(request: Request) -> str:
+    return str(request.url_for("admin_oauth_callback"))
+
+
 async def _owner_open_id(store: SQLiteStore) -> str | None:
     value = await store.get_app_setting(ADMIN_OWNER_SETTING)
     return value if isinstance(value, str) and value.strip() else None
+
+
+async def _bootstrap_setup_allowed(request: Request, store: SQLiteStore) -> bool:
+    return await _owner_open_id(store) is None and _is_local_admin_request(request)
+
+
+def _is_local_admin_request(request: Request) -> bool:
+    host = (request.url.hostname or "").lower()
+    if not host and request.client is not None:
+        host = request.client.host.lower()
+    return host in {"127.0.0.1", "localhost", "::1"}
 
 
 async def _require_admin_user(request: Request, store: SQLiteStore) -> str:
@@ -1333,12 +1376,30 @@ async def _setup_admin_page(
     request: Request,
     settings: Settings,
     user_open_id: str,
+    *,
+    bootstrap: bool,
 ) -> str:
     csrf = str(request.session.get("admin_csrf") or "")
     if not csrf:
         csrf = token_urlsafe(24)
         request.session["admin_csrf"] = csrf
     provider_options = _model_provider_options(settings)
+    setup_mode_hint = (
+        "当前处于首次安装配置模式，仅允许本机访问。完成飞书应用配置后，请使用飞书登录绑定后台管理员。"
+        if bootstrap
+        else "当前已通过飞书登录。"
+    )
+    top_actions = (
+        """
+            <a class="ghost" href="/admin/login">飞书登录绑定管理员</a>
+        """
+        if bootstrap
+        else """
+            <a class="ghost" href="/admin">返回后台</a>
+            <a class="ghost" href="/admin/advanced">高级配置</a>
+            <a class="ghost" href="/admin/logout">退出</a>
+        """
+    )
     return _layout(
         "首次配置向导",
         f"""
@@ -1348,9 +1409,7 @@ async def _setup_admin_page(
             <p>当前登录：<code>{escape(user_open_id)}</code></p>
           </div>
           <div class="top-actions">
-            <a class="ghost" href="/admin">返回后台</a>
-            <a class="ghost" href="/admin/advanced">高级配置</a>
-            <a class="ghost" href="/admin/logout">退出</a>
+            {top_actions}
           </div>
         </header>
 
@@ -1360,7 +1419,7 @@ async def _setup_admin_page(
           {_saved_banner(request)}
 
           <section class="toolbar">
-            <p>按顺序完成这些配置后，小白用户就可以启动机器人并进行基础测试。</p>
+            <p>{escape(setup_mode_hint)} 按顺序完成这些配置后，就可以启动机器人并进行基础测试。</p>
             <div class="toolbar-actions">
               <button type="submit" name="config_scope" value="setup">保存向导配置</button>
               <button type="reset" class="secondary">重置</button>
@@ -1384,9 +1443,18 @@ async def _setup_admin_page(
                 {_setting_fields_for(settings, ("FCGO_ENV", "FCGO_BASE_URL", "FCGO_AGENT_MODE"))}
               </div>
               <div class="setup-copy">
-                <span>OAuth 回调地址</span>
+                <span>机器人授权回调地址</span>
+                <code>{escape(settings.oauth_redirect_uri)}</code>
+              </div>
+              <div class="setup-copy">
+                <span>后台登录回调地址</span>
                 <code>{escape(_admin_redirect_uri(settings))}</code>
               </div>
+              <p class="hint">
+                以上两个地址都需要添加到飞书开放平台的“重定向 URL”。如果你用
+                127.0.0.1 打开后台，就在飞书后台添加 127.0.0.1 版本；如果你用
+                localhost 打开后台，也要添加 localhost 版本。
+              </p>
             </article>
 
             <article>

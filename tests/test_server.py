@@ -160,7 +160,7 @@ def test_admin_login_binds_owner_and_allows_assistant_update(tmp_path) -> None:
     owner = asyncio.run(store.get_app_setting("admin_owner_open_id"))
     assert "使用飞书登录" in home.text
     assert login.status_code == 303
-    assert query["redirect_uri"] == ["http://localhost:8000/admin/oauth/callback"]
+    assert query["redirect_uri"] == ["http://testserver/admin/oauth/callback"]
     assert callback.status_code == 200
     assert "登录成功" in callback.text
     assert "ou_admin" in admin.text
@@ -337,7 +337,10 @@ def test_admin_page_updates_all_config_form_and_lists_menus(tmp_path, monkeypatc
     assert "首次配置向导" in setup_text
     assert "保存向导配置" in setup_text
     assert 'name="config_scope" value="setup"' in setup_text
-    assert "OAuth 回调地址" in setup_text
+    assert "机器人授权回调地址" in setup_text
+    assert "后台登录回调地址" in setup_text
+    assert "http://localhost:8000/oauth/feishu/callback" in setup_text
+    assert "http://localhost:8000/admin/oauth/callback" in setup_text
     assert "配置进度" in setup_text
     assert "fcgo.admin.open" in setup_text
     assert "测试完成" not in admin_text
@@ -389,6 +392,46 @@ def test_admin_page_updates_all_config_form_and_lists_menus(tmp_path, monkeypatc
     assert asyncio.run(store.is_memory_enabled("ou_admin")) is False
     memory_items = asyncio.run(store.list_memory_items("ou_admin"))
     assert [item.content for item in memory_items] == ["更新后的长期记忆"]
+
+
+def test_local_setup_bootstrap_allows_first_run_without_feishu_login(tmp_path) -> None:
+    env_path = tmp_path / ".env"
+    settings = _settings(tmp_path).model_copy(update={"admin_config_path": env_path})
+
+    with TestClient(create_app(settings), base_url="http://127.0.0.1:8000") as client:
+        admin = client.get("/admin", follow_redirects=False)
+        setup = client.get("/admin/setup")
+        csrf = re.search(r'name="csrf" value="([^"]+)"', setup.text)
+        assert csrf is not None
+        update = client.post(
+            "/admin/config",
+            content=urlencode(
+                {
+                    "csrf": csrf.group(1),
+                    "next": "/admin/setup",
+                    "config_scope": "setup",
+                    "env__FCGO_BASE_URL": "http://127.0.0.1:8000",
+                    "env__FCGO_ENV": "dev",
+                    "env__FCGO_AGENT_MODE": "agent",
+                }
+            ),
+            headers={"content-type": "application/x-www-form-urlencoded"},
+            follow_redirects=False,
+        )
+
+    store = SQLiteStore(settings.sqlite_path)
+    owner = asyncio.run(store.get_app_setting("admin_owner_open_id"))
+    assert admin.status_code == 303
+    assert admin.headers["location"] == "/admin/setup"
+    assert setup.status_code == 200
+    assert "本机首次配置" in setup.text
+    assert "飞书登录绑定管理员" in setup.text
+    assert update.status_code == 303
+    assert "saved=config" in update.headers["location"]
+    assert owner is None
+    assert "FCGO_BASE_URL=http://127.0.0.1:8000" in env_path.read_text(
+        encoding="utf-8"
+    )
 
 
 def test_card_callback_confirms_pending_action(tmp_path, monkeypatch) -> None:

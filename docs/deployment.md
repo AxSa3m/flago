@@ -167,21 +167,23 @@ DIFY_BASE_URL=
 - 开通聊天历史读取权限 `im:message:readonly`，用于当前会话近期上下文。
 - 应用权限管理中开通 OAuth 读取权限，例如 `docx:document:readonly`、`docs:document.media:download`、`wiki:node:read`、`sheets:spreadsheet:readonly`、`bitable:app:readonly`、`base:table:read`、`base:record:read`、`base:field:read`、`base:view:read`。
 - 如需自动刷新用户 access token，需要在飞书开发者后台开通 `offline_access`，然后设置 `FCGO_OAUTH_ENABLE_OFFLINE_ACCESS=true`。未开通时不要开启，否则飞书授权页会报 `20027` 应用权限不足。
-- OAuth 回调地址：`{FCGO_BASE_URL}/oauth/feishu/callback`
+- 机器人授权回调地址：`{FCGO_BASE_URL}/oauth/feishu/callback`
+- 本地配置后台登录回调地址：`{FCGO_BASE_URL}/admin/oauth/callback`
 
 写回和记忆确认卡片均通过长连接接收卡片操作。启用写回时设置
 `FCGO_WRITEBACK_ENABLED=true`；关闭时不会创建或执行写回。
 
-### 暴露 OAuth 回调
+### 配置 OAuth 回调
 
-飞书 OAuth 浏览器回调不能访问 `127.0.0.1` 或仅局域网可见的地址。即使机器人消息使用长连接，
-OAuth 仍需要一个浏览器能够访问的公网 HTTPS 地址。
+飞书 OAuth 回调地址必须和程序生成的 `redirect_uri` 完全一致，包括协议、域名、端口和路径。
+本地单机测试时可以使用 `http://127.0.0.1:8000`，但你必须始终用同一个地址打开后台，
+并在飞书开发者后台登记同一个地址。
 
 部署时需要使用以下任一方式：
 
-- 将 FCGO 部署到带 HTTPS 域名的服务器。
-- 使用反向代理把公网 HTTPS 域名转发到 `127.0.0.1:8000`。
-- 本地测试时使用可信的 HTTPS 隧道服务转发到 `127.0.0.1:8000`。
+- 本地测试：`FCGO_BASE_URL=http://127.0.0.1:8000`。
+- 服务器部署：将 FCGO 部署到带 HTTPS 域名的服务器。
+- 隧道或反向代理：使用公网 HTTPS 域名转发到 `127.0.0.1:8000`。
 
 例如外部地址是 `https://fcgo.example.com`：
 
@@ -193,6 +195,7 @@ FCGO_BASE_URL=https://fcgo.example.com
 
 ```text
 https://fcgo.example.com/oauth/feishu/callback
+https://fcgo.example.com/admin/oauth/callback
 ```
 
 更换域名、端口或协议后，需要同时更新 `.env` 和飞书开发者后台配置，并重启服务。
@@ -406,6 +409,21 @@ doctor 会检查：
 ```powershell
 uv run fcgo serve
 ```
+
+Windows 本地开发推荐使用稳定重启脚本，它会停止旧服务、启动新服务并自动做健康检查：
+
+```powershell
+.\.venv\Scripts\python.exe .\scripts\restart_server.py
+```
+
+首次安装时，启动服务后可直接打开本机向导，不需要先通过飞书机器人或飞书登录：
+
+```text
+http://127.0.0.1:8000/admin/setup
+```
+
+未绑定后台管理员前，该向导只允许本机访问。完成飞书应用和模型配置后，再在向导里点击
+“飞书登录绑定管理员”，绑定成功后后台只允许该飞书用户继续管理配置。
 
 启动 HTTP 服务并同时启动飞书长连接 worker：
 
