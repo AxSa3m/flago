@@ -13,4 +13,5 @@ dist/
 build/
 *.egg-info/
 server*.log
+service-control*.log
 .tmp/

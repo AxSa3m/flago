@@ -756,7 +756,22 @@ def mount_admin_routes(
     async def admin_service_status(request: Request) -> JSONResponse:
         if not await _bootstrap_setup_allowed(request, store):
             await _require_admin_user(request, store)
-        return JSONResponse(service_status())
+        try:
+            return JSONResponse(service_status())
+        except Exception as exc:  # noqa: BLE001 - keep admin status endpoint JSON-only
+            logger.warning("admin_service_status_failed error=%s", exc)
+            return JSONResponse(
+                {
+                    "state": "unknown",
+                    "running": False,
+                    "health": "unavailable",
+                    "port": settings.port,
+                    "pids": [],
+                    "message": "状态读取失败，请稍后刷新或查看服务日志",
+                    "stdout": "server.out.log",
+                    "stderr": "server.err.log",
+                }
+            )
 
     @app.post("/admin/service")
     async def admin_control_service(request: Request) -> JSONResponse:
@@ -2696,6 +2711,8 @@ def _service_control_script() -> str:
           const state = payload.state || (payload.ok ? "running" : "unknown");
           const labels = {
             running: "运行中",
+            starting: "启动中",
+            restarting: "重启中",
             stopped: "未运行",
             blocked: "端口占用",
             unhealthy: "异常",
@@ -2717,11 +2734,16 @@ def _service_control_script() -> str:
           const response = await fetch("/admin/service/status", {
             headers: { Accept: "application/json" },
           });
-          renderServiceStatus(await response.json());
+          if (!response.ok) throw new Error("status_request_failed");
+          const payload = await response.json();
+          renderServiceStatus(payload);
         }
         serviceControl.querySelector("[data-service-refresh]")?.addEventListener("click", () => {
           refreshServiceStatus().catch((error) => {
-            renderServiceStatus({ state: "unknown", message: `状态读取失败：${error.name}` });
+            renderServiceStatus({
+              state: "restarting",
+              message: "服务可能正在重启，暂时无法读取状态；请稍后再刷新。",
+            });
           });
         });
         serviceControl.querySelectorAll("[data-service-action]").forEach((button) => {
@@ -2743,12 +2765,24 @@ def _service_control_script() -> str:
               });
               const payload = await response.json();
               renderServiceStatus({
-                state: payload.ok ? "running" : "unknown",
+                state: payload.ok && action === "restart" ? "restarting" : "unknown",
                 message: payload.message || (payload.ok ? "已触发服务操作" : "服务操作失败"),
               });
-              if (action !== "stop") window.setTimeout(refreshServiceStatus, 4500);
+              if (action !== "stop") {
+                window.setTimeout(() => {
+                  refreshServiceStatus().catch(() => {
+                    renderServiceStatus({
+                      state: "restarting",
+                      message: "服务仍在重启中，请稍后刷新页面。",
+                    });
+                  });
+                }, 6500);
+              }
             } catch (error) {
-              renderServiceStatus({ state: "unknown", message: `服务操作失败：${error.name}` });
+              renderServiceStatus({
+                state: "unknown",
+                message: "服务控制请求失败，请刷新页面后重试。",
+              });
             } finally {
               window.setTimeout(() => { button.disabled = false; }, 5000);
             }

@@ -42,8 +42,8 @@ def service_status(*, workspace: Path | None = None, port: int | None = None) ->
         state = "running"
         message = "服务运行正常"
     elif pids:
-        state = "unhealthy"
-        message = "检测到服务进程，但健康检查失败；建议重启服务"
+        state = "starting"
+        message = "检测到服务进程，健康检查还未就绪；如果持续超过 30 秒，请重启服务"
     elif port_busy:
         state = "blocked"
         message = f"端口 {service_port} 已被其他程序占用，请关闭占用程序或修改 FCGO_PORT"
@@ -73,7 +73,7 @@ def run_service_action(
 ) -> dict[str, Any]:
     root = workspace or workspace_root()
     service_port = port or default_port()
-    timeout = startup_timeout or int(os.environ.get("FCGO_RESTART_TIMEOUT_SECONDS", "30"))
+    timeout = startup_timeout or int(os.environ.get("FCGO_RESTART_TIMEOUT_SECONDS", "60"))
     if action == "status":
         return service_status(workspace=root, port=service_port)
     if action == "stop":
@@ -134,7 +134,7 @@ def start_service(
     *,
     workspace: Path | None = None,
     port: int | None = None,
-    startup_timeout: int = 30,
+    startup_timeout: int = 60,
 ) -> dict[str, Any]:
     root = workspace or workspace_root()
     service_port = port or default_port()
@@ -263,21 +263,23 @@ def _wait_until_healthy(
 ) -> None:
     deadline = time.monotonic() + startup_timeout
     while time.monotonic() < deadline:
-        if proc.poll() is not None:
+        if _health_url_ok(health_url):
+            return
+        if proc.poll() is not None and not fcgo_server_pids():
             raise RuntimeError(f"fcgo server exited early with code {proc.returncode}")
-        try:
-            with urllib.request.urlopen(health_url, timeout=3) as response:
-                payload = json.loads(response.read().decode("utf-8"))
-            if payload.get("status") == "ok":
-                return
-        except Exception:
-            time.sleep(0.8)
+        time.sleep(0.8)
+    if _health_url_ok(health_url):
+        return
     raise RuntimeError(f"fcgo server did not become healthy at {health_url}")
 
 
 def _health_ok(port: int) -> bool:
+    return _health_url_ok(f"http://127.0.0.1:{port}/healthz")
+
+
+def _health_url_ok(url: str) -> bool:
     try:
-        with urllib.request.urlopen(f"http://127.0.0.1:{port}/healthz", timeout=2) as response:
+        with urllib.request.urlopen(url, timeout=2) as response:
             payload = json.loads(response.read().decode("utf-8"))
         return payload.get("status") == "ok"
     except Exception:

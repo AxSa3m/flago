@@ -28,12 +28,12 @@ def test_service_status_reports_blocked_port(monkeypatch, tmp_path: Path) -> Non
     assert "端口 8000 已被其他程序占用" in status["message"]
 
 
-def test_service_status_reports_unhealthy_process(monkeypatch, tmp_path: Path) -> None:
+def test_service_status_reports_starting_process(monkeypatch, tmp_path: Path) -> None:
     monkeypatch.setattr(local_service, "fcgo_server_pids", lambda: [123])
     monkeypatch.setattr(local_service, "_health_ok", lambda port: False)
     monkeypatch.setattr(local_service, "_port_in_use", lambda port: True)
 
     status = local_service.service_status(workspace=tmp_path, port=8000)
 
-    assert status["state"] == "unhealthy"
-    assert "健康检查失败" in status["message"]
+    assert status["state"] == "starting"
+    assert "健康检查还未就绪" in status["message"]
