@@ -234,7 +234,7 @@ def test_admin_page_updates_all_config_form_and_lists_menus(tmp_path, monkeypatc
 
         monkeypatch.setattr(
             "fcgo.server.admin.service_status",
-            lambda: fake_service_status,
+            lambda **kwargs: fake_service_status,
         )
         monkeypatch.setattr(
             "fcgo.server.admin.trigger_service_action",

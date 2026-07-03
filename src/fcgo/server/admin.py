@@ -757,7 +757,7 @@ def mount_admin_routes(
         if not await _bootstrap_setup_allowed(request, store):
             await _require_admin_user(request, store)
         try:
-            return JSONResponse(service_status())
+            return JSONResponse(service_status(assume_http_running=True))
         except Exception as exc:  # noqa: BLE001 - keep admin status endpoint JSON-only
             logger.warning("admin_service_status_failed error=%s", exc)
             return JSONResponse(
@@ -1514,7 +1514,7 @@ async def _admin_page(
 
 def _service_control_card() -> str:
     try:
-        status = service_status()
+        status = service_status(assume_http_running=True)
     except Exception as exc:  # noqa: BLE001 - admin page should still render
         status = {
             "state": "unknown",
@@ -1528,6 +1528,8 @@ def _service_control_card() -> str:
     state = str(status.get("state") or "unknown")
     state_label = {
         "running": "运行中",
+        "starting": "启动中",
+        "restarting": "重启中",
         "stopped": "未运行",
         "blocked": "端口占用",
         "unhealthy": "异常",

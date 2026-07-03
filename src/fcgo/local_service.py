@@ -31,11 +31,16 @@ def default_port() -> int:
     return int(os.environ.get("FCGO_RESTART_PORT", os.environ.get("FCGO_PORT", "8000")))
 
 
-def service_status(*, workspace: Path | None = None, port: int | None = None) -> dict[str, Any]:
+def service_status(
+    *,
+    workspace: Path | None = None,
+    port: int | None = None,
+    assume_http_running: bool = False,
+) -> dict[str, Any]:
     root = workspace or workspace_root()
     service_port = port or default_port()
     pids = fcgo_server_pids()
-    health = _health_ok(service_port)
+    health = True if assume_http_running else _health_ok(service_port)
     port_busy = _port_in_use(service_port)
     stdout_log, stderr_log = service_logs(root)
     if health:
