@@ -291,8 +291,14 @@ FIELD_METADATA: dict[str, tuple[str, str]] = {
         "运行模式",
         "dev 用于本地开发；test 用于自动测试；prod 用于正式部署。",
     ),
-    "FCGO_LOG_LEVEL": ("日志级别", "控制服务日志详细程度，常用 INFO 或 DEBUG。"),
-    "FCGO_BASE_URL": ("服务地址", "飞书 OAuth 回调和后台链接会使用这个地址。"),
+    "FCGO_LOG_LEVEL": (
+        "日志级别",
+        "控制服务日志详细程度，推荐 INFO；排查问题时可临时改 DEBUG。",
+    ),
+    "FCGO_BASE_URL": (
+        "服务地址",
+        "用于生成飞书 OAuth 回调地址和后台打开链接。填写你实际访问本服务的根地址，例如本地 http://127.0.0.1:8000 或公网 HTTPS 地址。",
+    ),
     "FCGO_AGENT_MODE": ("Agent 模式", "legacy 使用旧解析链路；agent 使用 Agent + Tools 链路。"),
     "FEISHU_APP_ID": ("飞书 App ID", "飞书开放平台自建应用的 App ID。"),
     "FEISHU_APP_SECRET": ("飞书 App Secret", "飞书开放平台自建应用的 App Secret。"),
@@ -320,12 +326,20 @@ FIELD_METADATA: dict[str, tuple[str, str]] = {
     "FCGO_WRITEBACK_ENABLED": ("写入功能", "允许生成并执行写入确认卡片。"),
     "FCGO_WRITEBACK_AUTO_EXECUTE_ENABLED": (
         "自动写入总开关",
-        "允许用户开启低风险自动写入；关闭后所有写入都需要确认。",
+        "允许用户开启低风险自动执行；关闭后所有写入都需要确认。",
     ),
     "FCGO_WRITEBACK_CONFIRMATION_MODE": (
-        "默认写入策略",
-        "always 总是确认；low_risk_direct 明确低风险追加可自动执行；draft_only 只生成草稿。",
+        "写入确认策略",
+        "每次确认：所有写入先生成确认卡；低风险自动执行：仅明确文档开头/末尾追加可自动执行；仅生成草稿：不执行写入，只返回草稿。",
     ),
+}
+
+SETTING_CHOICE_LABELS: dict[str, dict[str, str]] = {
+    "FCGO_WRITEBACK_CONFIRMATION_MODE": {
+        "always": "每次确认 (always)",
+        "low_risk_direct": "低风险自动执行 (low_risk_direct)",
+        "draft_only": "仅生成草稿 (draft_only)",
+    },
 }
 
 
@@ -1156,7 +1170,7 @@ def _setting_field_specs(settings: Settings) -> list[SettingFieldSpec]:
                 configured=configured,
                 optional=field.default is None,
                 multiline=_is_multiline_setting(env_name, text_value),
-                choices=_setting_choices(field.annotation),
+                choices=_setting_choices_for(env_name, field.annotation),
             )
         )
     return specs
@@ -1212,6 +1226,12 @@ def _setting_value_to_text(value: object) -> str:
     if isinstance(value, Enum):
         return str(value.value)
     return str(value)
+
+
+def _setting_choices_for(env_name: str, annotation: object) -> tuple[str, ...]:
+    if env_name == "FCGO_LOG_LEVEL":
+        return ("DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL")
+    return _setting_choices(annotation)
 
 
 def _setting_choices(annotation: object) -> tuple[str, ...]:
@@ -1556,7 +1576,7 @@ async def _setup_admin_page(
                 ) or '<p class="hint">还没有配置可用模型接口。请点击下面的按钮添加。</p>'}
               </div>
               <button type="button" class="secondary open-model-dialog">
-                添加或配置模型接口
+                添加模型接口
               </button>
               {_model_config_dialog(settings, provider_options)}
             </article>
@@ -1637,7 +1657,6 @@ async def _advanced_admin_page(
             <p>当前登录：<code>{escape(user_open_id)}</code></p>
           </div>
           <div class="top-actions">
-            <a class="ghost" href="/admin/setup">首次配置向导</a>
             <a class="ghost" href="/admin">返回普通配置</a>
             <a class="ghost" href="/admin/logout">退出</a>
           </div>
@@ -1896,7 +1915,7 @@ def _model_interfaces_card(
       {configured_cards or '<p class="hint">还没有配置可用模型接口。</p>'}
     </div>
     <button type="button" class="secondary open-model-dialog">
-      添加或配置模型接口
+      添加模型接口
     </button>
     {_model_config_dialog(settings, providers)}
     """
@@ -2090,7 +2109,7 @@ def _model_config_dialog(
     return f"""
     <dialog id="model-config-dialog">
       <div class="dialog-head">
-        <h3>添加或配置模型接口</h3>
+        <h3>模型接口</h3>
         <button type="button" class="ghost close-model-dialog">
           关闭
         </button>
@@ -2180,7 +2199,7 @@ def _media_workflow_card(settings: Settings, request: Request) -> str:
         {configured or '<p class="hint">还没有配置媒体或工作流接口。</p>'}
       </div>
       <button type="button" class="secondary open-media-dialog">
-        添加或配置媒体/工作流接口
+        添加媒体/工作流接口
       </button>
       {_media_config_dialog(settings)}
       {_card_actions("media")}
@@ -2263,7 +2282,7 @@ def _media_config_dialog(settings: Settings) -> str:
     return f"""
     <dialog id="media-config-dialog">
       <div class="dialog-head">
-        <h3>添加或配置媒体/工作流接口</h3>
+        <h3>媒体/工作流接口</h3>
         <button type="button" class="ghost close-media-dialog">关闭</button>
       </div>
       <p class="hint">
@@ -2646,7 +2665,11 @@ def _setting_field(spec: SettingFieldSpec) -> str:
         control = (
             f'<select name="{escape(_env_input_name(spec.env_name))}">'
             + "".join(
-                _option(choice, choice, selected=choice == spec.value)
+                _option(
+                    choice,
+                    _setting_choice_label(spec.env_name, choice),
+                    selected=choice == spec.value,
+                )
                 for choice in spec.choices
             )
             + "</select>"
@@ -2702,12 +2725,16 @@ def _choice_help(env_name: str) -> str:
     if env_name == "FCGO_WRITEBACK_CONFIRMATION_MODE":
         return (
             '<ul class="choice-help">'
-            "<li><strong>always</strong>：所有写入都先确认。</li>"
-            "<li><strong>low_risk_direct</strong>：明确低风险追加可自动执行。</li>"
-            "<li><strong>draft_only</strong>：只生成草稿，不执行写入。</li>"
+            "<li><strong>每次确认 (always)</strong>：所有写入都先生成确认卡。</li>"
+            "<li><strong>低风险自动执行 (low_risk_direct)</strong>：仅明确文档开头或末尾追加可自动执行。</li>"
+            "<li><strong>仅生成草稿 (draft_only)</strong>：仅生成草稿，不执行写入。</li>"
             "</ul>"
         )
     return ""
+
+
+def _setting_choice_label(env_name: str, value: str) -> str:
+    return SETTING_CHOICE_LABELS.get(env_name, {}).get(value, value)
 
 
 def _menu_sections() -> str:
@@ -3275,9 +3302,9 @@ def _provider_status(label: str, secret: str) -> str:
 
 def _mode_label(mode: WritebackConfirmationMode) -> str:
     labels = {
-        WritebackConfirmationMode.ALWAYS: "确认后写入",
-        WritebackConfirmationMode.LOW_RISK_DIRECT: "低风险自动写入",
-        WritebackConfirmationMode.DRAFT_ONLY: "只生成草稿",
+        WritebackConfirmationMode.ALWAYS: "每次确认",
+        WritebackConfirmationMode.LOW_RISK_DIRECT: "低风险自动执行",
+        WritebackConfirmationMode.DRAFT_ONLY: "仅生成草稿",
     }
     return labels[mode]
 

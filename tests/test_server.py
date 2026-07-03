@@ -397,14 +397,14 @@ def test_admin_page_updates_all_config_form_and_lists_menus(tmp_path, monkeypatc
     assert "旧的长期记忆" in admin_text
     assert "fcgo.writeback.undo" in admin_text
     assert "fcgo.admin.open" in admin_text
-    assert "添加或配置模型接口" in admin_text
+    assert "添加模型接口" in admin_text
     assert "model-config-dialog" in admin_text
     assert "open-model-dialog" in admin_text
     assert 'data-config-provider="gemini"' in admin_text
     assert "/admin/model/default" in admin_text
     assert "/admin/model/delete" in admin_text
     assert "data-test-action=\"model\"" in admin_text
-    assert "添加或配置媒体/工作流接口" in admin_text
+    assert "添加媒体/工作流接口" in admin_text
     assert "media-config-dialog" in admin_text
     assert 'data-config-provider="comfyui"' in saved_admin.text
     assert "/admin/media/delete" in saved_admin.text
@@ -416,7 +416,9 @@ def test_admin_page_updates_all_config_form_and_lists_menus(tmp_path, monkeypatc
     assert "机器人菜单功能" in admin_text
     assert "飞书资源搜索" in admin_text
     assert "dev 用于本地开发" in admin_text
-    assert "所有写入都先确认" in admin_text
+    assert "每次确认 (always)" in admin_text
+    assert "FCGO_LOG_LEVEL" in admin_text
+    assert "<option value=\"INFO\" selected>INFO</option>" in admin_text
     assert 'id="personal-provider"' in admin_text
     assert 'id="personal-model"' in admin_text
     assert "FCGO_ADMIN_ENABLED" not in admin_text

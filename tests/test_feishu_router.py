@@ -344,7 +344,7 @@ async def test_router_draft_only_writeback_policy_does_not_save_pending_action(t
 
     assert await store.get_pending_action(proposal.id) is None
     assert client.cards == []
-    assert "只生成草稿" in client.replies[0][1]
+    assert "仅生成草稿" in client.replies[0][1]
     assert "向文档追加：hello" in client.replies[0][1]
 
 

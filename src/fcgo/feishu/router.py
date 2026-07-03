@@ -1252,7 +1252,7 @@ class FeishuMessageRouter:
             message.sender_id,
             updated_by=message.sender_id,
         )
-        return f"已清除你的自动写入偏好。{assistant_name} 将使用服务默认写入策略。"
+        return f"已清除你的自动写入偏好。{assistant_name} 将使用系统默认的写入确认策略。"
 
     async def _reply_oauth_card(self, message: FeishuMessage, *, force_link: bool) -> None:
         if self.oauth is None:
@@ -1940,7 +1940,7 @@ def _draft_only_writeback_text(response: AssistantResponse) -> str:
     lines = []
     if response.text.strip():
         lines.append(response.text.strip())
-    lines.append("当前写入策略为只生成草稿，不会保存待确认动作，也不会执行写入。")
+    lines.append("当前写入确认策略为仅生成草稿，不会保存待确认动作，也不会执行写入。")
     for proposal in response.action_proposals:
         target = proposal.target_title or proposal.target_url or "目标资源"
         lines.append(f"- {_write_action_label(proposal.action_type.value)} · {target}")
@@ -2178,9 +2178,9 @@ def _writeback_command_help(assistant_name: str = "小智") -> str:
 
 def _writeback_confirmation_mode_label(mode: WritebackConfirmationMode) -> str:
     labels = {
-        WritebackConfirmationMode.ALWAYS: "确认后写入",
-        WritebackConfirmationMode.LOW_RISK_DIRECT: "低风险自动写入",
-        WritebackConfirmationMode.DRAFT_ONLY: "只生成草稿",
+        WritebackConfirmationMode.ALWAYS: "每次确认",
+        WritebackConfirmationMode.LOW_RISK_DIRECT: "低风险自动执行",
+        WritebackConfirmationMode.DRAFT_ONLY: "仅生成草稿",
     }
     return labels[mode]
 
