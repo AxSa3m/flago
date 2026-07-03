@@ -26,6 +26,9 @@
 - 普通配置页提供“服务控制”卡片，可查看运行状态、端口、进程和日志位置，并触发重启或停止服务。
 - 新增 `uv run fcgo service status/start/restart/stop`，安装器和用户都可以通过同一套命令控制本地服务。
 - 新增 `scripts/fcgo_launcher.py`，用于启动服务并打开本地配置后台。
+- 新增 `uv run fcgo package build`，可生成当前平台的便携启动包；`--target all` 可生成
+  Windows/macOS/Linux 三个平台脚本包。
+- 便携包不会复制 `.env`、`.venv`、数据库、日志和 PowerShell 脚本，避免泄露本机密钥或触发脚本误报。
 - 全局环境参数保存后需要重启服务才会完全生效。
 
 ## 管理员模型
@@ -101,9 +104,10 @@
    - 执行本地 doctor 检查。
 
 3. 跨平台打包
-   - Windows 优先输出可双击启动的安装包或单文件启动器。
-   - macOS/Linux 在 Windows 版本稳定后补齐。
-   - 打包产物默认使用用户目录下的配置文件和 SQLite 数据库。
+   - 已完成第一阶段：Windows 输出可双击的 `start-fcgo.cmd` 便携启动包。
+   - 已完成第一阶段：macOS/Linux 输出 `start-fcgo.sh` 便携启动包，并明确当前不是图形安装器。
+   - 已完成第一阶段：打包产物首次启动时从 `.env.example` 生成 `.env`，不携带本机配置、SQLite 数据库或日志。
+   - 待完整安装器阶段：输出 MSI/EXE、DMG/PKG、DEB/AppImage 等原生安装体验。
 
 ## 飞书侧仍需用户操作
 

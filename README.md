@@ -39,6 +39,13 @@ uv run fcgo service restart
 uv run fcgo service stop
 ```
 
+生成便携启动包：
+
+```powershell
+uv run fcgo package build
+uv run fcgo package build --target all
+```
+
 健康检查：
 
 ```powershell
@@ -68,6 +75,7 @@ uv run fcgo doctor
 - [多模型 Provider 配置模板](docs/model-provider-configuration.md)
 - [多模型 Provider 架构规划](docs/multi-model-provider-architecture.md)
 - [本地部署指南](docs/deployment.md)
+- [便携启动包](docs/portable-packaging.md)
 
 ## 配置
 

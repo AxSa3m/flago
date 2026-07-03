@@ -286,7 +286,7 @@ def _health_url_ok(url: str) -> bool:
     try:
         with urllib.request.urlopen(url, timeout=2) as response:
             payload = json.loads(response.read().decode("utf-8"))
-        return payload.get("status") == "ok"
+        return bool(isinstance(payload, dict) and payload.get("status") == "ok")
     except Exception:
         return False
 

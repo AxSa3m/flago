@@ -6,7 +6,7 @@ import json
 import logging
 import threading
 import webbrowser
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, cast
 
 logger = logging.getLogger(__name__)
 
@@ -31,6 +31,19 @@ def main() -> None:
         action="store_true",
         help="open local admin page after start or restart",
     )
+    package_parser = subparsers.add_parser("package", help="Build distributable FCGO package")
+    package_parser.add_argument("action", choices=("build",), help="package action")
+    package_parser.add_argument(
+        "--target",
+        choices=("current", "all", "windows", "macos", "linux"),
+        default="current",
+        help="package target platform",
+    )
+    package_parser.add_argument(
+        "--dist-dir",
+        default=None,
+        help="output directory; defaults to ./dist",
+    )
     args = parser.parse_args()
 
     if args.command == "service":
@@ -40,6 +53,28 @@ def main() -> None:
         if args.open_admin and args.action in {"start", "restart"} and result.get("running"):
             webbrowser.open(f"http://127.0.0.1:{result.get('port', 8000)}/admin")
         print(json.dumps(result, ensure_ascii=False))
+        return
+
+    if args.command == "package":
+        from pathlib import Path
+
+        from fcgo.packaging import PackageTarget, build_portable_package, current_target
+
+        targets: tuple[PackageTarget, ...]
+        if args.target == "all":
+            targets = ("windows", "macos", "linux")
+        elif args.target == "current":
+            targets = (current_target(),)
+        else:
+            targets = (cast(PackageTarget, args.target),)
+        results = [
+            build_portable_package(
+                target=target,
+                dist_dir=Path(args.dist_dir) if args.dist_dir else None,
+            )
+            for target in targets
+        ]
+        print(json.dumps({"packages": results}, ensure_ascii=False))
         return
 
     from fcgo.config import get_settings
