@@ -219,6 +219,32 @@ def test_admin_page_updates_all_config_form_and_lists_menus(tmp_path, monkeypatc
             "/admin/oauth/callback",
             params={"code": "code-1", "state": query["state"][0]},
         )
+        fake_service_status = {
+            "state": "running",
+            "running": True,
+            "health": "ok",
+            "port": 8000,
+            "url": "http://127.0.0.1:8000/healthz",
+            "pids": [123],
+            "message": "服务运行正常",
+            "stdout": "server.out.log",
+            "stderr": "server.err.log",
+        }
+        triggered_service_actions: list[str] = []
+
+        monkeypatch.setattr(
+            "fcgo.server.admin.service_status",
+            lambda: fake_service_status,
+        )
+        monkeypatch.setattr(
+            "fcgo.server.admin.trigger_service_action",
+            lambda action: triggered_service_actions.append(action)
+            or {
+                "action": action,
+                "pid": 456,
+                "message": "已触发重启，几秒后刷新页面查看状态",
+            },
+        )
         admin = client.get("/admin")
         setup = client.get("/admin/setup")
         advanced = client.get("/admin/advanced")
@@ -299,6 +325,18 @@ def test_admin_page_updates_all_config_form_and_lists_menus(tmp_path, monkeypatc
                 "accept": "application/json",
             },
         )
+        service_status_json = client.get(
+            "/admin/service/status",
+            headers={"accept": "application/json"},
+        )
+        service_restart_json = client.post(
+            "/admin/service",
+            content=urlencode({"csrf": csrf.group(1), "action": "restart"}),
+            headers={
+                "content-type": "application/x-www-form-urlencoded",
+                "accept": "application/json",
+            },
+        )
         set_gemini_default = client.post(
             "/admin/model/default",
             content=urlencode(
@@ -369,6 +407,11 @@ def test_admin_page_updates_all_config_form_and_lists_menus(tmp_path, monkeypatc
         "provider": "comfyui",
         "message": "接口可达",
     }
+    assert service_status_json.status_code == 200
+    assert service_status_json.json()["state"] == "running"
+    assert service_restart_json.status_code == 200
+    assert service_restart_json.json()["ok"] is True
+    assert triggered_service_actions == ["restart"]
     assert "连接正常" in tested_admin.text
     assert "模型连通性测试通过" not in tested_admin.text
     assert calls and calls[0].provider == "gemini"
@@ -400,6 +443,9 @@ def test_admin_page_updates_all_config_form_and_lists_menus(tmp_path, monkeypatc
     assert '"Content-Type": "application/x-www-form-urlencoded;charset=UTF-8"' in admin_text
     assert 'const fallback = ok ? "连接正常" : "连接失败";' in admin_text
     assert "FCGO_BASE_URL" in admin_text
+    assert "服务控制" in admin_text
+    assert 'data-service-action="restart"' in admin_text
+    assert 'fetch("/admin/service"' in admin_text
     assert "DEEPSEEK_API_KEY" in admin_text
     assert "旧的长期记忆" in admin_text
     assert "fcgo.writeback.undo" in admin_text

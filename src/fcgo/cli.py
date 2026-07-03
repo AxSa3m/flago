@@ -1,35 +1,17 @@
+from __future__ import annotations
+
 import argparse
 import asyncio
+import json
 import logging
 import threading
-from typing import Any
-
-import uvicorn
-from google import genai
-from google.genai import types
-
-from fcgo.agent import AgentOrchestrator, Assistant, default_tool_registry
-from fcgo.agent.protocols import AssistantHandler
-from fcgo.agent.search_planner import ModelResourceSearchPlanner
-from fcgo.config import Settings, get_settings
-from fcgo.feishu.client import FeishuClient
-from fcgo.feishu.oauth import FeishuOAuthService
-from fcgo.feishu.openapi import FeishuOpenAPI
-from fcgo.feishu.router import FeishuMessageRouter
-from fcgo.feishu.worker import FeishuLongConnectionWorker
-from fcgo.logging import configure_logging
-from fcgo.model_providers.registry import ModelRouter, build_model_router
-from fcgo.resources.reader import (
-    CompositeResourceReader,
-    FeishuResourceReader,
-    FeishuResourceSearcher,
-    WebResourceReader,
-)
-from fcgo.storage import SQLiteStore
-from fcgo.writeback.executor import FeishuWriteExecutor
-from fcgo.writeback.service import WritebackService
+import webbrowser
+from typing import TYPE_CHECKING, Any
 
 logger = logging.getLogger(__name__)
+
+if TYPE_CHECKING:
+    from fcgo.config import Settings
 
 
 def main() -> None:
@@ -38,7 +20,30 @@ def main() -> None:
     subparsers.add_parser("serve", help="Run FastAPI server and optional Feishu worker")
     subparsers.add_parser("worker", help="Run only the Feishu long-connection worker")
     subparsers.add_parser("doctor", help="Validate local config and external credentials")
+    service_parser = subparsers.add_parser("service", help="Control local FCGO service")
+    service_parser.add_argument(
+        "action",
+        choices=("start", "stop", "restart", "status"),
+        help="local service action",
+    )
+    service_parser.add_argument(
+        "--open-admin",
+        action="store_true",
+        help="open local admin page after start or restart",
+    )
     args = parser.parse_args()
+
+    if args.command == "service":
+        from fcgo.local_service import run_service_action
+
+        result = run_service_action(args.action)
+        if args.open_admin and args.action in {"start", "restart"} and result.get("running"):
+            webbrowser.open(f"http://127.0.0.1:{result.get('port', 8000)}/admin")
+        print(json.dumps(result, ensure_ascii=False))
+        return
+
+    from fcgo.config import get_settings
+    from fcgo.logging import configure_logging
 
     settings = get_settings()
     configure_logging(settings.log_level)
@@ -47,6 +52,8 @@ def main() -> None:
         if settings.start_long_connection:
             thread = threading.Thread(target=_run_worker, daemon=True)
             thread.start()
+        import uvicorn
+
         uvicorn.run(
             "fcgo.server:create_app",
             factory=True,
@@ -62,6 +69,25 @@ def main() -> None:
 
 
 def _run_worker() -> None:
+    from fcgo.agent import AgentOrchestrator, Assistant, default_tool_registry
+    from fcgo.agent.protocols import AssistantHandler
+    from fcgo.agent.search_planner import ModelResourceSearchPlanner
+    from fcgo.config import get_settings
+    from fcgo.feishu.client import FeishuClient
+    from fcgo.feishu.oauth import FeishuOAuthService
+    from fcgo.feishu.openapi import FeishuOpenAPI
+    from fcgo.feishu.router import FeishuMessageRouter
+    from fcgo.feishu.worker import FeishuLongConnectionWorker
+    from fcgo.resources.reader import (
+        CompositeResourceReader,
+        FeishuResourceReader,
+        FeishuResourceSearcher,
+        WebResourceReader,
+    )
+    from fcgo.storage import SQLiteStore
+    from fcgo.writeback.executor import FeishuWriteExecutor
+    from fcgo.writeback.service import WritebackService
+
     settings = get_settings()
     store = SQLiteStore(settings.sqlite_path)
     asyncio.run(store.init())
@@ -122,6 +148,11 @@ def _run_worker() -> None:
 
 
 async def _doctor() -> bool:
+    from fcgo.config import get_settings
+    from fcgo.feishu.openapi import FeishuOpenAPI
+    from fcgo.model_providers.registry import build_model_router
+    from fcgo.storage import SQLiteStore
+
     settings = get_settings()
     store = SQLiteStore(settings.sqlite_path)
     await store.init()
@@ -197,6 +228,9 @@ async def _doctor() -> bool:
 
 
 async def _check_gemini_lightweight(settings: Settings) -> str:
+    from google import genai
+    from google.genai import types
+
     http_options: dict[str, Any] = {}
     if settings.gemini_base_url:
         http_options["base_url"] = settings.gemini_base_url
@@ -223,10 +257,12 @@ async def _check_gemini_lightweight(settings: Settings) -> str:
 
 
 def _build_model_provider(
-    settings: Settings,
+    settings: Any,
     *,
-    audit_recorder: SQLiteStore | None = None,
-) -> ModelRouter:
+    audit_recorder: Any | None = None,
+) -> Any:
+    from fcgo.model_providers.registry import build_model_router
+
     return build_model_router(settings, audit_recorder=audit_recorder)
 
 

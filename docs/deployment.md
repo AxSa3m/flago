@@ -416,6 +416,24 @@ Windows 本地开发推荐使用稳定重启脚本，它会停止旧服务、启
 .\.venv\Scripts\python.exe .\scripts\restart_server.py
 ```
 
+也可以使用统一的服务控制命令：
+
+```powershell
+uv run fcgo service status
+uv run fcgo service start --open-admin
+uv run fcgo service restart
+uv run fcgo service stop
+```
+
+`status` 会返回当前健康状态、端口、进程 ID 和日志位置。端口被其他程序占用时，
+会明确提示关闭占用程序或修改 `FCGO_PORT`。
+
+如果只想双击或从安装器入口打开，可以使用本地启动器脚本：
+
+```powershell
+.\.venv\Scripts\python.exe .\scripts\fcgo_launcher.py
+```
+
 首次安装时，启动服务后可直接打开本机向导，不需要先通过飞书机器人或飞书登录：
 
 ```text

@@ -25,6 +25,20 @@ Copy-Item .env.example .env
 uv run fcgo serve
 ```
 
+启动本地服务并打开配置后台：
+
+```powershell
+uv run fcgo service start --open-admin
+```
+
+查看、重启、停止本地服务：
+
+```powershell
+uv run fcgo service status
+uv run fcgo service restart
+uv run fcgo service stop
+```
+
 健康检查：
 
 ```powershell

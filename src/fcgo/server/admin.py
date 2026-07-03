@@ -18,6 +18,7 @@ from pydantic import SecretStr, ValidationError
 
 from fcgo.config import Settings
 from fcgo.feishu.oauth import FeishuOAuthService
+from fcgo.local_service import service_status, trigger_service_action
 from fcgo.logging import redact
 from fcgo.model_providers.registry import build_model_router
 from fcgo.model_providers.types import ModelMessage, ModelMessageRole, ModelRequest
@@ -751,6 +752,31 @@ def mount_admin_routes(
         _write_validated_env_settings(settings, dict.fromkeys(env_names, None))
         return RedirectResponse(f"{next_path}?saved=media-delete", status_code=303)
 
+    @app.get("/admin/service/status")
+    async def admin_service_status(request: Request) -> JSONResponse:
+        if not await _bootstrap_setup_allowed(request, store):
+            await _require_admin_user(request, store)
+        return JSONResponse(service_status())
+
+    @app.post("/admin/service")
+    async def admin_control_service(request: Request) -> JSONResponse:
+        if not await _bootstrap_setup_allowed(request, store):
+            await _require_admin_user(request, store)
+        form = await _form_params(request)
+        _require_csrf(request, form)
+        action = _clean_identifier(form.get("action", ""))
+        if action not in {"start", "stop", "restart"}:
+            return JSONResponse({"ok": False, "message": "未知服务操作"}, status_code=400)
+        try:
+            result = trigger_service_action(cast(Literal["start", "stop", "restart"], action))
+        except Exception as exc:  # noqa: BLE001 - admin page needs readable local errors
+            logger.warning("admin_service_control_failed action=%s error=%s", action, exc)
+            return JSONResponse(
+                {"ok": False, "action": action, "message": str(exc)},
+                status_code=500,
+            )
+        return JSONResponse({"ok": True, **result})
+
     @app.get("/admin/logout")
     async def admin_logout(request: Request) -> RedirectResponse:
         request.session.pop("admin_open_id", None)
@@ -1406,6 +1432,8 @@ async def _admin_page(
             </div>
           </section>
 
+          {_service_control_card()}
+
           <section class="grid">
             <article>
               <h2>助手信息</h2>
@@ -1461,11 +1489,68 @@ async def _admin_page(
             </article>
           </section>
           {_model_options_script(provider_options)}
+          {_service_control_script()}
           {_clear_button_script()}
           {_card_reset_script()}
         </form>
         """,
     )
+
+
+def _service_control_card() -> str:
+    try:
+        status = service_status()
+    except Exception as exc:  # noqa: BLE001 - admin page should still render
+        status = {
+            "state": "unknown",
+            "health": "unavailable",
+            "port": "",
+            "pids": [],
+            "message": f"无法读取服务状态：{type(exc).__name__}",
+            "stdout": "server.out.log",
+            "stderr": "server.err.log",
+        }
+    state = str(status.get("state") or "unknown")
+    state_label = {
+        "running": "运行中",
+        "stopped": "未运行",
+        "blocked": "端口占用",
+        "unhealthy": "异常",
+    }.get(state, "未知")
+    state_class = "ok" if state == "running" else "missing"
+    pids = status.get("pids")
+    pid_text = ", ".join(str(pid) for pid in pids) if isinstance(pids, list) and pids else "无"
+    message = escape(str(status.get("message") or ""))
+    port = escape(str(status.get("port") or ""))
+    stdout = escape(str(status.get("stdout") or "server.out.log"))
+    stderr = escape(str(status.get("stderr") or "server.err.log"))
+    return f"""
+          <section class="wide" data-service-control>
+            <article>
+              <h2>服务控制</h2>
+              <p class="hint">
+                保存全局配置后通常需要重启服务。启动能力也可通过
+                <code>uv run fcgo service start --open-admin</code> 使用。
+              </p>
+              <div class="service-status-panel">
+                <div>
+                  <span class="{state_class}" data-service-state>{escape(state_label)}</span>
+                  <p data-service-message>{message}</p>
+                </div>
+                <dl>
+                  <dt>端口</dt><dd data-service-port>{port}</dd>
+                  <dt>进程</dt><dd data-service-pids>{escape(pid_text)}</dd>
+                  <dt>日志</dt><dd>{stdout}<br />{stderr}</dd>
+                </dl>
+              </div>
+              <div class="button-row">
+                <button type="button" class="secondary" data-service-refresh>刷新状态</button>
+                <button type="button" data-service-action="restart">重启服务</button>
+                <button type="button" class="secondary" data-service-action="stop">停止服务</button>
+              </div>
+            </article>
+          </section>
+    """
 
 
 async def _setup_admin_page(
@@ -2597,6 +2682,83 @@ def _setup_wizard_script() -> str:
     """
 
 
+def _service_control_script() -> str:
+    return """
+    <script>
+      const serviceControl = document.querySelector("[data-service-control]");
+      if (serviceControl) {
+        const csrf = document.querySelector('input[name="csrf"]')?.value || "";
+        const stateNode = serviceControl.querySelector("[data-service-state]");
+        const messageNode = serviceControl.querySelector("[data-service-message]");
+        const portNode = serviceControl.querySelector("[data-service-port]");
+        const pidsNode = serviceControl.querySelector("[data-service-pids]");
+        function renderServiceStatus(payload) {
+          const state = payload.state || (payload.ok ? "running" : "unknown");
+          const labels = {
+            running: "运行中",
+            stopped: "未运行",
+            blocked: "端口占用",
+            unhealthy: "异常",
+            unknown: "未知",
+          };
+          if (stateNode) {
+            stateNode.textContent = labels[state] || labels.unknown;
+            stateNode.classList.toggle("ok", state === "running");
+            stateNode.classList.toggle("missing", state !== "running");
+          }
+          if (messageNode) messageNode.textContent = payload.message || "";
+          if (portNode) portNode.textContent = payload.port || "";
+          if (pidsNode) {
+            const pids = Array.isArray(payload.pids) ? payload.pids : [];
+            pidsNode.textContent = pids.length ? pids.join(", ") : "无";
+          }
+        }
+        async function refreshServiceStatus() {
+          const response = await fetch("/admin/service/status", {
+            headers: { Accept: "application/json" },
+          });
+          renderServiceStatus(await response.json());
+        }
+        serviceControl.querySelector("[data-service-refresh]")?.addEventListener("click", () => {
+          refreshServiceStatus().catch((error) => {
+            renderServiceStatus({ state: "unknown", message: `状态读取失败：${error.name}` });
+          });
+        });
+        serviceControl.querySelectorAll("[data-service-action]").forEach((button) => {
+          button.addEventListener("click", async () => {
+            const action = button.dataset.serviceAction || "";
+            button.disabled = true;
+            if (messageNode) messageNode.textContent = "正在发送服务控制指令...";
+            try {
+              const body = new URLSearchParams();
+              body.set("csrf", csrf);
+              body.set("action", action);
+              const response = await fetch("/admin/service", {
+                method: "POST",
+                headers: {
+                  Accept: "application/json",
+                  "Content-Type": "application/x-www-form-urlencoded;charset=UTF-8",
+                },
+                body,
+              });
+              const payload = await response.json();
+              renderServiceStatus({
+                state: payload.ok ? "running" : "unknown",
+                message: payload.message || (payload.ok ? "已触发服务操作" : "服务操作失败"),
+              });
+              if (action !== "stop") window.setTimeout(refreshServiceStatus, 4500);
+            } catch (error) {
+              renderServiceStatus({ state: "unknown", message: `服务操作失败：${error.name}` });
+            } finally {
+              window.setTimeout(() => { button.disabled = false; }, 5000);
+            }
+          });
+        });
+      }
+    </script>
+    """
+
+
 def _clear_button_script() -> str:
     return """
     <script>
@@ -3362,6 +3524,41 @@ def _layout(title: str, body: str) -> str:
     .compact-table th {{
       width: 150px;
     }}
+    .service-status-panel {{
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) minmax(260px, 420px);
+      gap: 18px;
+      align-items: start;
+      padding: 18px;
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      background: var(--panel);
+      margin: 12px 0 16px;
+    }}
+    .service-status-panel p {{
+      margin: 8px 0 0;
+      color: var(--muted);
+    }}
+    .service-status-panel dl {{
+      display: grid;
+      grid-template-columns: 64px minmax(0, 1fr);
+      gap: 8px 12px;
+      margin: 0;
+      font-size: 14px;
+    }}
+    .service-status-panel dt {{
+      color: var(--muted);
+    }}
+    .service-status-panel dd {{
+      margin: 0;
+      word-break: break-all;
+    }}
+    .button-row {{
+      display: flex;
+      gap: 12px;
+      flex-wrap: wrap;
+      align-items: center;
+    }}
     .provider-cards {{
       display: grid;
       grid-template-columns: repeat(3, minmax(0, 1fr));
@@ -3495,6 +3692,7 @@ def _layout(title: str, body: str) -> str:
       .settings-list {{ grid-template-columns: 1fr; }}
       .input-action-row {{ grid-template-columns: 1fr; }}
       .input-action-row .clear-button {{ width: 100%; }}
+      .service-status-panel {{ grid-template-columns: 1fr; }}
       .setup-shell {{ grid-template-columns: 1fr; padding: 12px 16px; }}
       .setup-rail {{ position: static; }}
       .setup-step {{ min-height: auto; padding: 24px; }}
