@@ -386,6 +386,8 @@ def test_admin_page_updates_all_config_form_and_lists_menus(tmp_path, monkeypatc
     assert "在飞书开放平台添加这个后台登录回调地址" in setup_text
     assert "http://localhost:8000/oauth/feishu/callback" in setup_text
     assert "http://localhost:8000/admin/oauth/callback" in setup_text
+    assert 'data-setup-callback-path="/oauth/feishu/callback"' in setup_text
+    assert 'data-setup-callback-path="/admin/oauth/callback"' in setup_text
     assert 'data-setup-step="0"' in setup_text
     assert "FCGO_AGENT_MODE" not in setup_text
     assert "FEISHU_VERIFICATION_TOKEN" not in setup_text
@@ -452,7 +454,12 @@ def test_admin_page_updates_all_config_form_and_lists_menus(tmp_path, monkeypatc
 
 def test_local_setup_bootstrap_allows_first_run_without_feishu_login(tmp_path) -> None:
     env_path = tmp_path / ".env"
-    settings = _settings(tmp_path).model_copy(update={"admin_config_path": env_path})
+    settings = _settings(tmp_path).model_copy(
+        update={
+            "admin_config_path": env_path,
+            "base_url": "https://fcgo.example.test",
+        }
+    )
 
     with TestClient(create_app(settings), base_url="http://127.0.0.1:8000") as client:
         admin = client.get("/admin", follow_redirects=False)
@@ -482,6 +489,9 @@ def test_local_setup_bootstrap_allows_first_run_without_feishu_login(tmp_path) -
     assert setup.status_code == 200
     assert "首次安装模式" in setup.text
     assert "飞书登录绑定管理员" in setup.text
+    assert "https://fcgo.example.test" not in setup.text
+    assert "http://127.0.0.1:8000/oauth/feishu/callback" in setup.text
+    assert "http://127.0.0.1:8000/admin/oauth/callback" in setup.text
     assert update.status_code == 303
     assert "saved=config" in update.headers["location"]
     assert owner is None

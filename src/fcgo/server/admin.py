@@ -8,7 +8,7 @@ from html import escape
 from pathlib import Path
 from secrets import token_urlsafe
 from typing import Any, Literal, cast, get_args, get_origin
-from urllib.parse import parse_qs, urlencode
+from urllib.parse import parse_qs, urlencode, urlparse
 
 import httpx
 from dotenv import dotenv_values
@@ -297,7 +297,8 @@ FIELD_METADATA: dict[str, tuple[str, str]] = {
     ),
     "FCGO_BASE_URL": (
         "服务地址",
-        "用于生成飞书 OAuth 回调地址和后台打开链接。填写你实际访问本服务的根地址，例如本地 http://127.0.0.1:8000 或公网 HTTPS 地址。",
+        "用于生成飞书 OAuth 回调地址和后台打开链接。填写你实际访问本服务的"
+        "根地址，例如本地 http://127.0.0.1:8000 或公网 HTTPS 地址。",
     ),
     "FCGO_AGENT_MODE": ("Agent 模式", "legacy 使用旧解析链路；agent 使用 Agent + Tools 链路。"),
     "FEISHU_APP_ID": ("飞书 App ID", "飞书开放平台自建应用的 App ID。"),
@@ -779,6 +780,22 @@ def _admin_redirect_uri(settings: Settings) -> str:
 
 def _admin_redirect_uri_from_request(request: Request) -> str:
     return str(request.url_for("admin_oauth_callback"))
+
+
+def _base_url_from_request(request: Request) -> str:
+    return str(request.base_url).rstrip("/")
+
+
+def _is_example_base_url(value: str) -> bool:
+    host = urlparse(value).hostname or ""
+    return host in {"fcgo.example.test", "fcgo.example.com"} or host.endswith(".example.test")
+
+
+def _setup_view_settings(settings: Settings, request: Request) -> Settings:
+    base_url = settings.base_url.strip()
+    if not base_url or _is_example_base_url(base_url):
+        return settings.model_copy(update={"base_url": _base_url_from_request(request)})
+    return settings
 
 
 async def _owner_open_id(store: SQLiteStore) -> str | None:
@@ -1462,10 +1479,11 @@ async def _setup_admin_page(
     if not csrf:
         csrf = token_urlsafe(24)
         request.session["admin_csrf"] = csrf
-    provider_options = _model_provider_options(settings)
+    setup_settings = _setup_view_settings(settings, request)
+    provider_options = _model_provider_options(setup_settings)
     configured_models = _configured_provider_cards(
         provider_options,
-        system_default_provider=_specs_by_env(settings)["FCGO_DEFAULT_PROVIDER"].value,
+        system_default_provider=_specs_by_env(setup_settings)["FCGO_DEFAULT_PROVIDER"].value,
         personal_default_provider="",
         request=request,
     )
@@ -1473,6 +1491,15 @@ async def _setup_admin_page(
         "当前处于首次安装模式，仅允许本机访问。完成后再使用飞书登录绑定管理员。"
         if bootstrap
         else "当前已通过飞书登录。"
+    )
+    oauth_callback = escape(setup_settings.oauth_redirect_uri)
+    admin_callback = escape(_admin_redirect_uri(setup_settings))
+    feishu_step_hint = (
+        "事件校验 Token、加密 Key、持续授权等属于高级选项，首次配置可以先不填。"
+    )
+    model_step_hint = (
+        '<p class="hint">还没有配置可用模型接口。点击“添加模型接口”，'
+        "选择你已经有 Key 的服务。</p>"
     )
     top_actions = (
         """
@@ -1541,19 +1568,23 @@ async def _setup_admin_page(
               <span class="setup-kicker">第 2 步</span>
               <h2>告诉飞书：你的助手服务在哪里</h2>
               <p>
-                飞书授权完成后，需要跳回你的本地服务。这里填的地址就是飞书回来的入口。
-                本机测试通常保持默认值；部署到服务器时再改成公网 HTTPS 地址。
+                这个地址用于生成飞书授权和后台登录完成后的返回入口。只在当前电脑上使用时，
+                保持本机地址即可；部署到服务器并希望其他设备也能访问时，再改成公网 HTTPS 地址。
               </p>
               <div class="settings-list one-column">
-                {_setting_fields_for(settings, ("FCGO_BASE_URL",))}
+                {_setting_fields_for(setup_settings, ("FCGO_BASE_URL",))}
               </div>
+              <p class="hint">
+                它不负责机器人普通聊天收发；普通消息通过飞书事件通道进入程序。
+                但用户授权、后台飞书登录和后台菜单链接需要它正确。
+              </p>
               <div class="setup-copy">
                 <span>在飞书开放平台添加这个机器人授权回调地址</span>
-                <code>{escape(settings.oauth_redirect_uri)}</code>
+                <code data-setup-callback-path="/oauth/feishu/callback">{oauth_callback}</code>
               </div>
               <div class="setup-copy">
                 <span>在飞书开放平台添加这个后台登录回调地址</span>
-                <code>{escape(_admin_redirect_uri(settings))}</code>
+                <code data-setup-callback-path="/admin/oauth/callback">{admin_callback}</code>
               </div>
               <div class="setup-actions">
                 <button type="button" class="secondary" data-setup-prev>上一步</button>
@@ -1570,14 +1601,14 @@ async def _setup_admin_page(
               </p>
               <div class="settings-list one-column">
                 {_setting_fields_for(
-                    settings,
+                    setup_settings,
                     (
                         "FEISHU_APP_ID",
                         "FEISHU_APP_SECRET",
                     ),
                 )}
               </div>
-              <p class="hint">事件校验 Token、加密 Key、持续授权等属于高级选项，首次配置可以先不填。</p>
+              <p class="hint">{feishu_step_hint}</p>
               <div class="setup-actions">
                 <button type="button" class="secondary" data-setup-prev>上一步</button>
                 <button type="button" data-setup-next>下一步</button>
@@ -1592,12 +1623,12 @@ async def _setup_admin_page(
                 如果暂时没有 Key，可以跳过，之后在后台再补。
               </p>
               <div class="provider-cards">
-                {configured_models or '<p class="hint">还没有配置可用模型接口。点击“添加模型接口”，选择你已经有 Key 的服务。</p>'}
+                {configured_models or model_step_hint}
               </div>
               <button type="button" class="secondary open-model-dialog">
                 添加模型接口
               </button>
-              {_model_config_dialog(settings, provider_options)}
+              {_model_config_dialog(setup_settings, provider_options)}
               <div class="setup-actions">
                 <button type="button" class="secondary" data-setup-prev>上一步</button>
                 <button type="button" class="secondary" data-setup-next>先跳过</button>
@@ -2519,7 +2550,22 @@ def _setup_wizard_script() -> str:
       if (setupWizard) {
         const steps = Array.from(setupWizard.querySelectorAll("[data-setup-step]"));
         const indicators = Array.from(setupWizard.querySelectorAll("[data-setup-indicator]"));
+        const baseUrlInput = setupWizard.querySelector('[name="env__FCGO_BASE_URL"]');
+        const callbackCodes = Array.from(
+          setupWizard.querySelectorAll("[data-setup-callback-path]")
+        );
         let currentStep = 0;
+        function normalizeBaseUrl(value) {
+          return String(value || "").trim().replace(new RegExp("/+$"), "");
+        }
+        function refreshSetupCallbackUrls() {
+          if (!baseUrlInput) return;
+          const baseUrl = normalizeBaseUrl(baseUrlInput.value);
+          callbackCodes.forEach((node) => {
+            const path = node.dataset.setupCallbackPath || "";
+            node.textContent = baseUrl ? `${baseUrl}${path}` : path;
+          });
+        }
         function showSetupStep(index) {
           currentStep = Math.max(0, Math.min(index, steps.length - 1));
           steps.forEach((step, stepIndex) => {
@@ -2541,6 +2587,10 @@ def _setup_wizard_script() -> str:
         indicators.forEach((item, itemIndex) => {
           item.addEventListener("click", () => showSetupStep(itemIndex));
         });
+        if (baseUrlInput) {
+          baseUrlInput.addEventListener("input", refreshSetupCallbackUrls);
+          refreshSetupCallbackUrls();
+        }
         showSetupStep(0);
       }
     </script>
@@ -2761,7 +2811,8 @@ def _choice_help(env_name: str) -> str:
         return (
             '<ul class="choice-help">'
             "<li><strong>每次确认 (always)</strong>：所有写入都先生成确认卡。</li>"
-            "<li><strong>低风险自动执行 (low_risk_direct)</strong>：仅明确文档开头或末尾追加可自动执行。</li>"
+            "<li><strong>低风险自动执行 (low_risk_direct)</strong>："
+            "仅明确文档开头或末尾追加可自动执行。</li>"
             "<li><strong>仅生成草稿 (draft_only)</strong>：仅生成草稿，不执行写入。</li>"
             "</ul>"
         )
