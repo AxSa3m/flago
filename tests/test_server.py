@@ -377,13 +377,18 @@ def test_admin_page_updates_all_config_form_and_lists_menus(tmp_path, monkeypatc
     advanced_text = advanced.text
     assert "首次配置向导" not in admin_text
     assert "首次配置向导" in setup_text
-    assert "保存向导配置" in setup_text
+    assert "欢迎配置你的飞书助手" in setup_text
+    assert "开始配置" in setup_text
+    assert "先跳过" in setup_text
+    assert "保存配置" in setup_text
     assert 'name="config_scope" value="setup"' in setup_text
-    assert "机器人授权回调地址" in setup_text
-    assert "后台登录回调地址" in setup_text
+    assert "在飞书开放平台添加这个机器人授权回调地址" in setup_text
+    assert "在飞书开放平台添加这个后台登录回调地址" in setup_text
     assert "http://localhost:8000/oauth/feishu/callback" in setup_text
     assert "http://localhost:8000/admin/oauth/callback" in setup_text
-    assert "配置进度" in setup_text
+    assert 'data-setup-step="0"' in setup_text
+    assert "FCGO_AGENT_MODE" not in setup_text
+    assert "FEISHU_VERIFICATION_TOKEN" not in setup_text
     assert "fcgo.admin.open" in setup_text
     assert "测试完成" not in admin_text
     assert 'showTransientResult(slot, "pending", "测试中...")' in admin_text
@@ -475,7 +480,7 @@ def test_local_setup_bootstrap_allows_first_run_without_feishu_login(tmp_path) -
     assert admin.status_code == 303
     assert admin.headers["location"] == "/admin/setup"
     assert setup.status_code == 200
-    assert "本机首次配置" in setup.text
+    assert "首次安装模式" in setup.text
     assert "飞书登录绑定管理员" in setup.text
     assert update.status_code == 303
     assert "saved=config" in update.headers["location"]

@@ -1463,8 +1463,14 @@ async def _setup_admin_page(
         csrf = token_urlsafe(24)
         request.session["admin_csrf"] = csrf
     provider_options = _model_provider_options(settings)
+    configured_models = _configured_provider_cards(
+        provider_options,
+        system_default_provider=_specs_by_env(settings)["FCGO_DEFAULT_PROVIDER"].value,
+        personal_default_provider="",
+        request=request,
+    )
     setup_mode_hint = (
-        "当前处于首次安装配置模式，仅允许本机访问。完成飞书应用配置后，请使用飞书登录绑定后台管理员。"
+        "当前处于首次安装模式，仅允许本机访问。完成后再使用飞书登录绑定管理员。"
         if bootstrap
         else "当前已通过飞书登录。"
     )
@@ -1484,7 +1490,7 @@ async def _setup_admin_page(
         f"""
         <header class="topbar">
           <div>
-            <h1>首次配置向导</h1>
+            <h1>欢迎配置你的飞书助手</h1>
             <p>当前登录：<code>{escape(user_open_id)}</code></p>
           </div>
           <div class="top-actions">
@@ -1497,49 +1503,70 @@ async def _setup_admin_page(
           <input type="hidden" name="next" value="/admin/setup" />
           {_saved_banner(request)}
 
-          <section class="toolbar">
-            <p>{escape(setup_mode_hint)} 按顺序完成这些配置后，就可以启动机器人并进行基础测试。</p>
-            <div class="toolbar-actions">
-              <button type="submit" name="config_scope" value="setup">保存向导配置</button>
-              <button type="reset" class="secondary">重置</button>
-            </div>
-          </section>
+          <section class="setup-shell" data-setup-wizard>
+            <aside class="setup-rail" aria-label="配置步骤">
+              <p class="setup-mode">{escape(setup_mode_hint)}</p>
+              <ol class="setup-steps">
+                <li class="active" data-setup-indicator="0"><span>1</span>开始</li>
+                <li data-setup-indicator="1"><span>2</span>服务地址</li>
+                <li data-setup-indicator="2"><span>3</span>飞书应用</li>
+                <li data-setup-indicator="3"><span>4</span>AI 模型</li>
+                <li data-setup-indicator="4"><span>5</span>完成检查</li>
+              </ol>
+            </aside>
 
-          <section class="wide">
-            <article>
-              <h2>配置进度</h2>
-              <div class="setup-status-grid">
-                {_setup_status_cards(settings, provider_options)}
+            <article class="setup-step active" data-setup-step="0">
+              <span class="setup-kicker">第 1 步</span>
+              <h2>先确认你要做什么</h2>
+              <p>
+                这个向导只会帮你完成“能跑起来”的最小配置：让飞书知道你的服务地址、
+                让本程序能连接飞书、再接入一个 AI 模型。
+              </p>
+              <div class="setup-explain-grid">
+                <div>
+                  <strong>你会得到什么</strong>
+                  <p>配置完成后，可以在飞书里给机器人发消息，让它搜索、读取和处理你授权的内容。</p>
+                </div>
+                <div>
+                  <strong>你暂时不用管什么</strong>
+                  <p>写入策略、网页读取、图片理解、代理、scope、数据库路径等都可以以后在后台调整。</p>
+                </div>
+              </div>
+              <div class="setup-actions">
+                <button type="button" data-setup-next>开始配置</button>
               </div>
             </article>
-          </section>
 
-          <section class="grid">
-            <article>
-              <h2>1. 服务地址</h2>
-              <p class="hint">这里决定飞书 OAuth 回调地址和用户打开后台时看到的服务地址。</p>
+            <article class="setup-step" data-setup-step="1" hidden>
+              <span class="setup-kicker">第 2 步</span>
+              <h2>告诉飞书：你的助手服务在哪里</h2>
+              <p>
+                飞书授权完成后，需要跳回你的本地服务。这里填的地址就是飞书回来的入口。
+                本机测试通常保持默认值；部署到服务器时再改成公网 HTTPS 地址。
+              </p>
               <div class="settings-list one-column">
-                {_setting_fields_for(settings, ("FCGO_ENV", "FCGO_BASE_URL", "FCGO_AGENT_MODE"))}
+                {_setting_fields_for(settings, ("FCGO_BASE_URL",))}
               </div>
               <div class="setup-copy">
-                <span>机器人授权回调地址</span>
+                <span>在飞书开放平台添加这个机器人授权回调地址</span>
                 <code>{escape(settings.oauth_redirect_uri)}</code>
               </div>
               <div class="setup-copy">
-                <span>后台登录回调地址</span>
+                <span>在飞书开放平台添加这个后台登录回调地址</span>
                 <code>{escape(_admin_redirect_uri(settings))}</code>
               </div>
-              <p class="hint">
-                以上两个地址都需要添加到飞书开放平台的“重定向 URL”。如果你用
-                127.0.0.1 打开后台，就在飞书后台添加 127.0.0.1 版本；如果你用
-                localhost 打开后台，也要添加 localhost 版本。
-              </p>
+              <div class="setup-actions">
+                <button type="button" class="secondary" data-setup-prev>上一步</button>
+                <button type="button" data-setup-next>下一步</button>
+              </div>
             </article>
 
-            <article>
-              <h2>2. 飞书应用</h2>
-              <p class="hint">
-                先填写飞书开放平台里的 App ID 和 App Secret；事件校验信息可按你的事件模式补充。
+            <article class="setup-step" data-setup-step="2" hidden>
+              <span class="setup-kicker">第 3 步</span>
+              <h2>连接你的飞书机器人应用</h2>
+              <p>
+                这两个值来自飞书开放平台的自建应用。程序会用它们确认“这个机器人确实是你的”，
+                并代表机器人接收消息、发送回复。
               </p>
               <div class="settings-list one-column">
                 {_setting_fields_for(
@@ -1547,91 +1574,64 @@ async def _setup_admin_page(
                     (
                         "FEISHU_APP_ID",
                         "FEISHU_APP_SECRET",
-                        "FEISHU_VERIFICATION_TOKEN",
-                        "FEISHU_ENCRYPT_KEY",
-                        "FEISHU_BOT_OPEN_ID",
-                        "FEISHU_BOT_NAME",
-                        "FCGO_OAUTH_ENABLE_OFFLINE_ACCESS",
                     ),
                 )}
               </div>
-            </article>
-          </section>
-
-          <section class="wide">
-            <article>
-              <h2>3. 模型接口</h2>
-              <p class="hint">
-                至少配置一个模型 Provider，并点击测试连接确认 Key、地址和模型名可用。
-              </p>
-              <div class="settings-list">
-                {_system_default_model_fields(settings, provider_options)}
+              <p class="hint">事件校验 Token、加密 Key、持续授权等属于高级选项，首次配置可以先不填。</p>
+              <div class="setup-actions">
+                <button type="button" class="secondary" data-setup-prev>上一步</button>
+                <button type="button" data-setup-next>下一步</button>
               </div>
+            </article>
+
+            <article class="setup-step" data-setup-step="3" hidden>
+              <span class="setup-kicker">第 4 步</span>
+              <h2>接入一个 AI 模型</h2>
+              <p>
+                助手真正回答问题需要调用大模型。你只需要先添加一个能用的模型接口；
+                如果暂时没有 Key，可以跳过，之后在后台再补。
+              </p>
               <div class="provider-cards">
-                {_configured_provider_cards(
-                    provider_options,
-                    system_default_provider=_specs_by_env(settings)["FCGO_DEFAULT_PROVIDER"].value,
-                    personal_default_provider="",
-                    request=request,
-                ) or '<p class="hint">还没有配置可用模型接口。请点击下面的按钮添加。</p>'}
+                {configured_models or '<p class="hint">还没有配置可用模型接口。点击“添加模型接口”，选择你已经有 Key 的服务。</p>'}
               </div>
               <button type="button" class="secondary open-model-dialog">
                 添加模型接口
               </button>
               {_model_config_dialog(settings, provider_options)}
-            </article>
-          </section>
-
-          <section class="grid">
-            <article>
-              <h2>4. 常用能力</h2>
-              <p class="hint">首次安装建议先保留默认值；确认机器人可用后再按需调整。</p>
-              <div class="settings-list one-column">
-                {_setting_fields_for(
-                    settings,
-                    (
-                        "FCGO_RESOURCE_SEARCH_ENABLED",
-                        "FCGO_ATTACHMENT_VISION_ENABLED",
-                        "FCGO_ATTACHMENT_MEDIA_UNDERSTANDING_ENABLED",
-                        "FCGO_ATTACHMENT_OCR_ENABLED",
-                        "FCGO_WEB_READ_ENABLED",
-                        "FCGO_WRITEBACK_ENABLED",
-                        "FCGO_WRITEBACK_CONFIRMATION_MODE",
-                    ),
-                )}
+              <div class="setup-actions">
+                <button type="button" class="secondary" data-setup-prev>上一步</button>
+                <button type="button" class="secondary" data-setup-next>先跳过</button>
+                <button type="button" data-setup-next>下一步</button>
               </div>
             </article>
 
-            <article>
-              <h2>5. 飞书菜单</h2>
-              <p class="hint">
-                至少建议在飞书开发者后台添加下面三个入口，后续可以在普通后台查看完整菜单表。
+            <article class="setup-step" data-setup-step="4" hidden>
+              <span class="setup-kicker">第 5 步</span>
+              <h2>保存并做一次最小验证</h2>
+              <p>
+                保存后重启服务，让配置生效。然后在飞书开发者后台添加菜单入口，
+                最后给机器人发一条“帮助”确认它能回复。
               </p>
-              <table class="menu-table compact-table">
-                <tbody>
-                  <tr><th>本地配置网页</th><td><code>fcgo.admin.open</code></td></tr>
-                  <tr><th>使用说明</th><td><code>fcgo.help</code></td></tr>
-                  <tr><th>授权状态</th><td><code>fcgo.auth.status</code></td></tr>
-                </tbody>
-              </table>
-              <p class="hint">完整菜单清单在普通后台的“机器人菜单功能”区块。</p>
-            </article>
-          </section>
-
-          <section class="wide">
-            <article>
-              <h2>6. 最终检查</h2>
+              <div class="setup-menu-minimal">
+                <div><strong>后台配置</strong><code>fcgo.admin.open</code></div>
+                <div><strong>使用说明</strong><code>fcgo.help</code></div>
+                <div><strong>授权状态</strong><code>fcgo.auth.status</code></div>
+              </div>
               <ol class="setup-checklist">
-                <li>保存向导配置。</li>
-                <li>重启本地服务，让全局环境参数生效。</li>
-                <li>回到本页面测试模型连接。</li>
-                <li>在飞书里点击“本地配置网页”菜单，确认能打开后台。</li>
-                <li>发送“帮助”或“帮我搜索飞书文档 测试”做一次机器人验证。</li>
+                <li>点击下面的“保存配置”。</li>
+                <li>重启服务，让 App ID、Secret、模型配置等生效。</li>
+                <li>在飞书开放平台确认两个回调地址已经添加。</li>
+                <li>在飞书里给机器人发送“帮助”。</li>
               </ol>
+              <div class="setup-actions">
+                <button type="button" class="secondary" data-setup-prev>上一步</button>
+                <button type="submit" name="config_scope" value="setup">保存配置</button>
+              </div>
             </article>
           </section>
 
           {_model_options_script(provider_options)}
+          {_setup_wizard_script()}
           {_clear_button_script()}
           {_card_reset_script()}
         </form>
@@ -2512,6 +2512,41 @@ def _model_options_script(providers: list[ModelProviderOption]) -> str:
     """
 
 
+def _setup_wizard_script() -> str:
+    return """
+    <script>
+      const setupWizard = document.querySelector("[data-setup-wizard]");
+      if (setupWizard) {
+        const steps = Array.from(setupWizard.querySelectorAll("[data-setup-step]"));
+        const indicators = Array.from(setupWizard.querySelectorAll("[data-setup-indicator]"));
+        let currentStep = 0;
+        function showSetupStep(index) {
+          currentStep = Math.max(0, Math.min(index, steps.length - 1));
+          steps.forEach((step, stepIndex) => {
+            const active = stepIndex === currentStep;
+            step.hidden = !active;
+            step.classList.toggle("active", active);
+          });
+          indicators.forEach((item, itemIndex) => {
+            item.classList.toggle("active", itemIndex === currentStep);
+            item.classList.toggle("done", itemIndex < currentStep);
+          });
+        }
+        setupWizard.querySelectorAll("[data-setup-next]").forEach((button) => {
+          button.addEventListener("click", () => showSetupStep(currentStep + 1));
+        });
+        setupWizard.querySelectorAll("[data-setup-prev]").forEach((button) => {
+          button.addEventListener("click", () => showSetupStep(currentStep - 1));
+        });
+        indicators.forEach((item, itemIndex) => {
+          item.addEventListener("click", () => showSetupStep(itemIndex));
+        });
+        showSetupStep(0);
+      }
+    </script>
+    """
+
+
 def _clear_button_script() -> str:
     return """
     <script>
@@ -3104,6 +3139,133 @@ def _layout(title: str, body: str) -> str:
       line-height: 1.6;
     }}
     .hint {{ margin-top: 14px; color: var(--muted); font-size: 14px; }}
+    .setup-shell {{
+      display: grid;
+      grid-template-columns: 260px minmax(0, 1fr);
+      gap: 18px;
+      max-width: 1120px;
+      margin: 0 auto 48px;
+      padding: 12px 24px;
+      box-sizing: border-box;
+    }}
+    .setup-rail {{
+      position: sticky;
+      top: 18px;
+      align-self: start;
+      border: 1px solid var(--border);
+      border-radius: 14px;
+      background: rgba(255, 255, 255, 0.82);
+      box-shadow: var(--shadow-soft);
+      padding: 18px;
+      backdrop-filter: blur(14px);
+    }}
+    .setup-mode {{
+      margin-bottom: 14px;
+      color: var(--muted);
+      font-size: 13px;
+      line-height: 1.6;
+    }}
+    .setup-steps {{
+      display: grid;
+      gap: 8px;
+      margin: 0;
+      padding: 0;
+      list-style: none;
+    }}
+    .setup-steps li {{
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      min-height: 40px;
+      padding: 8px 10px;
+      border-radius: 10px;
+      color: var(--muted);
+      cursor: pointer;
+      user-select: none;
+    }}
+    .setup-steps span {{
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      width: 24px;
+      height: 24px;
+      border-radius: 999px;
+      background: #eef1f5;
+      color: var(--muted);
+      font-size: 13px;
+      font-weight: 700;
+    }}
+    .setup-steps li.active {{
+      background: var(--primary-soft);
+      color: var(--primary-hover);
+      font-weight: 700;
+    }}
+    .setup-steps li.active span {{
+      background: var(--primary);
+      color: #fff;
+    }}
+    .setup-steps li.done span {{
+      background: #e6f6ea;
+      color: var(--success);
+    }}
+    .setup-step {{
+      min-height: 560px;
+      padding: 34px;
+    }}
+    .setup-step[hidden] {{
+      display: none;
+    }}
+    .setup-step h2 {{
+      font-size: 28px;
+      margin-bottom: 12px;
+    }}
+    .setup-kicker {{
+      display: inline-flex;
+      margin-bottom: 12px;
+      padding: 4px 9px;
+      border-radius: 999px;
+      background: var(--primary-soft);
+      color: var(--primary-hover);
+      font-size: 13px;
+      font-weight: 700;
+    }}
+    .setup-explain-grid {{
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 14px;
+      margin: 22px 0;
+    }}
+    .setup-explain-grid div,
+    .setup-menu-minimal div {{
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      background: #fbfcff;
+      padding: 16px;
+    }}
+    .setup-explain-grid strong,
+    .setup-menu-minimal strong {{
+      display: block;
+      margin-bottom: 8px;
+      color: var(--text);
+    }}
+    .setup-actions {{
+      display: flex;
+      justify-content: flex-end;
+      gap: 12px;
+      margin-top: 28px;
+      padding-top: 20px;
+      border-top: 1px solid var(--border);
+    }}
+    .setup-menu-minimal {{
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 12px;
+      margin: 22px 0;
+    }}
+    .setup-menu-minimal code {{
+      display: inline-block;
+      overflow-wrap: anywhere;
+    }}
     .setup-status-grid {{
       display: grid;
       grid-template-columns: repeat(4, minmax(0, 1fr));
@@ -3282,6 +3444,13 @@ def _layout(title: str, body: str) -> str:
       .settings-list {{ grid-template-columns: 1fr; }}
       .input-action-row {{ grid-template-columns: 1fr; }}
       .input-action-row .clear-button {{ width: 100%; }}
+      .setup-shell {{ grid-template-columns: 1fr; padding: 12px 16px; }}
+      .setup-rail {{ position: static; }}
+      .setup-step {{ min-height: auto; padding: 24px; }}
+      .setup-step h2 {{ font-size: 23px; }}
+      .setup-explain-grid, .setup-menu-minimal {{ grid-template-columns: 1fr; }}
+      .setup-actions {{ display: grid; grid-template-columns: 1fr; }}
+      .setup-actions button {{ width: 100%; }}
       .setup-status-grid {{ grid-template-columns: 1fr; }}
       .provider-cards,
       .provider-cards.compact {{ grid-template-columns: 1fr; }}
