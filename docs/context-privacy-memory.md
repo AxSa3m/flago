@@ -2,17 +2,17 @@
 
 ## 目标
 
-飞灵（FLGO） 的上下文和记忆能力必须默认可解释、范围清晰、操作可审计。系统可以帮助用户理解当前会话最近消息，但不能跨会话扩展上下文、长期保存正文或建立不可见的个人档案。
+Flago（FLAGO） 的上下文和记忆能力必须默认可解释、范围清晰、操作可审计。系统可以帮助用户理解当前会话最近消息，但不能跨会话扩展上下文、长期保存正文或建立不可见的个人档案。
 
 本规格覆盖后续上下文读取、用户授权、长期记忆、审计和删除策略。除非后续任务明确修改，本文件是相关实现的默认产品和工程边界。
 
 ## 默认配置
 
-- `FLGO_CONTEXT_RECENT_MESSAGE_LIMIT=50`、`FLGO_CONTEXT_RECENT_TIME_WINDOW_HOURS=24`：最近聊天读取的数量和时间窗口。
-- `FLGO_CONTEXT_CACHE_TTL_HOURS=24`、`FLGO_CONTEXT_CACHE_REFRESH_SECONDS=60`：最近聊天原文只做短期缓存，减少重复飞书 API 调用。
-- `FLGO_CONTEXT_INJECT_MESSAGE_LIMIT=8`、`FLGO_CONTEXT_MAX_CHARS=6000`：每次模型请求优先注入近期全文消息，超过窗口或预算的旧消息压缩为当前会话摘要。
-- `FLGO_MEMORY_STORE_RAW_TEXT=false`：默认禁止长期保存完整聊天原文、飞书正文或网页正文。长期记忆只能保存用户可查看、可编辑、可删除的结构化摘要或偏好。
-- `FLGO_MEMORY_ITEM_MAX_CHARS=2000`、`FLGO_MEMORY_CONTEXT_MAX_CHARS=4000`：限制单条长期记忆内容长度，以及每次进入模型上下文的长期记忆总字符数。
+- `FLAGO_CONTEXT_RECENT_MESSAGE_LIMIT=50`、`FLAGO_CONTEXT_RECENT_TIME_WINDOW_HOURS=24`：最近聊天读取的数量和时间窗口。
+- `FLAGO_CONTEXT_CACHE_TTL_HOURS=24`、`FLAGO_CONTEXT_CACHE_REFRESH_SECONDS=60`：最近聊天原文只做短期缓存，减少重复飞书 API 调用。
+- `FLAGO_CONTEXT_INJECT_MESSAGE_LIMIT=8`、`FLAGO_CONTEXT_MAX_CHARS=6000`：每次模型请求优先注入近期全文消息，超过窗口或预算的旧消息压缩为当前会话摘要。
+- `FLAGO_MEMORY_STORE_RAW_TEXT=false`：默认禁止长期保存完整聊天原文、飞书正文或网页正文。长期记忆只能保存用户可查看、可编辑、可删除的结构化摘要或偏好。
+- `FLAGO_MEMORY_ITEM_MAX_CHARS=2000`、`FLAGO_MEMORY_CONTEXT_MAX_CHARS=4000`：限制单条长期记忆内容长度，以及每次进入模型上下文的长期记忆总字符数。
 
 这些默认值是开源安全基线。部署者可以在私有环境中调整，但产品文案和日志必须清楚说明风险。
 
@@ -66,7 +66,7 @@
 
 - 用户删除或清空长期记忆后，SQLite 中对应记忆内容应被删除或标记为不可用于上下文。关闭长期记忆不删除已有记忆，只暂停新增和调用。
 - 用户重新授权 OAuth 时，旧 token 可以被替换；授权失败或过期时，应提示用户重新 `/授权`。
-- 若未来引入向量索引或缓存，必须提供按用户删除的清理策略，并继续遵守 `FLGO_MEMORY_STORE_RAW_TEXT=false` 的默认边界。
+- 若未来引入向量索引或缓存，必须提供按用户删除的清理策略，并继续遵守 `FLAGO_MEMORY_STORE_RAW_TEXT=false` 的默认边界。
 
 ## 后续实现要求
 

@@ -6,24 +6,24 @@ from typing import Any
 import aiosqlite
 import pytest
 
-from flgo.agent import Assistant
-from flgo.feishu.router import FeishuMessageRouter
-from flgo.model_providers.registry import ModelProviderRegistry, ModelRouter
-from flgo.model_providers.types import (
+from flago.agent import Assistant
+from flago.feishu.router import FeishuMessageRouter
+from flago.model_providers.registry import ModelProviderRegistry, ModelRouter
+from flago.model_providers.types import (
     ModelRequest,
     ModelResponse,
     ProviderCapability,
     ProviderConfig,
     ProviderKind,
 )
-from flgo.models import (
+from flago.models import (
     AuditEventType,
     ConversationType,
     FeishuMessage,
     ResourceReadResult,
     ResourceRef,
 )
-from flgo.storage import SQLiteStore
+from flago.storage import SQLiteStore
 
 
 @pytest.mark.asyncio
@@ -60,8 +60,8 @@ async def test_mvp_feishu_link_is_read_before_model_reply(tmp_path) -> None:
         )
     ]
     assert len(provider.requests) == 1
-    assert "蓝色火箭测试编号 FLGOHJ123" in provider.requests[0].messages[-1].content
-    assert client.replies == [("oc_private", "资源中的测试编号是 FLGOHJ123")]
+    assert "蓝色火箭测试编号 FLAGOHJ123" in provider.requests[0].messages[-1].content
+    assert client.replies == [("oc_private", "资源中的测试编号是 FLAGOHJ123")]
 
 
 @pytest.mark.asyncio
@@ -107,7 +107,7 @@ async def _acceptance_stack(
     *,
     resource_reader: AcceptanceResourceReader | None = None,
 ) -> tuple[SQLiteStore, AcceptanceProvider, AcceptanceFeishuClient, FeishuMessageRouter]:
-    store = SQLiteStore(tmp_path / "flgo.sqlite3")
+    store = SQLiteStore(tmp_path / "flago.sqlite3")
     await store.init()
     provider = AcceptanceProvider()
     registry = ModelProviderRegistry()
@@ -150,8 +150,8 @@ class AcceptanceProvider:
         self.requests.append(request)
         prompt = request.messages[-1].content if request.messages else ""
         text = (
-            "资源中的测试编号是 FLGOHJ123"
-            if "蓝色火箭测试编号 FLGOHJ123" in prompt
+            "资源中的测试编号是 FLAGOHJ123"
+            if "蓝色火箭测试编号 FLAGOHJ123" in prompt
             else "MVP 模型回复"
         )
         return ModelResponse(
@@ -171,7 +171,7 @@ class AcceptanceResourceReader:
         return ResourceReadResult(
             ref=ref,
             title="测试文档",
-            content="蓝色火箭测试编号 FLGOHJ123",
+            content="蓝色火箭测试编号 FLAGOHJ123",
         )
 
 

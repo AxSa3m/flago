@@ -3,9 +3,9 @@ from typing import Any
 
 import pytest
 
-from flgo.agent.orchestrator import AgentOrchestrator
-from flgo.model_providers.types import ModelRequest, ModelResponse, ModelToolCall
-from flgo.models import (
+from flago.agent.orchestrator import AgentOrchestrator
+from flago.model_providers.types import ModelRequest, ModelResponse, ModelToolCall
+from flago.models import (
     AssistantRequest,
     ChatContextMessage,
     ConversationType,

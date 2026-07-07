@@ -5,13 +5,13 @@ from typing import Any
 import aiosqlite
 import pytest
 
-from flgo.config import Settings
-from flgo.feishu.oauth import AuthorizationStatus
-from flgo.feishu.openapi import DownloadedFile
-from flgo.feishu.router import FeishuMessageRouter
-from flgo.model_providers.echo import EchoModelProvider
-from flgo.model_providers.registry import ModelProviderRegistry, ModelRouter, build_model_router
-from flgo.models import (
+from flago.config import Settings
+from flago.feishu.oauth import AuthorizationStatus
+from flago.feishu.openapi import DownloadedFile
+from flago.feishu.router import FeishuMessageRouter
+from flago.model_providers.echo import EchoModelProvider
+from flago.model_providers.registry import ModelProviderRegistry, ModelRouter, build_model_router
+from flago.models import (
     ActionProposal,
     AssistantResponse,
     AuditEventType,
@@ -24,7 +24,7 @@ from flgo.models import (
     WriteActionType,
     WritebackConfirmationMode,
 )
-from flgo.storage import SQLiteStore
+from flago.storage import SQLiteStore
 
 
 class SuccessfulAssistant:
@@ -170,7 +170,7 @@ def _writeback_settings() -> Settings:
 
 @pytest.mark.asyncio
 async def test_router_replies_with_model_response(tmp_path) -> None:
-    store = SQLiteStore(tmp_path / "flgo.sqlite3")
+    store = SQLiteStore(tmp_path / "flago.sqlite3")
     await store.init()
     client = RecordingFeishuClient()
     router = FeishuMessageRouter(SuccessfulAssistant(), client, store)
@@ -183,7 +183,7 @@ async def test_router_replies_with_model_response(tmp_path) -> None:
 
 @pytest.mark.asyncio
 async def test_router_downloads_current_message_image_for_assistant(tmp_path) -> None:
-    store = SQLiteStore(tmp_path / "flgo.sqlite3")
+    store = SQLiteStore(tmp_path / "flago.sqlite3")
     await store.init()
     assistant = SuccessfulAssistant()
     client = RecordingFeishuClient()
@@ -210,7 +210,7 @@ async def test_router_downloads_current_message_image_for_assistant(tmp_path) ->
 
 @pytest.mark.asyncio
 async def test_router_downloads_current_message_video_for_assistant(tmp_path) -> None:
-    store = SQLiteStore(tmp_path / "flgo.sqlite3")
+    store = SQLiteStore(tmp_path / "flago.sqlite3")
     await store.init()
     assistant = SuccessfulAssistant()
     client = RecordingFeishuClient()
@@ -242,7 +242,7 @@ async def test_router_downloads_current_message_video_for_assistant(tmp_path) ->
 
 @pytest.mark.asyncio
 async def test_router_sends_writeback_proposal_card_and_saves_pending_action(tmp_path) -> None:
-    store = SQLiteStore(tmp_path / "flgo.sqlite3")
+    store = SQLiteStore(tmp_path / "flago.sqlite3")
     await store.init()
     await store.save_assistant_name_preference(
         subject_id="ou_user",
@@ -290,7 +290,7 @@ async def test_router_sends_writeback_proposal_card_and_saves_pending_action(tmp
 
 @pytest.mark.asyncio
 async def test_router_drops_writeback_proposals_when_disabled(tmp_path) -> None:
-    store = SQLiteStore(tmp_path / "flgo.sqlite3")
+    store = SQLiteStore(tmp_path / "flago.sqlite3")
     await store.init()
     proposal = ActionProposal(
         actor_id="ou_user",
@@ -317,7 +317,7 @@ async def test_router_drops_writeback_proposals_when_disabled(tmp_path) -> None:
 
 @pytest.mark.asyncio
 async def test_router_draft_only_writeback_policy_does_not_save_pending_action(tmp_path) -> None:
-    store = SQLiteStore(tmp_path / "flgo.sqlite3")
+    store = SQLiteStore(tmp_path / "flago.sqlite3")
     await store.init()
     proposal = ActionProposal(
         actor_id="ou_user",
@@ -350,7 +350,7 @@ async def test_router_draft_only_writeback_policy_does_not_save_pending_action(t
 
 @pytest.mark.asyncio
 async def test_router_low_risk_direct_writeback_policy_executes_doc_append(tmp_path) -> None:
-    store = SQLiteStore(tmp_path / "flgo.sqlite3")
+    store = SQLiteStore(tmp_path / "flago.sqlite3")
     await store.init()
     proposal = ActionProposal(
         actor_id="ou_user",
@@ -385,7 +385,7 @@ async def test_router_low_risk_direct_writeback_policy_executes_doc_append(tmp_p
 
 @pytest.mark.asyncio
 async def test_router_writeback_auto_command_enables_low_risk_direct(tmp_path) -> None:
-    store = SQLiteStore(tmp_path / "flgo.sqlite3")
+    store = SQLiteStore(tmp_path / "flago.sqlite3")
     await store.init()
     proposal = ActionProposal(
         actor_id="ou_user",
@@ -425,7 +425,7 @@ async def test_router_writeback_auto_command_enables_low_risk_direct(tmp_path) -
 
 @pytest.mark.asyncio
 async def test_router_writeback_auto_command_keeps_high_risk_on_card(tmp_path) -> None:
-    store = SQLiteStore(tmp_path / "flgo.sqlite3")
+    store = SQLiteStore(tmp_path / "flago.sqlite3")
     await store.init()
     proposal = ActionProposal(
         actor_id="ou_user",
@@ -461,7 +461,7 @@ async def test_router_writeback_auto_command_keeps_high_risk_on_card(tmp_path) -
 
 @pytest.mark.asyncio
 async def test_router_writeback_auto_command_disabled_restores_cards(tmp_path) -> None:
-    store = SQLiteStore(tmp_path / "flgo.sqlite3")
+    store = SQLiteStore(tmp_path / "flago.sqlite3")
     await store.init()
     proposal = ActionProposal(
         actor_id="ou_user",
@@ -500,7 +500,7 @@ async def test_router_writeback_auto_command_disabled_restores_cards(tmp_path) -
 
 @pytest.mark.asyncio
 async def test_router_writeback_auto_command_requires_feature_flag(tmp_path) -> None:
-    store = SQLiteStore(tmp_path / "flgo.sqlite3")
+    store = SQLiteStore(tmp_path / "flago.sqlite3")
     await store.init()
     client = RecordingFeishuClient()
     router = FeishuMessageRouter(
@@ -517,18 +517,18 @@ async def test_router_writeback_auto_command_requires_feature_flag(tmp_path) -> 
     await router.handle_message(_message("om_writeback_auto_flag", "/写回 自动开启"))
 
     assert await store.get_writeback_auto_execute("ou_user") is None
-    assert "FLGO_WRITEBACK_AUTO_EXECUTE_ENABLED=true" in client.replies[0][1]
+    assert "FLAGO_WRITEBACK_AUTO_EXECUTE_ENABLED=true" in client.replies[0][1]
 
 
 @pytest.mark.asyncio
 async def test_router_warns_but_allows_recent_duplicate_writeback(tmp_path) -> None:
-    store = SQLiteStore(tmp_path / "flgo.sqlite3")
+    store = SQLiteStore(tmp_path / "flago.sqlite3")
     await store.init()
     proposal = ActionProposal(
         actor_id="ou_user",
         action_type=WriteActionType.BITABLE_CREATE_RECORD,
         target={"app_token": "app1", "table_id": "tbl1"},
-        payload={"fields": {"内容": "FLGO 写回测试成功"}},
+        payload={"fields": {"内容": "FLAGO 写回测试成功"}},
         preview="向多维表格新增记录",
         expires_at=datetime.now(UTC) + timedelta(minutes=30),
     )
@@ -560,7 +560,7 @@ async def test_router_warns_but_allows_recent_duplicate_writeback(tmp_path) -> N
 async def test_router_trusts_assistant_action_proposals_without_keyword_gate(
     tmp_path,
 ) -> None:
-    store = SQLiteStore(tmp_path / "flgo.sqlite3")
+    store = SQLiteStore(tmp_path / "flago.sqlite3")
     await store.init()
     proposal = ActionProposal(
         actor_id="ou_user",
@@ -587,7 +587,7 @@ async def test_router_trusts_assistant_action_proposals_without_keyword_gate(
 
 @pytest.mark.asyncio
 async def test_router_allows_writeback_card_for_join_sheet_intent(tmp_path) -> None:
-    store = SQLiteStore(tmp_path / "flgo.sqlite3")
+    store = SQLiteStore(tmp_path / "flago.sqlite3")
     await store.init()
     proposal = ActionProposal(
         actor_id="ou_user",
@@ -617,7 +617,7 @@ async def test_router_allows_writeback_card_for_join_sheet_intent(tmp_path) -> N
 
 @pytest.mark.asyncio
 async def test_router_allows_writeback_card_for_add_bitable_intent(tmp_path) -> None:
-    store = SQLiteStore(tmp_path / "flgo.sqlite3")
+    store = SQLiteStore(tmp_path / "flago.sqlite3")
     await store.init()
     proposal = ActionProposal(
         actor_id="ou_user",
@@ -647,7 +647,7 @@ async def test_router_allows_writeback_card_for_add_bitable_intent(tmp_path) -> 
 
 @pytest.mark.asyncio
 async def test_router_allows_writeback_card_for_increase_bitable_intent(tmp_path) -> None:
-    store = SQLiteStore(tmp_path / "flgo.sqlite3")
+    store = SQLiteStore(tmp_path / "flago.sqlite3")
     await store.init()
     proposal = ActionProposal(
         actor_id="ou_user",
@@ -677,7 +677,7 @@ async def test_router_allows_writeback_card_for_increase_bitable_intent(tmp_path
 
 @pytest.mark.asyncio
 async def test_router_allows_writeback_card_for_replace_bitable_intent(tmp_path) -> None:
-    store = SQLiteStore(tmp_path / "flgo.sqlite3")
+    store = SQLiteStore(tmp_path / "flago.sqlite3")
     await store.init()
     proposal = ActionProposal(
         actor_id="ou_user",
@@ -707,7 +707,7 @@ async def test_router_allows_writeback_card_for_replace_bitable_intent(tmp_path)
 
 @pytest.mark.asyncio
 async def test_router_replies_to_bot_mentioned_group_message(tmp_path) -> None:
-    store = SQLiteStore(tmp_path / "flgo.sqlite3")
+    store = SQLiteStore(tmp_path / "flago.sqlite3")
     await store.init()
     client = RecordingFeishuClient()
     assistant = SuccessfulAssistant()
@@ -729,7 +729,7 @@ async def test_router_replies_to_bot_mentioned_group_message(tmp_path) -> None:
 
 @pytest.mark.asyncio
 async def test_router_ignores_group_message_without_bot_mention(tmp_path) -> None:
-    store = SQLiteStore(tmp_path / "flgo.sqlite3")
+    store = SQLiteStore(tmp_path / "flago.sqlite3")
     await store.init()
     client = RecordingFeishuClient()
     assistant = SuccessfulAssistant()
@@ -751,7 +751,7 @@ async def test_router_ignores_group_message_without_bot_mention(tmp_path) -> Non
 
 @pytest.mark.asyncio
 async def test_router_replies_with_user_facing_model_error(tmp_path) -> None:
-    store = SQLiteStore(tmp_path / "flgo.sqlite3")
+    store = SQLiteStore(tmp_path / "flago.sqlite3")
     await store.init()
     client = RecordingFeishuClient()
     router = FeishuMessageRouter(FailingAssistant(), client, store)
@@ -765,7 +765,7 @@ async def test_router_replies_with_user_facing_model_error(tmp_path) -> None:
 
 @pytest.mark.asyncio
 async def test_router_rejects_oversized_message_before_model_call(tmp_path) -> None:
-    store = SQLiteStore(tmp_path / "flgo.sqlite3")
+    store = SQLiteStore(tmp_path / "flago.sqlite3")
     await store.init()
     client = RecordingFeishuClient()
     assistant = SuccessfulAssistant()
@@ -784,7 +784,7 @@ async def test_router_rejects_oversized_message_before_model_call(tmp_path) -> N
 
 @pytest.mark.asyncio
 async def test_router_replies_to_authorization_command(tmp_path) -> None:
-    store = SQLiteStore(tmp_path / "flgo.sqlite3")
+    store = SQLiteStore(tmp_path / "flago.sqlite3")
     await store.init()
     client = RecordingFeishuClient()
     assistant = SuccessfulAssistant()
@@ -802,7 +802,7 @@ async def test_router_replies_to_authorization_command(tmp_path) -> None:
 
 @pytest.mark.asyncio
 async def test_router_replies_to_authorization_status_command(tmp_path) -> None:
-    store = SQLiteStore(tmp_path / "flgo.sqlite3")
+    store = SQLiteStore(tmp_path / "flago.sqlite3")
     await store.init()
     client = RecordingFeishuClient()
     assistant = SuccessfulAssistant()
@@ -821,7 +821,7 @@ async def test_router_replies_to_authorization_status_command(tmp_path) -> None:
 
 @pytest.mark.asyncio
 async def test_router_reports_usable_authorization_status(tmp_path) -> None:
-    store = SQLiteStore(tmp_path / "flgo.sqlite3")
+    store = SQLiteStore(tmp_path / "flago.sqlite3")
     await store.init()
     client = RecordingFeishuClient()
     assistant = SuccessfulAssistant()
@@ -851,7 +851,7 @@ async def test_router_reports_usable_authorization_status(tmp_path) -> None:
 
 @pytest.mark.asyncio
 async def test_router_context_command_reports_default_policy(tmp_path) -> None:
-    store = SQLiteStore(tmp_path / "flgo.sqlite3")
+    store = SQLiteStore(tmp_path / "flago.sqlite3")
     await store.init()
     client = RecordingFeishuClient()
     assistant = SuccessfulAssistant()
@@ -870,7 +870,7 @@ async def test_router_context_command_reports_default_policy(tmp_path) -> None:
 
 @pytest.mark.asyncio
 async def test_router_reads_chat_history_by_default(tmp_path) -> None:
-    store = SQLiteStore(tmp_path / "flgo.sqlite3")
+    store = SQLiteStore(tmp_path / "flago.sqlite3")
     await store.init()
     history = RecordingChatHistoryAPI(_chat_history_payload())
     client = RecordingFeishuClient()
@@ -891,7 +891,7 @@ async def test_router_reads_chat_history_by_default(tmp_path) -> None:
 
 @pytest.mark.asyncio
 async def test_router_reads_and_injects_recent_full_chat_context(tmp_path) -> None:
-    store = SQLiteStore(tmp_path / "flgo.sqlite3")
+    store = SQLiteStore(tmp_path / "flago.sqlite3")
     await store.init()
     history = RecordingChatHistoryAPI(_chat_history_payload())
     client = RecordingFeishuClient()
@@ -920,7 +920,7 @@ async def test_router_reads_and_injects_recent_full_chat_context(tmp_path) -> No
 
 @pytest.mark.asyncio
 async def test_router_summarizes_messages_outside_recent_full_window(tmp_path) -> None:
-    store = SQLiteStore(tmp_path / "flgo.sqlite3")
+    store = SQLiteStore(tmp_path / "flago.sqlite3")
     await store.init()
     history = RecordingChatHistoryAPI(
         {
@@ -935,7 +935,7 @@ async def test_router_summarizes_messages_outside_recent_full_window(tmp_path) -
                     "message_id": "om_old_2",
                     "sender": {"id": {"open_id": "ou_user"}},
                     "create_time": "1791359960000",
-                    "body": {"content": "{\"text\":\"旧消息里又补充项目叫 FLGO\"}"},
+                    "body": {"content": "{\"text\":\"旧消息里又补充项目叫 FLAGO\"}"},
                 },
                 {
                     "message_id": "om_recent",
@@ -961,16 +961,16 @@ async def test_router_summarizes_messages_outside_recent_full_window(tmp_path) -
     request = assistant.requests[0]
     assert [item.message_id for item in request.chat_context_messages] == ["om_recent"]
     assert "测试关键词是蓝色火箭" in request.chat_context_summary
-    assert "项目叫 FLGO" in request.chat_context_summary
+    assert "项目叫 FLAGO" in request.chat_context_summary
     assert request.chat_context_omitted_count == 2
     assert request.memory_items == []
 
     memory_items = await store.list_memory_items("ou_user")
     assert len(memory_items) == 1
     assert memory_items[0].kind == "会话摘要"
-    assert memory_items[0].source == "flgo.context.summary:conversation:private:oc_chat"
+    assert memory_items[0].source == "flago.context.summary:conversation:private:oc_chat"
     assert "测试关键词是蓝色火箭" in memory_items[0].content
-    assert "项目叫 FLGO" in memory_items[0].content
+    assert "项目叫 FLAGO" in memory_items[0].content
     assert "om_old_1" not in memory_items[0].content
     assert "ou_user:" not in memory_items[0].content
     assert "1791359900" not in memory_items[0].content
@@ -978,7 +978,7 @@ async def test_router_summarizes_messages_outside_recent_full_window(tmp_path) -
 
 @pytest.mark.asyncio
 async def test_router_uses_cached_chat_context_within_refresh_window(tmp_path) -> None:
-    store = SQLiteStore(tmp_path / "flgo.sqlite3")
+    store = SQLiteStore(tmp_path / "flago.sqlite3")
     await store.init()
     history = RecordingChatHistoryAPI(_chat_history_payload())
     client = RecordingFeishuClient()
@@ -1002,7 +1002,7 @@ async def test_router_uses_cached_chat_context_within_refresh_window(tmp_path) -
 async def test_router_caches_current_message_for_next_followup_within_refresh_window(
     tmp_path,
 ) -> None:
-    store = SQLiteStore(tmp_path / "flgo.sqlite3")
+    store = SQLiteStore(tmp_path / "flago.sqlite3")
     await store.init()
     history = RecordingChatHistoryAPI({"items": []})
     client = RecordingFeishuClient()
@@ -1034,7 +1034,7 @@ async def test_router_caches_current_message_for_next_followup_within_refresh_wi
 
 @pytest.mark.asyncio
 async def test_router_refreshes_chat_context_for_context_dependent_query(tmp_path) -> None:
-    store = SQLiteStore(tmp_path / "flgo.sqlite3")
+    store = SQLiteStore(tmp_path / "flago.sqlite3")
     await store.init()
     history = SequencedChatHistoryAPI(
         [
@@ -1071,7 +1071,7 @@ async def test_router_refreshes_chat_context_for_context_dependent_query(tmp_pat
 
 @pytest.mark.asyncio
 async def test_router_refreshes_chat_context_for_document_reference_query(tmp_path) -> None:
-    store = SQLiteStore(tmp_path / "flgo.sqlite3")
+    store = SQLiteStore(tmp_path / "flago.sqlite3")
     await store.init()
     history = SequencedChatHistoryAPI(
         [
@@ -1094,7 +1094,7 @@ async def test_router_refreshes_chat_context_for_document_reference_query(tmp_pa
                         "create_time": "1791359960000",
                         "body": {
                             "content": (
-                                '{"text":"在已读取的测试文档中，蓝色火箭测试的编码是 FLGOHJ123。"}'
+                                '{"text":"在已读取的测试文档中，蓝色火箭测试的编码是 FLAGOHJ123。"}'
                             )
                         },
                     },
@@ -1127,7 +1127,7 @@ async def test_router_refreshes_chat_context_for_document_reference_query(tmp_pa
 
 @pytest.mark.asyncio
 async def test_router_parses_nested_post_text_for_chat_context(tmp_path) -> None:
-    store = SQLiteStore(tmp_path / "flgo.sqlite3")
+    store = SQLiteStore(tmp_path / "flago.sqlite3")
     await store.init()
     history = RecordingChatHistoryAPI(
         {
@@ -1164,7 +1164,7 @@ async def test_router_parses_nested_post_text_for_chat_context(tmp_path) -> None
 
 @pytest.mark.asyncio
 async def test_router_degrades_when_chat_context_read_fails(tmp_path) -> None:
-    store = SQLiteStore(tmp_path / "flgo.sqlite3")
+    store = SQLiteStore(tmp_path / "flago.sqlite3")
     await store.init()
     client = RecordingFeishuClient()
     assistant = SuccessfulAssistant()
@@ -1190,7 +1190,7 @@ async def test_router_degrades_when_chat_context_read_fails(tmp_path) -> None:
 
 @pytest.mark.asyncio
 async def test_router_memory_view_delete_and_disable(tmp_path) -> None:
-    store = SQLiteStore(tmp_path / "flgo.sqlite3")
+    store = SQLiteStore(tmp_path / "flago.sqlite3")
     await store.init()
     await store.save_memory_item(
         id="memory-1",
@@ -1234,7 +1234,7 @@ async def test_router_memory_view_delete_and_disable(tmp_path) -> None:
 
 @pytest.mark.asyncio
 async def test_router_memory_command_crud_by_key(tmp_path) -> None:
-    store = SQLiteStore(tmp_path / "flgo.sqlite3")
+    store = SQLiteStore(tmp_path / "flago.sqlite3")
     await store.init()
     client = RecordingFeishuClient()
     assistant = SuccessfulAssistant()
@@ -1258,7 +1258,7 @@ async def test_router_memory_command_crud_by_key(tmp_path) -> None:
 
 @pytest.mark.asyncio
 async def test_router_memory_command_generic_preference_can_be_deleted(tmp_path) -> None:
-    store = SQLiteStore(tmp_path / "flgo.sqlite3")
+    store = SQLiteStore(tmp_path / "flago.sqlite3")
     await store.init()
     client = RecordingFeishuClient()
     assistant = SuccessfulAssistant()
@@ -1280,7 +1280,7 @@ async def test_router_memory_command_generic_preference_can_be_deleted(tmp_path)
 async def test_router_memory_command_rejects_write_when_disabled_and_group_management(
     tmp_path,
 ) -> None:
-    store = SQLiteStore(tmp_path / "flgo.sqlite3")
+    store = SQLiteStore(tmp_path / "flago.sqlite3")
     await store.init()
     await store.set_memory_enabled(subject_id="ou_user", enabled=False, updated_by="ou_user")
     client = RecordingFeishuClient()
@@ -1307,7 +1307,7 @@ async def test_router_memory_command_rejects_write_when_disabled_and_group_manag
 
 @pytest.mark.asyncio
 async def test_router_injects_enabled_private_user_memory(tmp_path) -> None:
-    store = SQLiteStore(tmp_path / "flgo.sqlite3")
+    store = SQLiteStore(tmp_path / "flago.sqlite3")
     await store.init()
     await store.save_memory_item(
         id="memory-1",
@@ -1328,7 +1328,7 @@ async def test_router_injects_enabled_private_user_memory(tmp_path) -> None:
 
 @pytest.mark.asyncio
 async def test_router_requires_confirmation_for_explicit_memory_statement(tmp_path) -> None:
-    store = SQLiteStore(tmp_path / "flgo.sqlite3")
+    store = SQLiteStore(tmp_path / "flago.sqlite3")
     await store.init()
     client = RecordingFeishuClient()
     assistant = SuccessfulAssistant()
@@ -1352,7 +1352,7 @@ async def test_router_requires_confirmation_for_explicit_memory_statement(tmp_pa
             content=str(value["memory_content"]),
         )
 
-    await router.handle_bot_menu(_menu_event("evt_memory_view_after_explicit", "flgo.memory.view"))
+    await router.handle_bot_menu(_menu_event("evt_memory_view_after_explicit", "flago.memory.view"))
 
     items = await store.list_memory_items("ou_user")
     contents = {item.content for item in items}
@@ -1367,7 +1367,7 @@ async def test_router_requires_confirmation_for_explicit_memory_statement(tmp_pa
 
 @pytest.mark.asyncio
 async def test_router_limits_explicit_memory_item_length(tmp_path) -> None:
-    store = SQLiteStore(tmp_path / "flgo.sqlite3")
+    store = SQLiteStore(tmp_path / "flago.sqlite3")
     await store.init()
     client = RecordingFeishuClient()
     assistant = SuccessfulAssistant()
@@ -1402,7 +1402,7 @@ async def test_router_limits_explicit_memory_item_length(tmp_path) -> None:
 
 @pytest.mark.asyncio
 async def test_router_limits_memory_context_budget(tmp_path) -> None:
-    store = SQLiteStore(tmp_path / "flgo.sqlite3")
+    store = SQLiteStore(tmp_path / "flago.sqlite3")
     await store.init()
     await store.save_memory_item(
         id="memory-1",
@@ -1436,7 +1436,7 @@ async def test_router_limits_memory_context_budget(tmp_path) -> None:
 
 @pytest.mark.asyncio
 async def test_router_does_not_persist_explicit_memory_when_disabled(tmp_path) -> None:
-    store = SQLiteStore(tmp_path / "flgo.sqlite3")
+    store = SQLiteStore(tmp_path / "flago.sqlite3")
     await store.init()
     await store.set_memory_enabled(subject_id="ou_user", enabled=False, updated_by="ou_user")
     client = RecordingFeishuClient()
@@ -1452,7 +1452,7 @@ async def test_router_does_not_persist_explicit_memory_when_disabled(tmp_path) -
 
 @pytest.mark.asyncio
 async def test_router_does_not_inject_disabled_or_group_user_memory(tmp_path) -> None:
-    store = SQLiteStore(tmp_path / "flgo.sqlite3")
+    store = SQLiteStore(tmp_path / "flago.sqlite3")
     await store.init()
     await store.save_memory_item(
         id="memory-1",
@@ -1484,14 +1484,14 @@ async def test_router_does_not_inject_disabled_or_group_user_memory(tmp_path) ->
 
 @pytest.mark.asyncio
 async def test_router_sends_undo_card_for_latest_reversible_writeback(tmp_path) -> None:
-    store = SQLiteStore(tmp_path / "flgo.sqlite3")
+    store = SQLiteStore(tmp_path / "flago.sqlite3")
     await store.init()
     await store.save_writeback_execution(
         action_id="original-action",
         actor_id="ou_user",
         action_type=WriteActionType.BITABLE_CREATE_RECORD.value,
         target={"app_token": "app1", "table_id": "tbl1"},
-        payload={"fields": {"内容": "FLGO 写回测试成功"}},
+        payload={"fields": {"内容": "FLAGO 写回测试成功"}},
         result={"record": {"record_id": "rec1"}},
         undo_action_type=WriteActionType.BITABLE_DELETE_RECORD.value,
         undo_target={"app_token": "app1", "table_id": "tbl1", "record_id": "rec1"},
@@ -1510,7 +1510,7 @@ async def test_router_sends_undo_card_for_latest_reversible_writeback(tmp_path) 
     saved_actions = [
         await store.get_pending_action(value["action_id"])
         for value in _card_action_values(client.cards[0][1])
-        if value.get("flgo_action") == "writeback.confirm"
+        if value.get("flago_action") == "writeback.confirm"
     ]
     assert saved_actions[0] is not None
     assert saved_actions[0]["action_type"] == WriteActionType.BITABLE_DELETE_RECORD.value
@@ -1524,14 +1524,14 @@ async def test_router_sends_undo_card_for_latest_reversible_writeback(tmp_path) 
 
 @pytest.mark.asyncio
 async def test_router_sends_undo_card_from_writeback_menu(tmp_path) -> None:
-    store = SQLiteStore(tmp_path / "flgo.sqlite3")
+    store = SQLiteStore(tmp_path / "flago.sqlite3")
     await store.init()
     await store.save_writeback_execution(
         action_id="original-action",
         actor_id="ou_user",
         action_type=WriteActionType.BITABLE_CREATE_RECORD.value,
         target={"app_token": "app1", "table_id": "tbl1"},
-        payload={"fields": {"内容": "FLGO 写入测试成功"}},
+        payload={"fields": {"内容": "FLAGO 写入测试成功"}},
         result={"record": {"record_id": "rec1"}},
         undo_action_type=WriteActionType.BITABLE_DELETE_RECORD.value,
         undo_target={"app_token": "app1", "table_id": "tbl1", "record_id": "rec1"},
@@ -1542,7 +1542,7 @@ async def test_router_sends_undo_card_from_writeback_menu(tmp_path) -> None:
     assistant = SuccessfulAssistant()
     router = FeishuMessageRouter(assistant, client, store, settings=_writeback_settings())
 
-    await router.handle_bot_menu(_menu_event("evt_writeback_undo", "flgo.writeback.undo"))
+    await router.handle_bot_menu(_menu_event("evt_writeback_undo", "flago.writeback.undo"))
 
     assert assistant.requests == []
     assert client.sent_texts == []
@@ -1552,7 +1552,7 @@ async def test_router_sends_undo_card_from_writeback_menu(tmp_path) -> None:
     saved_actions = [
         await store.get_pending_action(value["action_id"])
         for value in _card_action_values(client.cards[0][1])
-        if value.get("flgo_action") == "writeback.confirm"
+        if value.get("flago_action") == "writeback.confirm"
     ]
     assert saved_actions[0] is not None
     assert saved_actions[0]["action_type"] == WriteActionType.BITABLE_DELETE_RECORD.value
@@ -1560,7 +1560,7 @@ async def test_router_sends_undo_card_from_writeback_menu(tmp_path) -> None:
 
 @pytest.mark.asyncio
 async def test_router_undo_prefers_latest_doc_append_over_older_bitable(tmp_path) -> None:
-    store = SQLiteStore(tmp_path / "flgo.sqlite3")
+    store = SQLiteStore(tmp_path / "flago.sqlite3")
     await store.init()
     await store.save_writeback_execution(
         action_id="older-bitable",
@@ -1600,7 +1600,7 @@ async def test_router_undo_prefers_latest_doc_append_over_older_bitable(tmp_path
     saved_actions = [
         await store.get_pending_action(value["action_id"])
         for value in _card_action_values(client.cards[0][1])
-        if value.get("flgo_action") == "writeback.confirm"
+        if value.get("flago_action") == "writeback.confirm"
     ]
     assert saved_actions[0] is not None
     assert saved_actions[0]["action_type"] == WriteActionType.DOC_DELETE_BLOCK.value
@@ -1617,7 +1617,7 @@ async def test_router_undo_prefers_latest_doc_append_over_older_bitable(tmp_path
 
 @pytest.mark.asyncio
 async def test_router_replies_when_no_reversible_writeback_exists(tmp_path) -> None:
-    store = SQLiteStore(tmp_path / "flgo.sqlite3")
+    store = SQLiteStore(tmp_path / "flago.sqlite3")
     await store.init()
     client = RecordingFeishuClient()
     assistant = SuccessfulAssistant()
@@ -1632,7 +1632,7 @@ async def test_router_replies_when_no_reversible_writeback_exists(tmp_path) -> N
 
 @pytest.mark.asyncio
 async def test_router_lists_recent_writeback_statuses(tmp_path) -> None:
-    store = SQLiteStore(tmp_path / "flgo.sqlite3")
+    store = SQLiteStore(tmp_path / "flago.sqlite3")
     await store.init()
     await store.save_writeback_execution(
         action_id="sheet-action",
@@ -1670,7 +1670,7 @@ async def test_router_lists_recent_writeback_statuses(tmp_path) -> None:
 
 @pytest.mark.asyncio
 async def test_router_replies_to_model_status_command(tmp_path) -> None:
-    store = SQLiteStore(tmp_path / "flgo.sqlite3")
+    store = SQLiteStore(tmp_path / "flago.sqlite3")
     await store.init()
     client = RecordingFeishuClient()
     assistant = SuccessfulAssistant()
@@ -1686,7 +1686,7 @@ async def test_router_replies_to_model_status_command(tmp_path) -> None:
 
 @pytest.mark.asyncio
 async def test_router_model_status_shows_supported_unconfigured_providers(tmp_path) -> None:
-    store = SQLiteStore(tmp_path / "flgo.sqlite3")
+    store = SQLiteStore(tmp_path / "flago.sqlite3")
     await store.init()
     client = RecordingFeishuClient()
     assistant = SuccessfulAssistant()
@@ -1714,7 +1714,7 @@ async def test_router_model_status_shows_supported_unconfigured_providers(tmp_pa
 
 @pytest.mark.asyncio
 async def test_router_declines_text_model_switching(tmp_path) -> None:
-    store = SQLiteStore(tmp_path / "flgo.sqlite3")
+    store = SQLiteStore(tmp_path / "flago.sqlite3")
     await store.init()
     client = RecordingFeishuClient()
     assistant = SuccessfulAssistant()
@@ -1740,7 +1740,7 @@ async def test_router_declines_text_model_switching(tmp_path) -> None:
 
 @pytest.mark.asyncio
 async def test_router_does_not_set_conversation_model_from_text_command(tmp_path) -> None:
-    store = SQLiteStore(tmp_path / "flgo.sqlite3")
+    store = SQLiteStore(tmp_path / "flago.sqlite3")
     await store.init()
     client = RecordingFeishuClient()
     assistant = SuccessfulAssistant()
@@ -1757,7 +1757,7 @@ async def test_router_does_not_set_conversation_model_from_text_command(tmp_path
 
 @pytest.mark.asyncio
 async def test_router_treats_inline_model_words_as_normal_message(tmp_path) -> None:
-    store = SQLiteStore(tmp_path / "flgo.sqlite3")
+    store = SQLiteStore(tmp_path / "flago.sqlite3")
     await store.init()
     await store.save_model_preference(
         scope="conversation:private:oc_chat",
@@ -1780,7 +1780,7 @@ async def test_router_treats_inline_model_words_as_normal_message(tmp_path) -> N
 async def test_router_private_user_model_preference_overrides_legacy_conversation_preference(
     tmp_path,
 ) -> None:
-    store = SQLiteStore(tmp_path / "flgo.sqlite3")
+    store = SQLiteStore(tmp_path / "flago.sqlite3")
     await store.init()
     await store.save_model_preference(
         scope="conversation:private:oc_chat",
@@ -1806,7 +1806,7 @@ async def test_router_private_user_model_preference_overrides_legacy_conversatio
 
 @pytest.mark.asyncio
 async def test_router_does_not_apply_user_model_preference_to_group_chat(tmp_path) -> None:
-    store = SQLiteStore(tmp_path / "flgo.sqlite3")
+    store = SQLiteStore(tmp_path / "flago.sqlite3")
     await store.init()
     await store.save_model_preference(
         scope="user:ou_user",
@@ -1834,13 +1834,13 @@ async def test_router_does_not_apply_user_model_preference_to_group_chat(tmp_pat
 
 @pytest.mark.asyncio
 async def test_router_replies_to_model_menu_status(tmp_path) -> None:
-    store = SQLiteStore(tmp_path / "flgo.sqlite3")
+    store = SQLiteStore(tmp_path / "flago.sqlite3")
     await store.init()
     client = RecordingFeishuClient()
     assistant = SuccessfulAssistant()
     router = FeishuMessageRouter(assistant, client, store, model_router=_model_router())
 
-    await router.handle_bot_menu(_menu_event("evt_menu_status", "flgo.model.view"))
+    await router.handle_bot_menu(_menu_event("evt_menu_status", "flago.model.view"))
 
     assert len(client.sent_texts) == 1
     assert client.sent_texts[0][0] == "open_id"
@@ -1850,13 +1850,13 @@ async def test_router_replies_to_model_menu_status(tmp_path) -> None:
 
 @pytest.mark.asyncio
 async def test_router_sets_user_model_from_menu(tmp_path) -> None:
-    store = SQLiteStore(tmp_path / "flgo.sqlite3")
+    store = SQLiteStore(tmp_path / "flago.sqlite3")
     await store.init()
     client = RecordingFeishuClient()
     assistant = SuccessfulAssistant()
     router = FeishuMessageRouter(assistant, client, store, model_router=_model_router())
 
-    await router.handle_bot_menu(_menu_event("evt_menu_use_echo", "flgo.model.use.echo"))
+    await router.handle_bot_menu(_menu_event("evt_menu_use_echo", "flago.model.use.echo"))
 
     preference = await store.get_model_preference("user:ou_user")
     assert preference is not None
@@ -1867,13 +1867,13 @@ async def test_router_sets_user_model_from_menu(tmp_path) -> None:
 
 @pytest.mark.asyncio
 async def test_router_replies_to_auth_menu(tmp_path) -> None:
-    store = SQLiteStore(tmp_path / "flgo.sqlite3")
+    store = SQLiteStore(tmp_path / "flago.sqlite3")
     await store.init()
     client = RecordingFeishuClient()
     assistant = SuccessfulAssistant()
     router = FeishuMessageRouter(assistant, client, store, StubOAuth(), _model_router())
 
-    await router.handle_bot_menu(_menu_event("evt_menu_auth", "flgo.auth.start"))
+    await router.handle_bot_menu(_menu_event("evt_menu_auth", "flago.auth.start"))
 
     assert client.sent_texts == []
     assert len(client.cards) == 1
@@ -1883,13 +1883,13 @@ async def test_router_replies_to_auth_menu(tmp_path) -> None:
 
 @pytest.mark.asyncio
 async def test_router_replies_to_auth_status_menu(tmp_path) -> None:
-    store = SQLiteStore(tmp_path / "flgo.sqlite3")
+    store = SQLiteStore(tmp_path / "flago.sqlite3")
     await store.init()
     client = RecordingFeishuClient()
     assistant = SuccessfulAssistant()
     router = FeishuMessageRouter(assistant, client, store, StubOAuth(), _model_router())
 
-    await router.handle_bot_menu(_menu_event("evt_menu_auth_status", "flgo.auth.status"))
+    await router.handle_bot_menu(_menu_event("evt_menu_auth_status", "flago.auth.status"))
 
     assert client.sent_texts == []
     assert len(client.cards) == 1
@@ -1899,7 +1899,7 @@ async def test_router_replies_to_auth_status_menu(tmp_path) -> None:
 
 @pytest.mark.asyncio
 async def test_router_context_menu_reports_default_policy(tmp_path) -> None:
-    store = SQLiteStore(tmp_path / "flgo.sqlite3")
+    store = SQLiteStore(tmp_path / "flago.sqlite3")
     await store.init()
     await store.save_oauth_token("ou_user", {"access_token": "token"})
     history = RecordingChatHistoryAPI(_chat_history_payload())
@@ -1915,8 +1915,8 @@ async def test_router_context_menu_reports_default_policy(tmp_path) -> None:
         settings=Settings(env="test"),
     )
 
-    await router.handle_bot_menu(_menu_event("evt_menu_context_enable", "flgo.context.enable"))
-    await router.handle_bot_menu(_menu_event("evt_menu_context_view", "flgo.context.view"))
+    await router.handle_bot_menu(_menu_event("evt_menu_context_enable", "flago.context.enable"))
+    await router.handle_bot_menu(_menu_event("evt_menu_context_view", "flago.context.view"))
     await router.handle_message(_message("om_menu_context_enabled", "项目进度如何"))
 
     preference = await store.get_context_preference("user:ou_user")
@@ -1930,7 +1930,7 @@ async def test_router_context_menu_reports_default_policy(tmp_path) -> None:
 
 @pytest.mark.asyncio
 async def test_router_context_disable_menu_no_longer_disables_context(tmp_path) -> None:
-    store = SQLiteStore(tmp_path / "flgo.sqlite3")
+    store = SQLiteStore(tmp_path / "flago.sqlite3")
     await store.init()
     await store.set_context_preference(
         scope="user:ou_user",
@@ -1950,7 +1950,7 @@ async def test_router_context_disable_menu_no_longer_disables_context(tmp_path) 
         settings=Settings(env="test"),
     )
 
-    await router.handle_bot_menu(_menu_event("evt_menu_context_disable", "flgo.context.disable"))
+    await router.handle_bot_menu(_menu_event("evt_menu_context_disable", "flago.context.disable"))
     await router.handle_message(_message("om_menu_context_disabled", "项目进度如何"))
 
     preference = await store.get_context_preference("user:ou_user")
@@ -1963,7 +1963,7 @@ async def test_router_context_disable_menu_no_longer_disables_context(tmp_path) 
 
 @pytest.mark.asyncio
 async def test_router_writeback_auto_menus_roundtrip(tmp_path) -> None:
-    store = SQLiteStore(tmp_path / "flgo.sqlite3")
+    store = SQLiteStore(tmp_path / "flago.sqlite3")
     await store.init()
     client = RecordingFeishuClient()
     assistant = SuccessfulAssistant()
@@ -1980,16 +1980,16 @@ async def test_router_writeback_auto_menus_roundtrip(tmp_path) -> None:
     )
 
     await router.handle_bot_menu(
-        _menu_event("evt_writeback_auto_enable", "flgo.writeback.auto.enable")
+        _menu_event("evt_writeback_auto_enable", "flago.writeback.auto.enable")
     )
     enabled = await store.get_writeback_auto_execute("ou_user")
-    await router.handle_bot_menu(_menu_event("evt_writeback_status", "flgo.writeback.status"))
+    await router.handle_bot_menu(_menu_event("evt_writeback_status", "flago.writeback.status"))
     await router.handle_bot_menu(
-        _menu_event("evt_writeback_auto_disable", "flgo.writeback.auto.disable")
+        _menu_event("evt_writeback_auto_disable", "flago.writeback.auto.disable")
     )
     disabled = await store.get_writeback_auto_execute("ou_user")
     await router.handle_bot_menu(
-        _menu_event("evt_writeback_auto_clear", "flgo.writeback.auto.clear")
+        _menu_event("evt_writeback_auto_clear", "flago.writeback.auto.clear")
     )
 
     assert enabled is not None
@@ -2005,7 +2005,7 @@ async def test_router_writeback_auto_menus_roundtrip(tmp_path) -> None:
 
 @pytest.mark.asyncio
 async def test_router_writeback_history_menu(tmp_path) -> None:
-    store = SQLiteStore(tmp_path / "flgo.sqlite3")
+    store = SQLiteStore(tmp_path / "flago.sqlite3")
     await store.init()
     await store.save_writeback_execution(
         action_id="doc-action",
@@ -2019,7 +2019,7 @@ async def test_router_writeback_history_menu(tmp_path) -> None:
     assistant = SuccessfulAssistant()
     router = FeishuMessageRouter(assistant, client, store)
 
-    await router.handle_bot_menu(_menu_event("evt_writeback_history", "flgo.writeback.history"))
+    await router.handle_bot_menu(_menu_event("evt_writeback_history", "flago.writeback.history"))
 
     assert len(client.sent_texts) == 1
     assert "最近写入" in client.sent_texts[0][2]
@@ -2028,7 +2028,7 @@ async def test_router_writeback_history_menu(tmp_path) -> None:
 
 @pytest.mark.asyncio
 async def test_router_replies_to_memory_view_menu(tmp_path) -> None:
-    store = SQLiteStore(tmp_path / "flgo.sqlite3")
+    store = SQLiteStore(tmp_path / "flago.sqlite3")
     await store.init()
     await store.save_memory_item(
         id="memory-1",
@@ -2041,7 +2041,7 @@ async def test_router_replies_to_memory_view_menu(tmp_path) -> None:
     assistant = SuccessfulAssistant()
     router = FeishuMessageRouter(assistant, client, store)
 
-    await router.handle_bot_menu(_menu_event("evt_menu_memory_view", "flgo.memory.view"))
+    await router.handle_bot_menu(_menu_event("evt_menu_memory_view", "flago.memory.view"))
 
     assert len(client.sent_texts) == 1
     assert client.sent_texts[0][0] == "open_id"
@@ -2052,7 +2052,7 @@ async def test_router_replies_to_memory_view_menu(tmp_path) -> None:
 
 @pytest.mark.asyncio
 async def test_router_deletes_memory_from_menu(tmp_path) -> None:
-    store = SQLiteStore(tmp_path / "flgo.sqlite3")
+    store = SQLiteStore(tmp_path / "flago.sqlite3")
     await store.init()
     await store.save_memory_item(
         id="memory-1",
@@ -2065,7 +2065,7 @@ async def test_router_deletes_memory_from_menu(tmp_path) -> None:
     assistant = SuccessfulAssistant()
     router = FeishuMessageRouter(assistant, client, store)
 
-    await router.handle_bot_menu(_menu_event("evt_menu_memory_delete", "flgo.memory.delete"))
+    await router.handle_bot_menu(_menu_event("evt_menu_memory_delete", "flago.memory.delete"))
 
     assert client.sent_texts == []
     assert len(client.cards) == 1
@@ -2077,7 +2077,7 @@ async def test_router_deletes_memory_from_menu(tmp_path) -> None:
 
 @pytest.mark.asyncio
 async def test_router_disables_memory_from_menu(tmp_path) -> None:
-    store = SQLiteStore(tmp_path / "flgo.sqlite3")
+    store = SQLiteStore(tmp_path / "flago.sqlite3")
     await store.init()
     await store.save_memory_item(
         id="memory-1",
@@ -2090,7 +2090,7 @@ async def test_router_disables_memory_from_menu(tmp_path) -> None:
     assistant = SuccessfulAssistant()
     router = FeishuMessageRouter(assistant, client, store)
 
-    await router.handle_bot_menu(_menu_event("evt_menu_memory_disable", "flgo.memory.disable"))
+    await router.handle_bot_menu(_menu_event("evt_menu_memory_disable", "flago.memory.disable"))
 
     assert "已关闭长期记忆" in client.sent_texts[0][2]
     assert len(await store.list_memory_items("ou_user")) == 1
@@ -2099,14 +2099,14 @@ async def test_router_disables_memory_from_menu(tmp_path) -> None:
 
 @pytest.mark.asyncio
 async def test_router_enables_memory_from_menu(tmp_path) -> None:
-    store = SQLiteStore(tmp_path / "flgo.sqlite3")
+    store = SQLiteStore(tmp_path / "flago.sqlite3")
     await store.init()
     await store.set_memory_enabled(subject_id="ou_user", enabled=False, updated_by="ou_user")
     client = RecordingFeishuClient()
     assistant = SuccessfulAssistant()
     router = FeishuMessageRouter(assistant, client, store)
 
-    await router.handle_bot_menu(_menu_event("evt_menu_memory_enable", "flgo.memory.enable"))
+    await router.handle_bot_menu(_menu_event("evt_menu_memory_enable", "flago.memory.enable"))
 
     assert "已开启长期记忆" in client.sent_texts[0][2]
     assert await store.is_memory_enabled("ou_user") is True
@@ -2114,7 +2114,7 @@ async def test_router_enables_memory_from_menu(tmp_path) -> None:
 
 @pytest.mark.asyncio
 async def test_router_assistant_name_commands_roundtrip(tmp_path) -> None:
-    store = SQLiteStore(tmp_path / "flgo.sqlite3")
+    store = SQLiteStore(tmp_path / "flago.sqlite3")
     await store.init()
     client = RecordingFeishuClient()
     assistant = SuccessfulAssistant()
@@ -2152,7 +2152,7 @@ async def test_router_assistant_name_commands_roundtrip(tmp_path) -> None:
 
 @pytest.mark.asyncio
 async def test_router_rejects_invalid_assistant_name(tmp_path) -> None:
-    store = SQLiteStore(tmp_path / "flgo.sqlite3")
+    store = SQLiteStore(tmp_path / "flago.sqlite3")
     await store.init()
     client = RecordingFeishuClient()
     assistant = SuccessfulAssistant()
@@ -2170,7 +2170,7 @@ async def test_router_rejects_invalid_assistant_name(tmp_path) -> None:
 
 @pytest.mark.asyncio
 async def test_router_injects_assistant_name_without_leaking_to_group_chat(tmp_path) -> None:
-    store = SQLiteStore(tmp_path / "flgo.sqlite3")
+    store = SQLiteStore(tmp_path / "flago.sqlite3")
     await store.init()
     await store.save_assistant_name_preference(
         subject_id="ou_user",
@@ -2205,7 +2205,7 @@ async def test_router_injects_assistant_name_without_leaking_to_group_chat(tmp_p
 
 @pytest.mark.asyncio
 async def test_router_uses_assistant_name_in_menu_model_and_auth_text(tmp_path) -> None:
-    store = SQLiteStore(tmp_path / "flgo.sqlite3")
+    store = SQLiteStore(tmp_path / "flago.sqlite3")
     await store.init()
     await store.save_assistant_name_preference(
         subject_id="ou_user",
@@ -2216,9 +2216,9 @@ async def test_router_uses_assistant_name_in_menu_model_and_auth_text(tmp_path) 
     assistant = SuccessfulAssistant()
     router = FeishuMessageRouter(assistant, client, store, StubOAuth(), _model_router())
 
-    await router.handle_bot_menu(_menu_event("evt_named_help", "flgo.help"))
-    await router.handle_bot_menu(_menu_event("evt_named_model", "flgo.model.view"))
-    await router.handle_bot_menu(_menu_event("evt_named_auth", "flgo.auth.status"))
+    await router.handle_bot_menu(_menu_event("evt_named_help", "flago.help"))
+    await router.handle_bot_menu(_menu_event("evt_named_model", "flago.model.view"))
+    await router.handle_bot_menu(_menu_event("evt_named_auth", "flago.auth.status"))
 
     assert "小飞 菜单入口" in client.sent_texts[0][2]
     assert "小飞 当前使用的模型" in client.sent_texts[1][2]
@@ -2227,7 +2227,7 @@ async def test_router_uses_assistant_name_in_menu_model_and_auth_text(tmp_path) 
 
 @pytest.mark.asyncio
 async def test_router_replies_to_assistant_name_view_menu(tmp_path) -> None:
-    store = SQLiteStore(tmp_path / "flgo.sqlite3")
+    store = SQLiteStore(tmp_path / "flago.sqlite3")
     await store.init()
     await store.save_assistant_name_preference(
         subject_id="ou_user",
@@ -2244,7 +2244,7 @@ async def test_router_replies_to_assistant_name_view_menu(tmp_path) -> None:
     router = FeishuMessageRouter(assistant, client, store)
 
     await router.handle_bot_menu(
-        _menu_event("evt_assistant_name_view", "flgo.assistant.name.view")
+        _menu_event("evt_assistant_name_view", "flago.assistant.name.view")
     )
 
     assert len(client.sent_texts) == 1
@@ -2259,7 +2259,7 @@ async def test_router_replies_to_assistant_name_view_menu(tmp_path) -> None:
 
 @pytest.mark.asyncio
 async def test_router_help_command_uses_assistant_name_without_group_leak(tmp_path) -> None:
-    store = SQLiteStore(tmp_path / "flgo.sqlite3")
+    store = SQLiteStore(tmp_path / "flago.sqlite3")
     await store.init()
     await store.save_assistant_name_preference(
         subject_id="ou_user",
@@ -2292,7 +2292,7 @@ async def test_router_help_command_uses_assistant_name_without_group_leak(tmp_pa
 
 @pytest.mark.asyncio
 async def test_router_opens_admin_page_from_menu_and_command(tmp_path) -> None:
-    store = SQLiteStore(tmp_path / "flgo.sqlite3")
+    store = SQLiteStore(tmp_path / "flago.sqlite3")
     await store.init()
     client = RecordingFeishuClient()
     assistant = SuccessfulAssistant()
@@ -2300,27 +2300,27 @@ async def test_router_opens_admin_page_from_menu_and_command(tmp_path) -> None:
         assistant,
         client,
         store,
-        settings=Settings(env="test", base_url="https://flgo.example.test"),
+        settings=Settings(env="test", base_url="https://flago.example.test"),
     )
 
-    await router.handle_bot_menu(_menu_event("evt_admin_open", "flgo.admin.open"))
+    await router.handle_bot_menu(_menu_event("evt_admin_open", "flago.admin.open"))
     await router.handle_message(_message("om_admin_open", "/配置"))
 
     assert len(client.cards) == 2
     assert "本地配置网页" in str(client.cards[0][1])
-    assert "https://flgo.example.test/admin" in str(client.cards[0][1])
+    assert "https://flago.example.test/admin" in str(client.cards[0][1])
     assert "打开配置后台" in str(client.cards[1][1])
     assert assistant.requests == []
 
 
 @pytest.mark.asyncio
 async def test_router_ignores_duplicate_menu_event(tmp_path) -> None:
-    store = SQLiteStore(tmp_path / "flgo.sqlite3")
+    store = SQLiteStore(tmp_path / "flago.sqlite3")
     await store.init()
     client = RecordingFeishuClient()
     assistant = SuccessfulAssistant()
     router = FeishuMessageRouter(assistant, client, store, model_router=_model_router())
-    event = _menu_event("evt_menu_duplicate", "flgo.model.view")
+    event = _menu_event("evt_menu_duplicate", "flago.model.view")
 
     await router.handle_bot_menu(event)
     await router.handle_bot_menu(event)

@@ -6,15 +6,15 @@ import pytest
 import respx
 from httpx import Response
 
-from flgo.config import Settings
-from flgo.feishu.openapi import FeishuOpenAPI
-from flgo.storage import SQLiteStore
+from flago.config import Settings
+from flago.feishu.openapi import FeishuOpenAPI
+from flago.storage import SQLiteStore
 
 
 def _settings(tmp_path) -> Settings:
     return Settings(
         env="test",
-        sqlite_path=tmp_path / "flgo.sqlite3",
+        sqlite_path=tmp_path / "flago.sqlite3",
         feishu_app_id="cli_test",
         feishu_app_secret="secret",
         feishu_base_url="https://open.feishu.test",
@@ -24,7 +24,7 @@ def _settings(tmp_path) -> Settings:
 
 @pytest.mark.asyncio
 async def test_doc_read_requires_user_oauth_token(tmp_path) -> None:
-    store = SQLiteStore(tmp_path / "flgo.sqlite3")
+    store = SQLiteStore(tmp_path / "flago.sqlite3")
     await store.init()
     api = FeishuOpenAPI(_settings(tmp_path), store)
 
@@ -35,7 +35,7 @@ async def test_doc_read_requires_user_oauth_token(tmp_path) -> None:
 @pytest.mark.asyncio
 @respx.mock
 async def test_doc_read_uses_user_oauth_token(tmp_path) -> None:
-    store = SQLiteStore(tmp_path / "flgo.sqlite3")
+    store = SQLiteStore(tmp_path / "flago.sqlite3")
     await store.init()
     await store.save_oauth_token(
         "ou_user",
@@ -58,7 +58,7 @@ async def test_doc_read_uses_user_oauth_token(tmp_path) -> None:
 
 @pytest.mark.asyncio
 async def test_doc_read_reports_missing_oauth_scope(tmp_path) -> None:
-    store = SQLiteStore(tmp_path / "flgo.sqlite3")
+    store = SQLiteStore(tmp_path / "flago.sqlite3")
     await store.init()
     await store.save_oauth_token(
         "ou_user",
@@ -77,7 +77,7 @@ async def test_doc_read_reports_missing_oauth_scope(tmp_path) -> None:
 @pytest.mark.asyncio
 @respx.mock
 async def test_list_doc_blocks_paginates_with_user_token(tmp_path) -> None:
-    store = SQLiteStore(tmp_path / "flgo.sqlite3")
+    store = SQLiteStore(tmp_path / "flago.sqlite3")
     await store.init()
     await store.save_oauth_token(
         "ou_user",
@@ -133,7 +133,7 @@ async def test_list_doc_blocks_paginates_with_user_token(tmp_path) -> None:
 @pytest.mark.asyncio
 @respx.mock
 async def test_download_doc_media_returns_binary_metadata(tmp_path) -> None:
-    store = SQLiteStore(tmp_path / "flgo.sqlite3")
+    store = SQLiteStore(tmp_path / "flago.sqlite3")
     await store.init()
     await store.save_oauth_token(
         "ou_user",
@@ -171,7 +171,7 @@ async def test_download_doc_media_returns_binary_metadata(tmp_path) -> None:
 
 @pytest.mark.asyncio
 async def test_download_doc_media_reports_missing_scope(tmp_path) -> None:
-    store = SQLiteStore(tmp_path / "flgo.sqlite3")
+    store = SQLiteStore(tmp_path / "flago.sqlite3")
     await store.init()
     await store.save_oauth_token(
         "ou_user",
@@ -190,7 +190,7 @@ async def test_download_doc_media_reports_missing_scope(tmp_path) -> None:
 @pytest.mark.asyncio
 @respx.mock
 async def test_download_doc_media_rejects_oversized_file(tmp_path) -> None:
-    store = SQLiteStore(tmp_path / "flgo.sqlite3")
+    store = SQLiteStore(tmp_path / "flago.sqlite3")
     await store.init()
     await store.save_oauth_token(
         "ou_user",
@@ -218,7 +218,7 @@ async def test_download_doc_media_rejects_oversized_file(tmp_path) -> None:
 @pytest.mark.asyncio
 @respx.mock
 async def test_search_docs_uses_user_token_and_audits_without_query_body(tmp_path) -> None:
-    store = SQLiteStore(tmp_path / "flgo.sqlite3")
+    store = SQLiteStore(tmp_path / "flago.sqlite3")
     await store.init()
     await store.save_oauth_token(
         "ou_user",
@@ -269,7 +269,7 @@ async def test_search_docs_uses_user_token_and_audits_without_query_body(tmp_pat
 
 @pytest.mark.asyncio
 async def test_search_docs_requires_user_oauth_scope(tmp_path) -> None:
-    store = SQLiteStore(tmp_path / "flgo.sqlite3")
+    store = SQLiteStore(tmp_path / "flago.sqlite3")
     await store.init()
     await store.save_oauth_token(
         "ou_user",
@@ -288,7 +288,7 @@ async def test_search_docs_requires_user_oauth_scope(tmp_path) -> None:
 @pytest.mark.asyncio
 @respx.mock
 async def test_search_docs_accepts_drive_search_scope(tmp_path) -> None:
-    store = SQLiteStore(tmp_path / "flgo.sqlite3")
+    store = SQLiteStore(tmp_path / "flago.sqlite3")
     await store.init()
     await store.save_oauth_token(
         "ou_user",
@@ -314,7 +314,7 @@ async def test_search_docs_accepts_drive_search_scope(tmp_path) -> None:
 @pytest.mark.asyncio
 @respx.mock
 async def test_http_error_includes_feishu_error_body(tmp_path) -> None:
-    store = SQLiteStore(tmp_path / "flgo.sqlite3")
+    store = SQLiteStore(tmp_path / "flago.sqlite3")
     await store.init()
     await store.save_oauth_token(
         "ou_user",
@@ -336,7 +336,7 @@ async def test_http_error_includes_feishu_error_body(tmp_path) -> None:
 @pytest.mark.asyncio
 @respx.mock
 async def test_download_message_resource_uses_tenant_token(tmp_path) -> None:
-    store = SQLiteStore(tmp_path / "flgo.sqlite3")
+    store = SQLiteStore(tmp_path / "flago.sqlite3")
     await store.init()
     api = FeishuOpenAPI(_settings(tmp_path), store)
     respx.post("https://open.feishu.test/open-apis/auth/v3/tenant_access_token/internal").mock(
@@ -373,7 +373,7 @@ async def test_download_message_resource_uses_tenant_token(tmp_path) -> None:
 @pytest.mark.asyncio
 @respx.mock
 async def test_sheet_read_uses_user_token_and_render_options(tmp_path) -> None:
-    store = SQLiteStore(tmp_path / "flgo.sqlite3")
+    store = SQLiteStore(tmp_path / "flago.sqlite3")
     await store.init()
     await store.save_oauth_token(
         "ou_user",
@@ -405,7 +405,7 @@ async def test_sheet_read_uses_user_token_and_render_options(tmp_path) -> None:
 @pytest.mark.asyncio
 @respx.mock
 async def test_sheet_metadata_query_uses_user_token(tmp_path) -> None:
-    store = SQLiteStore(tmp_path / "flgo.sqlite3")
+    store = SQLiteStore(tmp_path / "flago.sqlite3")
     await store.init()
     await store.save_oauth_token(
         "ou_user",
@@ -434,7 +434,7 @@ async def test_sheet_metadata_query_uses_user_token(tmp_path) -> None:
 @pytest.mark.asyncio
 @respx.mock
 async def test_bitable_table_list_uses_bitable_v1_and_user_token(tmp_path) -> None:
-    store = SQLiteStore(tmp_path / "flgo.sqlite3")
+    store = SQLiteStore(tmp_path / "flago.sqlite3")
     await store.init()
     await store.save_oauth_token(
         "ou_user",
@@ -465,7 +465,7 @@ async def test_bitable_table_list_uses_bitable_v1_and_user_token(tmp_path) -> No
 @pytest.mark.asyncio
 @respx.mock
 async def test_bitable_table_list_accepts_bitable_readonly_scope(tmp_path) -> None:
-    store = SQLiteStore(tmp_path / "flgo.sqlite3")
+    store = SQLiteStore(tmp_path / "flago.sqlite3")
     await store.init()
     await store.save_oauth_token(
         "ou_user",
@@ -489,7 +489,7 @@ async def test_bitable_table_list_accepts_bitable_readonly_scope(tmp_path) -> No
 @pytest.mark.asyncio
 @respx.mock
 async def test_bitable_field_and_view_lists_use_bitable_v1(tmp_path) -> None:
-    store = SQLiteStore(tmp_path / "flgo.sqlite3")
+    store = SQLiteStore(tmp_path / "flago.sqlite3")
     await store.init()
     await store.save_oauth_token(
         "ou_user",
@@ -521,7 +521,7 @@ async def test_bitable_field_and_view_lists_use_bitable_v1(tmp_path) -> None:
 @pytest.mark.asyncio
 @respx.mock
 async def test_bitable_record_list_passes_page_size_and_view_id(tmp_path) -> None:
-    store = SQLiteStore(tmp_path / "flgo.sqlite3")
+    store = SQLiteStore(tmp_path / "flago.sqlite3")
     await store.init()
     await store.save_oauth_token(
         "ou_user",
@@ -561,7 +561,7 @@ async def test_bitable_record_list_passes_page_size_and_view_id(tmp_path) -> Non
 async def test_list_recent_messages_uses_tenant_token_without_user_oauth(
     tmp_path,
 ) -> None:
-    store = SQLiteStore(tmp_path / "flgo.sqlite3")
+    store = SQLiteStore(tmp_path / "flago.sqlite3")
     await store.init()
     settings = _settings(tmp_path)
     api = FeishuOpenAPI(settings, store)
@@ -598,7 +598,7 @@ async def test_list_recent_messages_uses_tenant_token_without_user_oauth(
 @pytest.mark.asyncio
 @respx.mock
 async def test_sheet_write_range_requires_user_write_scope(tmp_path) -> None:
-    store = SQLiteStore(tmp_path / "flgo.sqlite3")
+    store = SQLiteStore(tmp_path / "flago.sqlite3")
     await store.init()
     await store.save_oauth_token(
         "ou_user",
@@ -624,7 +624,7 @@ async def test_sheet_write_range_requires_user_write_scope(tmp_path) -> None:
 @pytest.mark.asyncio
 @respx.mock
 async def test_create_doc_uses_user_write_scope_and_folder_token(tmp_path) -> None:
-    store = SQLiteStore(tmp_path / "flgo.sqlite3")
+    store = SQLiteStore(tmp_path / "flago.sqlite3")
     await store.init()
     await store.save_oauth_token(
         "ou_user",
@@ -654,7 +654,7 @@ async def test_create_doc_uses_user_write_scope_and_folder_token(tmp_path) -> No
 @pytest.mark.asyncio
 @respx.mock
 async def test_append_doc_text_converts_to_children_blocks(tmp_path) -> None:
-    store = SQLiteStore(tmp_path / "flgo.sqlite3")
+    store = SQLiteStore(tmp_path / "flago.sqlite3")
     await store.init()
     await store.save_oauth_token(
         "ou_user",
@@ -682,7 +682,7 @@ async def test_append_doc_text_converts_to_children_blocks(tmp_path) -> None:
 @pytest.mark.asyncio
 @respx.mock
 async def test_append_doc_text_supports_document_start_index(tmp_path) -> None:
-    store = SQLiteStore(tmp_path / "flgo.sqlite3")
+    store = SQLiteStore(tmp_path / "flago.sqlite3")
     await store.init()
     await store.save_oauth_token(
         "ou_user",
@@ -711,7 +711,7 @@ async def test_append_doc_text_supports_document_start_index(tmp_path) -> None:
 @pytest.mark.asyncio
 @respx.mock
 async def test_delete_doc_block_uses_user_write_scope(tmp_path) -> None:
-    store = SQLiteStore(tmp_path / "flgo.sqlite3")
+    store = SQLiteStore(tmp_path / "flago.sqlite3")
     await store.init()
     await store.save_oauth_token(
         "ou_user",
@@ -742,7 +742,7 @@ async def test_delete_doc_block_uses_user_write_scope(tmp_path) -> None:
 @pytest.mark.asyncio
 @respx.mock
 async def test_create_bitable_record_requires_user_write_scope(tmp_path) -> None:
-    store = SQLiteStore(tmp_path / "flgo.sqlite3")
+    store = SQLiteStore(tmp_path / "flago.sqlite3")
     await store.init()
     await store.save_oauth_token(
         "ou_user",
@@ -766,7 +766,7 @@ async def test_create_bitable_record_requires_user_write_scope(tmp_path) -> None
 @pytest.mark.asyncio
 @respx.mock
 async def test_update_bitable_record_requires_user_write_scope(tmp_path) -> None:
-    store = SQLiteStore(tmp_path / "flgo.sqlite3")
+    store = SQLiteStore(tmp_path / "flago.sqlite3")
     await store.init()
     await store.save_oauth_token(
         "ou_user",
@@ -796,7 +796,7 @@ async def test_update_bitable_record_requires_user_write_scope(tmp_path) -> None
 @pytest.mark.asyncio
 @respx.mock
 async def test_delete_bitable_record_requires_user_delete_scope(tmp_path) -> None:
-    store = SQLiteStore(tmp_path / "flgo.sqlite3")
+    store = SQLiteStore(tmp_path / "flago.sqlite3")
     await store.init()
     await store.save_oauth_token(
         "ou_user",

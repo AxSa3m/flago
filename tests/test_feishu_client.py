@@ -3,9 +3,9 @@ from typing import Any
 
 import pytest
 
-from flgo.config import Settings
-from flgo.feishu import client as feishu_client_module
-from flgo.feishu.client import FeishuClient
+from flago.config import Settings
+from flago.feishu import client as feishu_client_module
+from flago.feishu.client import FeishuClient
 
 
 @pytest.mark.asyncio

@@ -12,11 +12,11 @@ SRC = WORKSPACE / "src"
 if str(SRC) not in sys.path:
     sys.path.insert(0, str(SRC))
 
-from flgo.local_service import run_service_action, service_logs  # noqa: E402
+from flago.local_service import run_service_action, service_logs  # noqa: E402
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(description="Control the local FLGO service")
+    parser = argparse.ArgumentParser(description="Control the local FLAGO service")
     parser.add_argument(
         "action",
         nargs="?",

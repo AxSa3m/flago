@@ -3,19 +3,19 @@ from datetime import UTC, datetime, timedelta
 import aiosqlite
 import pytest
 
-from flgo.models import (
+from flago.models import (
     ActionProposal,
     AuditEventType,
     ChatContextMessage,
     PendingActionStatus,
     WriteActionType,
 )
-from flgo.storage import SQLiteStore
+from flago.storage import SQLiteStore
 
 
 @pytest.mark.asyncio
 async def test_oauth_token_roundtrip(tmp_path) -> None:
-    store = SQLiteStore(tmp_path / "flgo.sqlite3")
+    store = SQLiteStore(tmp_path / "flago.sqlite3")
     await store.init()
 
     await store.save_oauth_token("user-1", {"access_token": "token"})
@@ -25,7 +25,7 @@ async def test_oauth_token_roundtrip(tmp_path) -> None:
 
 @pytest.mark.asyncio
 async def test_oauth_state_is_single_use(tmp_path) -> None:
-    store = SQLiteStore(tmp_path / "flgo.sqlite3")
+    store = SQLiteStore(tmp_path / "flago.sqlite3")
     await store.init()
 
     await store.save_oauth_state(
@@ -40,7 +40,7 @@ async def test_oauth_state_is_single_use(tmp_path) -> None:
 
 @pytest.mark.asyncio
 async def test_expired_oauth_state_is_rejected(tmp_path) -> None:
-    store = SQLiteStore(tmp_path / "flgo.sqlite3")
+    store = SQLiteStore(tmp_path / "flago.sqlite3")
     await store.init()
 
     await store.save_oauth_state(
@@ -54,7 +54,7 @@ async def test_expired_oauth_state_is_rejected(tmp_path) -> None:
 
 @pytest.mark.asyncio
 async def test_idempotency_key_is_single_use(tmp_path) -> None:
-    store = SQLiteStore(tmp_path / "flgo.sqlite3")
+    store = SQLiteStore(tmp_path / "flago.sqlite3")
     await store.init()
 
     assert await store.remember_idempotency_key("k", "v") is True
@@ -63,7 +63,7 @@ async def test_idempotency_key_is_single_use(tmp_path) -> None:
 
 @pytest.mark.asyncio
 async def test_pending_action_roundtrip(tmp_path) -> None:
-    store = SQLiteStore(tmp_path / "flgo.sqlite3")
+    store = SQLiteStore(tmp_path / "flago.sqlite3")
     await store.init()
     proposal = ActionProposal(
         actor_id="user-1",
@@ -84,13 +84,13 @@ async def test_pending_action_roundtrip(tmp_path) -> None:
 
 @pytest.mark.asyncio
 async def test_find_recent_matching_action_matches_confirmed_or_executed(tmp_path) -> None:
-    store = SQLiteStore(tmp_path / "flgo.sqlite3")
+    store = SQLiteStore(tmp_path / "flago.sqlite3")
     await store.init()
     proposal = ActionProposal(
         actor_id="user-1",
         action_type=WriteActionType.BITABLE_CREATE_RECORD,
         target={"table_id": "tbl1", "app_token": "app1"},
-        payload={"fields": {"内容": "FLGO 写回测试成功"}},
+        payload={"fields": {"内容": "FLAGO 写回测试成功"}},
         preview="hello",
         expires_at=datetime.now(UTC) + timedelta(minutes=5),
     )
@@ -98,7 +98,7 @@ async def test_find_recent_matching_action_matches_confirmed_or_executed(tmp_pat
         actor_id="user-1",
         action_type=WriteActionType.BITABLE_CREATE_RECORD,
         target={"app_token": "app1", "table_id": "tbl1"},
-        payload={"fields": {"内容": "FLGO 写回测试成功"}},
+        payload={"fields": {"内容": "FLAGO 写回测试成功"}},
         preview="hello",
         expires_at=datetime.now(UTC) + timedelta(minutes=5),
     )
@@ -118,7 +118,7 @@ async def test_find_recent_matching_action_matches_confirmed_or_executed(tmp_pat
 
 @pytest.mark.asyncio
 async def test_writeback_execution_tracks_latest_reversible_action(tmp_path) -> None:
-    store = SQLiteStore(tmp_path / "flgo.sqlite3")
+    store = SQLiteStore(tmp_path / "flago.sqlite3")
     await store.init()
 
     await store.save_writeback_execution(
@@ -152,7 +152,7 @@ async def test_writeback_execution_tracks_latest_reversible_action(tmp_path) -> 
 
 @pytest.mark.asyncio
 async def test_model_preference_roundtrip_and_clear(tmp_path) -> None:
-    store = SQLiteStore(tmp_path / "flgo.sqlite3")
+    store = SQLiteStore(tmp_path / "flago.sqlite3")
     await store.init()
 
     await store.save_model_preference(
@@ -175,7 +175,7 @@ async def test_model_preference_roundtrip_and_clear(tmp_path) -> None:
 
 @pytest.mark.asyncio
 async def test_assistant_name_preference_roundtrip_clear_and_audit(tmp_path) -> None:
-    store = SQLiteStore(tmp_path / "flgo.sqlite3")
+    store = SQLiteStore(tmp_path / "flago.sqlite3")
     await store.init()
 
     await store.save_assistant_name_preference(
@@ -208,7 +208,7 @@ async def test_assistant_name_preference_roundtrip_clear_and_audit(tmp_path) -> 
 
 @pytest.mark.asyncio
 async def test_assistant_profile_preference_roundtrip_clear_and_audit(tmp_path) -> None:
-    store = SQLiteStore(tmp_path / "flgo.sqlite3")
+    store = SQLiteStore(tmp_path / "flago.sqlite3")
     await store.init()
 
     await store.save_assistant_profile_preference(
@@ -231,7 +231,7 @@ async def test_assistant_profile_preference_roundtrip_clear_and_audit(tmp_path) 
 
 @pytest.mark.asyncio
 async def test_context_preference_roundtrip_and_audit(tmp_path) -> None:
-    store = SQLiteStore(tmp_path / "flgo.sqlite3")
+    store = SQLiteStore(tmp_path / "flago.sqlite3")
     await store.init()
 
     await store.set_context_preference(
@@ -259,7 +259,7 @@ async def test_context_preference_roundtrip_and_audit(tmp_path) -> None:
 
 @pytest.mark.asyncio
 async def test_memory_items_can_be_listed_cleared_disabled_and_enabled(tmp_path) -> None:
-    store = SQLiteStore(tmp_path / "flgo.sqlite3")
+    store = SQLiteStore(tmp_path / "flago.sqlite3")
     await store.init()
 
     await store.save_memory_item(
@@ -293,7 +293,7 @@ async def test_memory_items_can_be_listed_cleared_disabled_and_enabled(tmp_path)
 
 @pytest.mark.asyncio
 async def test_memory_item_can_be_deleted_by_subject_and_id(tmp_path) -> None:
-    store = SQLiteStore(tmp_path / "flgo.sqlite3")
+    store = SQLiteStore(tmp_path / "flago.sqlite3")
     await store.init()
 
     await store.save_memory_item(
@@ -333,7 +333,7 @@ async def test_memory_item_can_be_deleted_by_subject_and_id(tmp_path) -> None:
 
 @pytest.mark.asyncio
 async def test_context_message_cache_roundtrip_and_prune(tmp_path) -> None:
-    store = SQLiteStore(tmp_path / "flgo.sqlite3")
+    store = SQLiteStore(tmp_path / "flago.sqlite3")
     await store.init()
     await store.upsert_context_messages(
         scope="conversation:private:oc_chat",
@@ -366,7 +366,7 @@ async def test_context_message_cache_roundtrip_and_prune(tmp_path) -> None:
 
 @pytest.mark.asyncio
 async def test_conversation_summary_roundtrip(tmp_path) -> None:
-    store = SQLiteStore(tmp_path / "flgo.sqlite3")
+    store = SQLiteStore(tmp_path / "flago.sqlite3")
     await store.init()
 
     await store.save_conversation_summary(

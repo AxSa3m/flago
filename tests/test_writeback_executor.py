@@ -1,7 +1,7 @@
 import pytest
 
-from flgo.models import WriteActionType
-from flgo.writeback.executor import FeishuWriteExecutor
+from flago.models import WriteActionType
+from flago.writeback.executor import FeishuWriteExecutor
 
 
 class FakeOpenAPI:

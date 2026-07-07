@@ -1,13 +1,13 @@
-飞灵（FLGO）
+Flago（FLAGO）
 Copyright 2026 AxSa3m and contributors
 
 This product is licensed under the Apache License, Version 2.0.
 
-飞灵（FLGO）需要用户自行配置飞书开放平台应用、模型服务 API Key、
+Flago（FLAGO）需要用户自行配置飞书开放平台应用、模型服务 API Key、
 媒体/工作流服务接口等第三方服务。用户自行负责第三方 API Key、
 飞书权限、数据处理行为、服务费用以及所在组织、地区和行业的数据安全、
 隐私和合规要求。
 
-The names "飞灵" and "FLGO" are used to identify this project. The license
+The names "Flago" and "FLAGO" are used to identify this project. The license
 does not grant permission to impersonate an official release or official
 service.

@@ -1,6 +1,9 @@
-# 飞灵（FLGO）
+# Flago（FLAGO）
 
-飞灵（FLGO） 是一个 **Python 3.13 + uv 本地飞书工作助手**。它通过飞书长连接机器人接收私聊或群聊 `@机器人` 消息，按用户授权读取飞书文档、电子表格、多维表格和网页链接，可调用 Gemini 或OpenAI等模型生成回复，并返回飞书消息。主要解决飞书机器人或Aily配置外部模型时的限制问题，用户可自行配置所需的模型API接口。兼容Anthropic 与OpenAI,Gemini 接口调用格式。
+Flago 是一个 **Python 3.13 + uv 本地飞书工作助手**。项目名来自
+**Feishu/Lark link to Anthropic, Gemini and OpenAI**，默认中文助手名是“飞灵”。
+
+它通过飞书长连接机器人接收私聊或群聊 `@机器人` 消息，按用户授权读取飞书文档、电子表格、多维表格和网页链接，可调用 Gemini、Anthropic Claude、OpenAI 兼容模型等生成回复，并返回飞书消息。Flago 主要解决飞书机器人或 Aily 配置外部模型时的限制问题，用户可自行配置所需的模型 API 接口。
 
 ## 当前实现范围
 
@@ -18,28 +21,28 @@
 ```powershell
 uv sync
 Copy-Item .env.example .env
-uv run flgo serve
+uv run flago serve
 ```
 
 启动本地服务并打开配置后台：
 
 ```powershell
-uv run flgo service start --open-admin
+uv run flago service start --open-admin
 ```
 
 查看、重启、停止本地服务：
 
 ```powershell
-uv run flgo service status
-uv run flgo service restart
-uv run flgo service stop
+uv run flago service status
+uv run flago service restart
+uv run flago service stop
 ```
 
 生成便携启动包：
 
 ```powershell
-uv run flgo package build
-uv run flgo package build --target all
+uv run flago package build
+uv run flago package build --target all
 ```
 
 健康检查：
@@ -57,7 +60,7 @@ uv run pytest
 检查本地配置和外部凭证：
 
 ```powershell
-uv run flgo doctor
+uv run flago doctor
 ```
 
 更多文档：
@@ -83,45 +86,45 @@ uv run flgo doctor
 - `FEISHU_APP_ID`
 - `FEISHU_APP_SECRET`
 - `FEISHU_OAUTH_SCOPES`，用户发送 `/授权` 时申请的飞书 OAuth scope
-- `FLGO_OAUTH_ENABLE_OFFLINE_ACCESS`，可选；飞书后台开通 `offline_access` 后设为 `true`，用于自动刷新用户 access token
+- `FLAGO_OAUTH_ENABLE_OFFLINE_ACCESS`，可选；飞书后台开通 `offline_access` 后设为 `true`，用于自动刷新用户 access token
 - `FEISHU_HTTP_PROXY`，可选；飞书 OpenAPI 调用遇到本地网络或 TLS 问题时填写代理
 - `FEISHU_DOCS_BASE_URL`，搜索接口没有返回可打开 URL 时用于拼接飞书资源链接；私有租户可设为 `https://my.feishu.cn`
-- `FLGO_DEFAULT_PROVIDER`，当前可选 `gemini`、`openai`、`deepseek`、`qwen`、`doubao`、`minimax`、`claude` 或本地开发用 `echo`
-- `FLGO_DEFAULT_MODEL`，可选；为空时使用 Provider 自己的默认模型
+- `FLAGO_DEFAULT_PROVIDER`，当前可选 `gemini`、`openai`、`deepseek`、`qwen`、`doubao`、`minimax`、`claude` 或本地开发用 `echo`
+- `FLAGO_DEFAULT_MODEL`，可选；为空时使用 Provider 自己的默认模型
 - `GEMINI_API_KEY`
-- `GEMINI_MODEL`，Gemini Provider 的默认模型；如果设置了 `FLGO_DEFAULT_MODEL` 会被运行时路由覆盖
+- `GEMINI_MODEL`，Gemini Provider 的默认模型；如果设置了 `FLAGO_DEFAULT_MODEL` 会被运行时路由覆盖
 - `GEMINI_THINKING_BUDGET`，可选；默认不设置，正式运行让 Gemini 使用模型默认思考预算
 - `GEMINI_HTTP_PROXY`，可选；当前网络或地区无法访问 Google AI API 时填写本地代理，例如 `http://127.0.0.1:7890`
 - `GEMINI_BASE_URL`，可选；使用 Gemini 兼容网关时填写
 - OpenAI 兼容 Provider：`OPENAI_*`、`DEEPSEEK_*`、`QWEN_*`、`DOUBAO_*`、`MINIMAX_*`
   各自需要同时设置 `API_KEY`、`BASE_URL` 和 `MODEL` 才会注册
-- `FLGO_OPENAI_COMPATIBLE_HTTP_PROXY`，可选；OpenAI 兼容 Provider 共用代理
-- `FLGO_BASE_URL`
-- `FLGO_SQLITE_PATH`
-- `FLGO_ASSISTANT_DEFAULT_NAME`，默认 `飞灵`；用户未设置个人助手名称时使用
-- `FLGO_AGENT_MODE`，默认 `legacy`；可设为 `agent` 启用 Agent + Tools JSON parser 编排
-- `FLGO_AGENT_MAX_STEPS`，默认 `4`；Agent 模式下单次请求最多工具轮数
-- `FLGO_AGENT_TOOL_TIMEOUT_SECONDS`，默认 `30`；Agent 工具默认超时时间
-- `FLGO_MAX_MESSAGE_CHARS`，单条飞书消息进入模型前的最大字符数
-- `FLGO_RESOURCE_SEARCH_ENABLED`，默认 `true`；私聊中按需搜索用户可见飞书资料
-- `FLGO_RESOURCE_SEARCH_RESULT_LIMIT`，默认 `5`；单次飞书资料搜索最多返回的候选数
-- `FLGO_RESOURCE_SEARCH_READ_LIMIT`，默认 `3`；单次搜索后最多自动读取的候选数
-- `FLGO_CONTEXT_RECENT_MESSAGE_LIMIT`，默认 `50`；最多读取的近期聊天消息数
-- `FLGO_CONTEXT_RECENT_TIME_WINDOW_HOURS`，默认 `24`；近期聊天读取时间窗口
-- `FLGO_CONTEXT_CACHE_TTL_HOURS`，默认 `24`；聊天原文短期缓存 TTL，到期后清理
-- `FLGO_CONTEXT_CACHE_REFRESH_SECONDS`，默认 `60`；同一会话缓存刷新间隔，避免每条消息都调用飞书历史接口
-- `FLGO_CONTEXT_INJECT_MESSAGE_LIMIT`，默认 `8`；每次模型请求最多注入的聊天摘录条数
-- `FLGO_CONTEXT_MAX_CHARS`，默认 `6000`；每次模型请求注入的聊天上下文字符预算
-- `FLGO_MEMORY_STORE_RAW_TEXT`，默认 `false`；长期记忆不得保存完整聊天或飞书资源正文
-- `FLGO_WRITEBACK_ENABLED`，默认 `false`；保持关闭时不会生成写回卡片或执行写入
-- `FLGO_WRITEBACK_AUTO_EXECUTE_ENABLED`，默认 `false`；开启后用户才能用 `/写回 自动开启`
+- `FLAGO_OPENAI_COMPATIBLE_HTTP_PROXY`，可选；OpenAI 兼容 Provider 共用代理
+- `FLAGO_BASE_URL`
+- `FLAGO_SQLITE_PATH`
+- `FLAGO_ASSISTANT_DEFAULT_NAME`，默认 `飞灵`；用户未设置个人助手名称时使用
+- `FLAGO_AGENT_MODE`，默认 `legacy`；可设为 `agent` 启用 Agent + Tools JSON parser 编排
+- `FLAGO_AGENT_MAX_STEPS`，默认 `4`；Agent 模式下单次请求最多工具轮数
+- `FLAGO_AGENT_TOOL_TIMEOUT_SECONDS`，默认 `30`；Agent 工具默认超时时间
+- `FLAGO_MAX_MESSAGE_CHARS`，单条飞书消息进入模型前的最大字符数
+- `FLAGO_RESOURCE_SEARCH_ENABLED`，默认 `true`；私聊中按需搜索用户可见飞书资料
+- `FLAGO_RESOURCE_SEARCH_RESULT_LIMIT`，默认 `5`；单次飞书资料搜索最多返回的候选数
+- `FLAGO_RESOURCE_SEARCH_READ_LIMIT`，默认 `3`；单次搜索后最多自动读取的候选数
+- `FLAGO_CONTEXT_RECENT_MESSAGE_LIMIT`，默认 `50`；最多读取的近期聊天消息数
+- `FLAGO_CONTEXT_RECENT_TIME_WINDOW_HOURS`，默认 `24`；近期聊天读取时间窗口
+- `FLAGO_CONTEXT_CACHE_TTL_HOURS`，默认 `24`；聊天原文短期缓存 TTL，到期后清理
+- `FLAGO_CONTEXT_CACHE_REFRESH_SECONDS`，默认 `60`；同一会话缓存刷新间隔，避免每条消息都调用飞书历史接口
+- `FLAGO_CONTEXT_INJECT_MESSAGE_LIMIT`，默认 `8`；每次模型请求最多注入的聊天摘录条数
+- `FLAGO_CONTEXT_MAX_CHARS`，默认 `6000`；每次模型请求注入的聊天上下文字符预算
+- `FLAGO_MEMORY_STORE_RAW_TEXT`，默认 `false`；长期记忆不得保存完整聊天或飞书资源正文
+- `FLAGO_WRITEBACK_ENABLED`，默认 `false`；保持关闭时不会生成写回卡片或执行写入
+- `FLAGO_WRITEBACK_AUTO_EXECUTE_ENABLED`，默认 `false`；开启后用户才能用 `/写回 自动开启`
   启用个人低风险自动写入
-- `FLGO_WRITEBACK_CONFIRMATION_MODE`，默认 `always`；可选 `always`、`low_risk_direct`、`draft_only`
+- `FLAGO_WRITEBACK_CONFIRMATION_MODE`，默认 `always`；可选 `always`、`low_risk_direct`、`draft_only`
 
 OpenAI 兼容 Provider 示例：
 
 ```env
-FLGO_DEFAULT_PROVIDER=deepseek
+FLAGO_DEFAULT_PROVIDER=deepseek
 DEEPSEEK_API_KEY=sk-...
 DEEPSEEK_BASE_URL=https://your-openai-compatible-endpoint/v1
 DEEPSEEK_MODEL=your-model-name
@@ -132,9 +135,9 @@ DEEPSEEK_MODEL=your-model-name
 
 ## 飞书用户授权
 
-用户在飞书里发送 `/授权`，机器人会返回一次性 OAuth 链接。授权成功后，飞灵（FLGO）
+用户在飞书里发送 `/授权`，机器人会返回一次性 OAuth 链接。授权成功后，Flago（FLAGO）
 会把用户 token 保存到本地 SQLite，用于后续按用户权限读取飞书文档、电子表格和多维表格。
-后续会自动复用 token；如果启用了 `FLGO_OAUTH_ENABLE_OFFLINE_ACCESS=true` 且飞书后台已开通
+后续会自动复用 token；如果启用了 `FLAGO_OAUTH_ENABLE_OFFLINE_ACCESS=true` 且飞书后台已开通
 `offline_access`，还会在 access token 过期时自动刷新。
 
 注意：飞书资源读取需要同时满足两层权限：
@@ -154,22 +157,22 @@ auth:user.id:read drive:drive.search:readonly search:docs:read docx:document:rea
 
 - PDF 默认提取前 2 页，也可在问题中指定“第 3 页”。
 - DOCX、XLSX、PPTX、TXT、Markdown、CSV、JSON、HTML 和常见源码文件提取可读文本。
-- 图片默认返回格式、尺寸和飞书文档中的图片描述；开启 `FLGO_ATTACHMENT_OCR_ENABLED=true`
+- 图片默认返回格式、尺寸和飞书文档中的图片描述；开启 `FLAGO_ATTACHMENT_OCR_ENABLED=true`
   且本机安装 Tesseract 后，会对图片执行本地 OCR。
 - 音频、视频、压缩包、旧版 Office 和可执行文件只返回类型与安全说明，不执行、不解压、不转码。
 - 普通超链接、`@文档` 和内嵌网页返回飞书 blocks API 提供的显示文本、标题与 URL。
 
-飞书不会通过 blocks API 统一返回任意外链的预览正文。飞灵（FLGO） 不会把链接显示文本当成已经读取的网页内容，
+飞书不会通过 blocks API 统一返回任意外链的预览正文。Flago（FLAGO） 不会把链接显示文本当成已经读取的网页内容，
 也不会自动递归抓取文档中的所有外链。普通网页读取只在用户或 Agent 明确读取外链时触发，并会拦截本机、
-内网和保留地址；可通过 `FLGO_WEB_READ_ENABLED`、`FLGO_WEB_ALLOWED_HOSTS`、`FLGO_WEB_BLOCKED_HOSTS`
-和 `FLGO_WEB_MAX_BYTES` 控制读取范围。
+内网和保留地址；可通过 `FLAGO_WEB_READ_ENABLED`、`FLAGO_WEB_ALLOWED_HOSTS`、`FLAGO_WEB_BLOCKED_HOSTS`
+和 `FLAGO_WEB_MAX_BYTES` 控制读取范围。
 
 可发送 `/授权 状态` 检查当前用户是否已授权、是否缺少 scope，以及是否需要重新授权。
 
 飞书开放平台中的 OAuth 回调地址需要配置为：
 
 ```text
-{FLGO_BASE_URL}/oauth/feishu/callback
+{FLAGO_BASE_URL}/oauth/feishu/callback
 ```
 
 ## 飞书隐私控制指令
@@ -191,25 +194,25 @@ auth:user.id:read drive:drive.search:readonly search:docs:read docx:document:rea
 - `/记忆 开启`：重新开启当前用户的长期记忆。
 
 记忆管理命令只允许在私聊中操作，避免个人记忆展示到群聊。
-普通聊天中识别到“记住我叫…”“我的项目代号是…”这类候选记忆时，飞灵（FLGO） 会先发送确认卡片；用户点击“保存”后才写入长期记忆。
-飞灵（FLGO） 默认不会保存完整聊天原文、飞书资源正文、网页正文或附件正文。隐私边界见
+普通聊天中识别到“记住我叫…”“我的项目代号是…”这类候选记忆时，Flago（FLAGO） 会先发送确认卡片；用户点击“保存”后才写入长期记忆。
+Flago（FLAGO） 默认不会保存完整聊天原文、飞书资源正文、网页正文或附件正文。隐私边界见
 [上下文读取、用户授权和长期记忆隐私规格](docs/context-privacy-memory.md)。
 
 当前会话聊天历史读取使用应用权限 `im:message:readonly` 和 tenant token，不依赖用户 OAuth。
-飞灵（FLGO） 会把最近聊天做短期 TTL 缓存，并在每次请求前把近期窗口内的消息按时间顺序作为
+Flago（FLAGO） 会把最近聊天做短期 TTL 缓存，并在每次请求前把近期窗口内的消息按时间顺序作为
 全文上下文注入；超过近期窗口或字符预算的旧消息会压缩成当前会话滚动摘要。长期记忆开启时，
 私聊会话摘要会作为用户可查看、可删除的 `会话摘要` 记忆保存；不会保存完整聊天原文。
 
-私聊中没有显式链接、且用户明确要求搜索/读取飞书文档、表格、多维表或资料时，飞灵（FLGO） 会使用
+私聊中没有显式链接、且用户明确要求搜索/读取飞书文档、表格、多维表或资料时，Flago（FLAGO） 会使用
 飞书“搜索云文档”和“搜索 Wiki”接口按用户 OAuth 搜索本人可见资源，只读取前几个支持的命中项进入本次模型请求。
 如果搜索响应包含可打开 URL，会直接使用飞书返回的地址；否则使用 `FEISHU_DOCS_BASE_URL`
 和资源 token 生成链接。系统不全量扫描云空间，不建立长期索引，也不会把搜索关键词正文或资源正文写入审计日志。
 
 文档内嵌图片默认只返回图片元数据；如需让多模态模型直接理解图片，可设置
-`FLGO_ATTACHMENT_VISION_ENABLED=true`，并使用支持视觉输入的 Provider，例如 `gemini`。
+`FLAGO_ATTACHMENT_VISION_ENABLED=true`，并使用支持视觉输入的 Provider，例如 `gemini`。
 视觉理解失败时会回退到本地 OCR 或图片元数据。
 音频和视频附件默认只返回安全说明；如需让多模态模型转写或理解内容，可设置
-`FLGO_ATTACHMENT_MEDIA_UNDERSTANDING_ENABLED=true`，并使用支持音视频输入的 Provider。
+`FLAGO_ATTACHMENT_MEDIA_UNDERSTANDING_ENABLED=true`，并使用支持音视频输入的 Provider。
 
 ## 飞书模型指令
 
@@ -241,37 +244,37 @@ auth:user.id:read drive:drive.search:readonly search:docs:read docx:document:rea
 
 ## 飞书机器人菜单
 
-飞书开发者后台可以给机器人配置自定义菜单。飞灵（FLGO） 已支持以下事件 key：
+飞书开发者后台可以给机器人配置自定义菜单。Flago（FLAGO） 已支持以下事件 key：
 
 ```text
-flgo.assistant.name.view 查看助手信息
-flgo.assistant.info.view 查看助手信息（兼容 key）
-flgo.model.view          查看模型状态
-flgo.model.default       恢复个人默认模型
-flgo.model.use.gemini    使用 Gemini
-flgo.model.use.deepseek  使用 DeepSeek
-flgo.model.use.openai    使用 OpenAI
-flgo.model.use.qwen      使用 Qwen
-flgo.model.use.doubao    使用 Doubao
-flgo.model.use.minimax   使用 Minimax
-flgo.model.use.claude    使用 Claude
-flgo.auth.start          发起飞书授权
-flgo.auth.status         查看授权状态
-flgo.context.view        查看上下文策略
-flgo.context.enable      兼容入口：上下文默认开启
-flgo.context.disable     兼容入口：上下文默认开启
-flgo.writeback.status    查看写入策略
-flgo.writeback.auto.enable   开启个人自动写入
-flgo.writeback.auto.disable  关闭个人自动写入
-flgo.writeback.auto.clear    清除个人自动写入偏好
-flgo.writeback.history       查看最近写入
-flgo.writeback.undo          撤回最近写入，需要确认
-flgo.memory.view         查看长期记忆
-flgo.memory.delete       清空长期记忆，需要确认
-flgo.memory.disable      关闭长期记忆
-flgo.memory.enable       开启长期记忆
-flgo.help                查看帮助
-flgo.admin.open          打开本地配置网页
+flago.assistant.name.view 查看助手信息
+flago.assistant.info.view 查看助手信息（兼容 key）
+flago.model.view          查看模型状态
+flago.model.default       恢复个人默认模型
+flago.model.use.gemini    使用 Gemini
+flago.model.use.deepseek  使用 DeepSeek
+flago.model.use.openai    使用 OpenAI
+flago.model.use.qwen      使用 Qwen
+flago.model.use.doubao    使用 Doubao
+flago.model.use.minimax   使用 Minimax
+flago.model.use.claude    使用 Claude
+flago.auth.start          发起飞书授权
+flago.auth.status         查看授权状态
+flago.context.view        查看上下文策略
+flago.context.enable      兼容入口：上下文默认开启
+flago.context.disable     兼容入口：上下文默认开启
+flago.writeback.status    查看写入策略
+flago.writeback.auto.enable   开启个人自动写入
+flago.writeback.auto.disable  关闭个人自动写入
+flago.writeback.auto.clear    清除个人自动写入偏好
+flago.writeback.history       查看最近写入
+flago.writeback.undo          撤回最近写入，需要确认
+flago.memory.view         查看长期记忆
+flago.memory.delete       清空长期记忆，需要确认
+flago.memory.disable      关闭长期记忆
+flago.memory.enable       开启长期记忆
+flago.help                查看帮助
+flago.admin.open          打开本地配置网页
 ```
 
 建议菜单结构：
@@ -318,7 +321,7 @@ flgo.admin.open          打开本地配置网页
 
 ## 写入功能
 
-`FLGO_WRITEBACK_ENABLED=true` 时，明确指向飞书文档、电子表格、多维表格或消息的写入请求
+`FLAGO_WRITEBACK_ENABLED=true` 时，明确指向飞书文档、电子表格、多维表格或消息的写入请求
 会生成确认卡片。模型只准备写入内容，不能直接声称已经执行；实际写入必须经过权限检查和用户确认。
 
 设置为 `false` 时，系统不会创建写回卡片或执行写入，只返回可复制草稿或操作建议。
@@ -336,7 +339,7 @@ flgo.admin.open          打开本地配置网页
 
 ## 第三方服务与数据责任
 
-飞灵（FLGO）需要用户自行配置飞书开放平台应用、模型服务 API Key、媒体/工作流服务接口等第三方服务。
+Flago（FLAGO）需要用户自行配置飞书开放平台应用、模型服务 API Key、媒体/工作流服务接口等第三方服务。
 
 用户应自行确保：
 
@@ -349,6 +352,6 @@ flgo.admin.open          打开本地配置网页
 
 ## 开源协议
 
-飞灵（FLGO）基于 [Apache License 2.0](LICENSE) 开源。
+Flago（FLAGO）基于 [Apache License 2.0](LICENSE) 开源。
 
 Apache-2.0 允许使用、复制、修改、分发和商业使用本项目代码，但使用者需要遵守许可证中的版权、专利、商标和声明保留要求。项目名称、标识和官方发行说明不代表自动授权他人冒充官方版本或官方服务。

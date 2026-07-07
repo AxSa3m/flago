@@ -1,6 +1,6 @@
 # 用户授权与隐私操作指南
 
-本文面向 飞灵（FLGO） 的普通使用者和本地部署管理员，说明飞书授权、助手命名、上下文读取、长期记忆和隐私验证方法。
+本文面向 Flago（FLAGO） 的普通使用者和本地部署管理员，说明飞书授权、助手命名、上下文读取、长期记忆和隐私验证方法。
 
 ## 用户常用操作
 
@@ -24,7 +24,7 @@
 
 或点击机器人自定义菜单中的“授权”。机器人会发送一张授权卡片，点击“点击授权”后在浏览器完成飞书 OAuth 授权。
 
-授权成功后，飞灵（FLGO） 会把用户 token 保存到本地 SQLite。后续读取用户有权限的飞书文档、电子表格、多维表格和 Wiki 时会自动复用 token。若启用了 `FLGO_OAUTH_ENABLE_OFFLINE_ACCESS=true` 且飞书后台已开通 `offline_access`，飞灵（FLGO） 会在 access token 过期时用 refresh token 自动续期。
+授权成功后，Flago（FLAGO） 会把用户 token 保存到本地 SQLite。后续读取用户有权限的飞书文档、电子表格、多维表格和 Wiki 时会自动复用 token。若启用了 `FLAGO_OAUTH_ENABLE_OFFLINE_ACCESS=true` 且飞书后台已开通 `offline_access`，Flago（FLAGO） 会在 access token 过期时用 refresh token 自动续期。
 
 查看当前授权状态：
 
@@ -35,7 +35,7 @@
 预期回复：
 
 ```text
-飞灵 的飞书资源授权状态：可用。
+Flago 的飞书资源授权状态：可用。
 ```
 
 如果提示缺少 scope，需要管理员先在飞书开发者后台开通对应权限并发布应用，然后用户重新授权。
@@ -109,7 +109,7 @@
 没有记忆时会回复：
 
 ```text
-暂时没有保存你的长期记忆。飞灵 默认不会保存完整聊天原文。
+暂时没有保存你的长期记忆。Flago 默认不会保存完整聊天原文。
 ```
 
 新增或更新一条带 key 的偏好记忆：
@@ -136,7 +136,7 @@
 已记录：偏好：输出尽量用表格。
 ```
 
-普通聊天中如果说“记住我叫 Sa3m”“我的项目代号是空杯”这类内容，飞灵（FLGO） 会先发送“确认保存长期记忆”卡片。只有点击“保存”后才会写入长期记忆；点击“取消”或不处理则不会保存。
+普通聊天中如果说“记住我叫 Sa3m”“我的项目代号是空杯”这类内容，Flago（FLAGO） 会先发送“确认保存长期记忆”卡片。只有点击“保存”后才会写入长期记忆；点击“取消”或不处理则不会保存。
 
 修改指定偏好：
 
@@ -206,32 +206,32 @@
 
 ```text
 助手
-- 助手信息        flgo.assistant.name.view
+- 助手信息        flago.assistant.name.view
 
 授权
-- 飞书授权        flgo.auth.start
-- 授权状态        flgo.auth.status
+- 飞书授权        flago.auth.start
+- 授权状态        flago.auth.status
 
 上下文
-- 查看上下文        flgo.context.view
+- 查看上下文        flago.context.view
 
 写入
-- 写入状态        flgo.writeback.status
-- 自动写入开启    flgo.writeback.auto.enable
-- 自动写入关闭    flgo.writeback.auto.disable
-- 写入恢复默认    flgo.writeback.auto.clear
-- 最近写入        flgo.writeback.history
-- 撤回            flgo.writeback.undo
+- 写入状态        flago.writeback.status
+- 自动写入开启    flago.writeback.auto.enable
+- 自动写入关闭    flago.writeback.auto.disable
+- 写入恢复默认    flago.writeback.auto.clear
+- 最近写入        flago.writeback.history
+- 撤回            flago.writeback.undo
 
 记忆
-- 查看记忆        flgo.memory.view
-- 删除记忆        flgo.memory.delete
-- 关闭记忆        flgo.memory.disable
-- 开启记忆        flgo.memory.enable
+- 查看记忆        flago.memory.view
+- 删除记忆        flago.memory.delete
+- 关闭记忆        flago.memory.disable
+- 开启记忆        flago.memory.enable
 
 帮助
-- 使用说明        flgo.help
-- 本地配置网页    flgo.admin.open
+- 使用说明        flago.help
+- 本地配置网页    flago.admin.open
 ```
 
 菜单事件需要订阅 `application.bot.menu_v6`，并启用长连接事件接收。
@@ -246,7 +246,7 @@
 
 ```env
 FEISHU_OAUTH_SCOPES=auth:user.id:read drive:drive.search:readonly search:docs:read docx:document:readonly docx:document docs:document.media:download wiki:node:read wiki:wiki:readonly sheets:spreadsheet:readonly sheets:spreadsheet bitable:app:readonly bitable:app base:table:read base:record:read base:record:create base:record:update base:record:delete base:field:read base:view:read
-FLGO_OAUTH_ENABLE_OFFLINE_ACCESS=false
+FLAGO_OAUTH_ENABLE_OFFLINE_ACCESS=false
 ```
 
 `FEISHU_OAUTH_SCOPES` 中的权限必须同时在飞书开发者后台开通并发布。若用户已经授权过，但后来新增了 scope，用户需要重新授权一次。
@@ -254,48 +254,48 @@ FLGO_OAUTH_ENABLE_OFFLINE_ACCESS=false
 自动续期配置：
 
 ```env
-FLGO_OAUTH_ENABLE_OFFLINE_ACCESS=true
+FLAGO_OAUTH_ENABLE_OFFLINE_ACCESS=true
 ```
 
-只有当飞书开发者后台已经开通 `offline_access` 时才开启。否则飞书授权页会提示 `20027` 应用权限不足。开启后，用户重新授权并拿到 refresh token，飞灵（FLGO） 才能自动刷新 access token。
+只有当飞书开发者后台已经开通 `offline_access` 时才开启。否则飞书授权页会提示 `20027` 应用权限不足。开启后，用户重新授权并拿到 refresh token，Flago（FLAGO） 才能自动刷新 access token。
 
 ### 上下文配置
 
 ```env
-FLGO_CONTEXT_RECENT_MESSAGE_LIMIT=50
-FLGO_CONTEXT_RECENT_TIME_WINDOW_HOURS=24
-FLGO_CONTEXT_CACHE_TTL_HOURS=24
-FLGO_CONTEXT_CACHE_REFRESH_SECONDS=60
-FLGO_CONTEXT_INJECT_MESSAGE_LIMIT=8
-FLGO_CONTEXT_MAX_CHARS=6000
+FLAGO_CONTEXT_RECENT_MESSAGE_LIMIT=50
+FLAGO_CONTEXT_RECENT_TIME_WINDOW_HOURS=24
+FLAGO_CONTEXT_CACHE_TTL_HOURS=24
+FLAGO_CONTEXT_CACHE_REFRESH_SECONDS=60
+FLAGO_CONTEXT_INJECT_MESSAGE_LIMIT=8
+FLAGO_CONTEXT_MAX_CHARS=6000
 ```
 
 含义：
 
-- `FLGO_CONTEXT_RECENT_MESSAGE_LIMIT`：最多读取的近期消息数量。
-- `FLGO_CONTEXT_RECENT_TIME_WINDOW_HOURS`：近期消息时间窗口。
-- `FLGO_CONTEXT_CACHE_TTL_HOURS`：本地短期聊天缓存保留时间。
-- `FLGO_CONTEXT_CACHE_REFRESH_SECONDS`：同一会话缓存刷新间隔。
-- `FLGO_CONTEXT_INJECT_MESSAGE_LIMIT`：每次模型请求最多注入的近期消息条数。
-- `FLGO_CONTEXT_MAX_CHARS`：每次模型请求的聊天上下文字符预算。
+- `FLAGO_CONTEXT_RECENT_MESSAGE_LIMIT`：最多读取的近期消息数量。
+- `FLAGO_CONTEXT_RECENT_TIME_WINDOW_HOURS`：近期消息时间窗口。
+- `FLAGO_CONTEXT_CACHE_TTL_HOURS`：本地短期聊天缓存保留时间。
+- `FLAGO_CONTEXT_CACHE_REFRESH_SECONDS`：同一会话缓存刷新间隔。
+- `FLAGO_CONTEXT_INJECT_MESSAGE_LIMIT`：每次模型请求最多注入的近期消息条数。
+- `FLAGO_CONTEXT_MAX_CHARS`：每次模型请求的聊天上下文字符预算。
 
 聊天缓存用于减少重复调用飞书历史接口，不是长期记忆。缓存到期后可以清理，审计日志不会保存完整聊天正文。
 
 ### 记忆配置
 
 ```env
-FLGO_MEMORY_STORE_RAW_TEXT=false
-FLGO_MEMORY_ITEM_MAX_CHARS=2000
-FLGO_MEMORY_CONTEXT_MAX_CHARS=4000
-FLGO_ASSISTANT_DEFAULT_NAME=飞灵
+FLAGO_MEMORY_STORE_RAW_TEXT=false
+FLAGO_MEMORY_ITEM_MAX_CHARS=2000
+FLAGO_MEMORY_CONTEXT_MAX_CHARS=4000
+FLAGO_ASSISTANT_DEFAULT_NAME=飞灵
 ```
 
 含义：
 
-- `FLGO_MEMORY_STORE_RAW_TEXT=false`：长期记忆不得保存完整聊天原文、飞书资源正文、网页正文或附件正文。
-- `FLGO_MEMORY_ITEM_MAX_CHARS`：单条长期记忆最大长度。
-- `FLGO_MEMORY_CONTEXT_MAX_CHARS`：每次进入模型上下文的长期记忆总字符预算。
-- `FLGO_ASSISTANT_DEFAULT_NAME`：用户未设置个人助手名称时使用的默认名称。
+- `FLAGO_MEMORY_STORE_RAW_TEXT=false`：长期记忆不得保存完整聊天原文、飞书资源正文、网页正文或附件正文。
+- `FLAGO_MEMORY_ITEM_MAX_CHARS`：单条长期记忆最大长度。
+- `FLAGO_MEMORY_CONTEXT_MAX_CHARS`：每次进入模型上下文的长期记忆总字符预算。
+- `FLAGO_ASSISTANT_DEFAULT_NAME`：用户未设置个人助手名称时使用的默认名称。
 
 私聊中超过近期窗口的旧消息可以被压缩成用户可查看、可删除的 `会话摘要` 记忆。该记忆不得包含完整聊天原文、消息 ID、发送人和时间戳等原始记录元数据。
 
@@ -318,7 +318,7 @@ FLGO_ASSISTANT_DEFAULT_NAME=飞灵
 
 ## 不会保存什么
 
-飞灵（FLGO） 默认不会把以下内容写入长期存储：
+Flago（FLAGO） 默认不会把以下内容写入长期存储：
 
 - 完整聊天原文。
 - 飞书文档、电子表格、多维表格正文。
@@ -334,10 +334,10 @@ FLGO_ASSISTANT_DEFAULT_NAME=飞灵
 在项目目录运行：
 
 ```powershell
-cd D:\CodingSpace\feishuGemini\flgo
+cd D:\CodingSpace\feishuGemini\flago
 @'
 import json, sqlite3
-from flgo.config import get_settings
+from flago.config import get_settings
 
 conn = sqlite3.connect(get_settings().sqlite_path)
 
@@ -361,7 +361,7 @@ for row in conn.execute("select scope, count(*) from context_message_cache group
 
 - `memory_items.content` 应是摘要或偏好，不应是完整聊天流水。
 - `audit_events.detail_json` 不应包含完整聊天正文、飞书正文、网页正文、token 或 API key。
-- `context_message_cache` 可以短期存在近期聊天缓存，但它不是长期记忆，受 `FLGO_CONTEXT_CACHE_TTL_HOURS` 约束。
+- `context_message_cache` 可以短期存在近期聊天缓存，但它不是长期记忆，受 `FLAGO_CONTEXT_CACHE_TTL_HOURS` 约束。
 
 ## 人工验收步骤
 
@@ -388,7 +388,7 @@ for row in conn.execute("select scope, count(*) from context_message_cache group
 表示授权链接里包含应用未开通的 scope。若提示 `offline_access`，先关闭：
 
 ```env
-FLGO_OAUTH_ENABLE_OFFLINE_ACCESS=false
+FLAGO_OAUTH_ENABLE_OFFLINE_ACCESS=false
 ```
 
 如果确实需要自动续期，则先在飞书开发者后台开通 `offline_access`，再设置为 `true` 并重新授权。

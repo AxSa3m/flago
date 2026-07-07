@@ -5,10 +5,10 @@ from typing import Any
 import aiosqlite
 import pytest
 
-from flgo.config import Settings
-from flgo.models import ActionProposal, AuditEventType, PendingActionStatus, WriteActionType
-from flgo.storage import SQLiteStore
-from flgo.writeback.service import WritebackService
+from flago.config import Settings
+from flago.models import ActionProposal, AuditEventType, PendingActionStatus, WriteActionType
+from flago.storage import SQLiteStore
+from flago.writeback.service import WritebackService
 
 
 class FakeExecutor:
@@ -49,7 +49,7 @@ class FailingExecutor:
 
 @pytest.mark.asyncio
 async def test_confirm_executes_once(tmp_path) -> None:
-    store = SQLiteStore(tmp_path / "flgo.sqlite3")
+    store = SQLiteStore(tmp_path / "flago.sqlite3")
     await store.init()
     executor = FakeExecutor()
     service = WritebackService(store, executor)
@@ -76,7 +76,7 @@ async def test_confirm_executes_once(tmp_path) -> None:
 
 @pytest.mark.asyncio
 async def test_confirm_rejects_wrong_actor(tmp_path) -> None:
-    store = SQLiteStore(tmp_path / "flgo.sqlite3")
+    store = SQLiteStore(tmp_path / "flago.sqlite3")
     await store.init()
     service = WritebackService(store, FakeExecutor())
     proposal = ActionProposal(
@@ -96,7 +96,7 @@ async def test_confirm_rejects_wrong_actor(tmp_path) -> None:
 
 @pytest.mark.asyncio
 async def test_confirm_expires_pending_action(tmp_path) -> None:
-    store = SQLiteStore(tmp_path / "flgo.sqlite3")
+    store = SQLiteStore(tmp_path / "flago.sqlite3")
     await store.init()
     executor = FakeExecutor()
     service = WritebackService(store, executor)
@@ -121,7 +121,7 @@ async def test_confirm_expires_pending_action(tmp_path) -> None:
 
 @pytest.mark.asyncio
 async def test_cancel_is_idempotent(tmp_path) -> None:
-    store = SQLiteStore(tmp_path / "flgo.sqlite3")
+    store = SQLiteStore(tmp_path / "flago.sqlite3")
     await store.init()
     service = WritebackService(store, FakeExecutor())
     proposal = ActionProposal(
@@ -143,7 +143,7 @@ async def test_cancel_is_idempotent(tmp_path) -> None:
 
 @pytest.mark.asyncio
 async def test_confirm_returns_failed_and_audits_redacted_executor_error(tmp_path) -> None:
-    store = SQLiteStore(tmp_path / "flgo.sqlite3")
+    store = SQLiteStore(tmp_path / "flago.sqlite3")
     await store.init()
     service = WritebackService(store, FailingExecutor())
     proposal = ActionProposal(
@@ -171,10 +171,10 @@ async def test_confirm_returns_failed_and_audits_redacted_executor_error(tmp_pat
 
 @pytest.mark.asyncio
 async def test_confirm_blocks_oversized_writeback_before_execution(tmp_path) -> None:
-    store = SQLiteStore(tmp_path / "flgo.sqlite3")
+    store = SQLiteStore(tmp_path / "flago.sqlite3")
     await store.init()
     executor = FakeExecutor()
-    settings = Settings(env="test", sqlite_path=tmp_path / "flgo.sqlite3", max_writeback_chars=20)
+    settings = Settings(env="test", sqlite_path=tmp_path / "flago.sqlite3", max_writeback_chars=20)
     service = WritebackService(store, executor, settings)
     proposal = ActionProposal(
         actor_id="user-1",
@@ -197,7 +197,7 @@ async def test_confirm_blocks_oversized_writeback_before_execution(tmp_path) -> 
 
 @pytest.mark.asyncio
 async def test_confirm_records_reversible_bitable_create(tmp_path) -> None:
-    store = SQLiteStore(tmp_path / "flgo.sqlite3")
+    store = SQLiteStore(tmp_path / "flago.sqlite3")
     await store.init()
     executor = FakeExecutor({"record": {"record_id": "rec1"}})
     service = WritebackService(store, executor)
@@ -227,7 +227,7 @@ async def test_confirm_records_reversible_bitable_create(tmp_path) -> None:
 
 @pytest.mark.asyncio
 async def test_confirm_marks_original_reverted_after_bitable_delete(tmp_path) -> None:
-    store = SQLiteStore(tmp_path / "flgo.sqlite3")
+    store = SQLiteStore(tmp_path / "flago.sqlite3")
     await store.init()
     await store.save_writeback_execution(
         action_id="original-action",
@@ -260,7 +260,7 @@ async def test_confirm_marks_original_reverted_after_bitable_delete(tmp_path) ->
 
 @pytest.mark.asyncio
 async def test_confirm_records_reversible_sheet_write(tmp_path) -> None:
-    store = SQLiteStore(tmp_path / "flgo.sqlite3")
+    store = SQLiteStore(tmp_path / "flago.sqlite3")
     await store.init()
     executor = FakeExecutor(
         {
@@ -297,7 +297,7 @@ async def test_confirm_records_reversible_sheet_write(tmp_path) -> None:
 
 @pytest.mark.asyncio
 async def test_confirm_records_reversible_doc_append_when_block_ids_returned(tmp_path) -> None:
-    store = SQLiteStore(tmp_path / "flgo.sqlite3")
+    store = SQLiteStore(tmp_path / "flago.sqlite3")
     await store.init()
     executor = FakeExecutor({"children": [{"block_id": "blk1"}, {"block_id": "blk2"}]})
     service = WritebackService(store, executor)
@@ -338,7 +338,7 @@ async def test_confirm_records_reversible_doc_append_when_block_ids_returned(tmp
 
 @pytest.mark.asyncio
 async def test_sheet_undo_marks_original_reverted_without_creating_redo(tmp_path) -> None:
-    store = SQLiteStore(tmp_path / "flgo.sqlite3")
+    store = SQLiteStore(tmp_path / "flago.sqlite3")
     await store.init()
     await store.save_writeback_execution(
         action_id="original-sheet",

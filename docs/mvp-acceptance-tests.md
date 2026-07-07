@@ -1,6 +1,6 @@
 # MVP 验收测试矩阵
 
-本文说明 飞灵（FLGO） 读取优先 MVP 的自动测试覆盖和人工飞书验收方法。自动测试全部使用临时 SQLite、mock HTTP 或 mock Provider，不依赖真实模型额度和真实飞书资源。
+本文说明 Flago（FLAGO） 读取优先 MVP 的自动测试覆盖和人工飞书验收方法。自动测试全部使用临时 SQLite、mock HTTP 或 mock Provider，不依赖真实模型额度和真实飞书资源。
 
 ## 自动验收
 

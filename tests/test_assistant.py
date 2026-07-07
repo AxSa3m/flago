@@ -3,11 +3,11 @@ from typing import Any
 
 import pytest
 
-from flgo.agent import Assistant
-from flgo.agent.assistant import _resource_search_query
-from flgo.agent.search_planner import ModelResourceSearchPlanner, ResourceSearchPlanningError
-from flgo.gemini.provider import EchoModelProvider
-from flgo.models import (
+from flago.agent import Assistant
+from flago.agent.assistant import _resource_search_query
+from flago.agent.search_planner import ModelResourceSearchPlanner, ResourceSearchPlanningError
+from flago.gemini.provider import EchoModelProvider
+from flago.models import (
     ActionProposal,
     AssistantRequest,
     AssistantResponse,
@@ -68,8 +68,8 @@ class SheetWrongProposalModelProvider:
                     actor_id="ou_user",
                     action_type=WriteActionType.SHEET_WRITE_RANGE,
                     target={"spreadsheet_token": "sht123", "range": "sheet1!A4:A4"},
-                    payload={"values": [["FLGO 写回测试删除成功4"]]},
-                    preview="向电子表格 sheet1!A4:A4 写入：FLGO 写回测试删除成功4",
+                    payload={"values": [["FLAGO 写回测试删除成功4"]]},
+                    preview="向电子表格 sheet1!A4:A4 写入：FLAGO 写回测试删除成功4",
                     created_at=now,
                     expires_at=now + timedelta(seconds=300),
                 )
@@ -82,10 +82,10 @@ class SheetModelTextTargetProvider:
         return AssistantResponse(
             text=(
                 "好的，我已读取该电子表格。当前 C4 单元格为空，"
-                "您希望将其内容更新为“FLGO 写回测试删除成功6”。\n\n"
+                "您希望将其内容更新为“FLAGO 写回测试删除成功6”。\n\n"
                 "| 位置 | 当前值 | 新值 |\n"
                 "|------|--------|------|\n"
-                "| Sheet1!C4 | （空） | FLGO 写回测试删除成功6 |"
+                "| Sheet1!C4 | （空） | FLAGO 写回测试删除成功6 |"
             )
         )
 
@@ -98,15 +98,15 @@ class SheetWrongProposalWithModelTargetProvider:
                 "好的，我将生成写回预览。\n\n"
                 "| 位置 | 当前值 | 新值 |\n"
                 "|------|--------|------|\n"
-                "| Sheet1!C4 | （空） | FLGO 写回测试删除成功6 |"
+                "| Sheet1!C4 | （空） | FLAGO 写回测试删除成功6 |"
             ),
             action_proposals=[
                 ActionProposal(
                     actor_id="ou_user",
                     action_type=WriteActionType.SHEET_WRITE_RANGE,
                     target={"spreadsheet_token": "sht123", "range": "sheet1!A5:A5"},
-                    payload={"values": [["FLGO 写回测试删除成功6"]]},
-                    preview="向电子表格 sheet1!A5:A5 写入：FLGO 写回测试删除成功6",
+                    payload={"values": [["FLAGO 写回测试删除成功6"]]},
+                    preview="向电子表格 sheet1!A5:A5 写入：FLAGO 写回测试删除成功6",
                     created_at=now,
                     expires_at=now + timedelta(seconds=300),
                 )
@@ -156,7 +156,7 @@ class DocGeneratedContentProvider:
             text=(
                 "好的，我将为你生成一段自我介绍，并准备写入到指定文档中。\n\n"
                 "待写内容预览：\n\n"
-                "> 我是 FLGO，一个接入飞书的工作助手。我擅长用中文提供简洁、"
+                "> 我是 FLAGO，一个接入飞书的工作助手。我擅长用中文提供简洁、"
                 "准确、可执行的答案，也可以在你确认后处理飞书文档、表格和多维表格。"
             )
         )
@@ -168,7 +168,7 @@ class DocWrongProposalWithGeneratedContentProvider:
         return AssistantResponse(
             text=(
                 "待写内容预览：\n\n"
-                "> 我是 FLGO，一个接入飞书的工作助手。我会先生成预览，"
+                "> 我是 FLAGO，一个接入飞书的工作助手。我会先生成预览，"
                 "再等待你确认后写入。"
             ),
             action_proposals=[
@@ -192,7 +192,7 @@ class DocPreviewInstructionBeforeValueProvider:
                 "待写内容预览：\n"
                 "将以下模型生成内容写入指定文档。\n\n"
                 "写入值：\n"
-                "> 我是 FLGO，一个接入飞书的工作助手。"
+                "> 我是 FLAGO，一个接入飞书的工作助手。"
             )
         )
 
@@ -252,7 +252,7 @@ class BitablePreviewInstructionBeforeValueProvider:
                 "将总结结果写入 最后一行（第10条记录，record_id: rec10）"
                 "的“测试列2”字段，覆盖原有值“测试数据”。\n\n"
                 "写入值：\n"
-                "> 该多维表共10条记录，主要用于FLGO写回测试功能验证。"
+                "> 该多维表共10条记录，主要用于FLAGO写回测试功能验证。"
             )
         )
 
@@ -267,8 +267,8 @@ class BitableMarkdownTablePreviewProvider:
                 "| 操作 | 目标记录 | 目标字段 | 新值 |\n"
                 "|------|----------|----------|------|\n"
                 "| 更新 | 第10条（record_id=rec10） | 测试列2 | "
-                "该多维表共10条记录，主要记录FLGO写回测试结果，其中8条为"
-                "\"FLGO 写回测试成功\"，1条为\"FLGO 测试成功\"，1条为"
+                "该多维表共10条记录，主要记录FLAGO写回测试结果，其中8条为"
+                "\"FLAGO 写回测试成功\"，1条为\"FLAGO 测试成功\"，1条为"
                 "\"测试列1内容\"。最后一条的测试列2原值为\"测试数据\"。整体为功能验证用途。 |\n\n"
                 "请在飞书卡片中确认后执行更新。"
             )
@@ -282,7 +282,7 @@ class BitableCrudJsonPlanProvider:
                 "我已根据语义判断这是 create 操作，会新增一条多维表记录。\n\n"
                 "```json\n"
                 "{\n"
-                '  "flgo_writeback": {\n'
+                '  "flago_writeback": {\n'
                 '    "operation": "create",\n'
                 '    "resource_type": "bitable",\n'
                 '    "target": {"field": "测试列2", "record": "last"},\n'
@@ -303,8 +303,8 @@ class BitableAppendSummaryProvider:
                 "待写内容预览：\n"
                 "- 操作：新增记录（追加到最后一行之后）\n"
                 "- 字段：测试内容\n"
-                "- 写入值：该多维表格共 10 条记录，主要记录 FLGO 写回测试结果，"
-                "其中 8 条为“FLGO 写回测试成功”。整体为功能验证用途。\n"
+                "- 写入值：该多维表格共 10 条记录，主要记录 FLAGO 写回测试结果，"
+                "其中 8 条为“FLAGO 写回测试成功”。整体为功能验证用途。\n"
             )
         )
 
@@ -317,8 +317,8 @@ class BitableIncreaseToFieldLastRowProvider:
                 "**待写内容预览：**\n"
                 "- **操作**：新增一条记录（追加到最后一行之后）\n"
                 "- **目标字段**：测试列2\n"
-                "- **写入值**：该多维表格共10条记录，主要用于FLGO写回功能测试，"
-                "其中7条记录测试内容为“FLGO写回测试成功”，1条为“FLGO测试成功”，"
+                "- **写入值**：该多维表格共10条记录，主要用于FLAGO写回功能测试，"
+                "其中7条记录测试内容为“FLAGO写回测试成功”，1条为“FLAGO测试成功”，"
                 "1条记录含“测试列1内容”但测试列2数据异常，另有1条记录内容为无效预览文本。"
             )
         )
@@ -329,13 +329,13 @@ class BitableReplaceLastRowSummaryProvider:
         return AssistantResponse(
             text=(
                 "已读取多维表格的 10 条记录，总结如下：\n\n"
-                "该多维表格主要用于 FLGO 写回功能测试。\n\n"
+                "该多维表格主要用于 FLAGO 写回功能测试。\n\n"
                 "**待写内容预览：**\n"
                 "- **目标记录**：第 10 条（record_id: `rec10`）\n"
                 "- **目标字段**：测试列2\n"
                 "- **当前值**：`测试数据`\n"
-                "- **新值**：`该多维表格共10条记录，其中8条为“FLGO写回测试成功”，"
-                "1条为“FLGO测试成功”，最后1条原含“测试数据”；整体为FLGO功能验证测试。`\n\n"
+                "- **新值**：`该多维表格共10条记录，其中8条为“FLAGO写回测试成功”，"
+                "1条为“FLAGO测试成功”，最后1条原含“测试数据”；整体为FLAGO功能验证测试。`\n\n"
                 "请确认后，我将通过飞书卡片提交写入。"
             )
         )
@@ -351,7 +351,7 @@ class BitableNaturalUpdateFirstRowProvider:
                 "- **操作**：更新（覆盖）第 1 条记录的「测试列2」字段\n"
                 "- **目标记录**：`rec1`\n"
                 "- **写入值**：\n"
-                "> 该多维表共 10 条记录，测试内容均为 FLGO 写回测试相关，"
+                "> 该多维表共 10 条记录，测试内容均为 FLAGO 写回测试相关，"
                 "测试列2仅最后一条含测试数据，其余为空。整体为功能验证测试。"
             )
         )
@@ -365,7 +365,7 @@ class BitableWrongUpdateForAppendProvider:
                 "待写内容预览：\n"
                 "- 操作：新增记录（追加到最后一行之后）\n"
                 "- 字段：测试内容\n"
-                "- 写入值：该多维表格共 10 条记录，主要记录 FLGO 写回测试结果。\n"
+                "- 写入值：该多维表格共 10 条记录，主要记录 FLAGO 写回测试结果。\n"
             ),
             action_proposals=[
                 ActionProposal(
@@ -575,7 +575,7 @@ class NonEmptySheetResourceReader:
                 "读取范围：sheet1!A1:Z200\n"
                 "非空单元格数量：1\n"
                 "建议追加起始行：2\n\n"
-                "| FLGO 写回测试删除成功 |\n"
+                "| FLAGO 写回测试删除成功 |\n"
                 "| --- |"
             ),
         )
@@ -592,10 +592,10 @@ class AppendRowFiveSheetResourceReader:
                 "非空单元格数量：4\n"
                 "建议追加起始行：5\n\n"
                 "非空行摘录：\n"
-                "- 第 1 行：FLGO 写回测试删除成功\n"
-                "- 第 2 行：FLGO 写回测试删除成功2\n"
-                "- 第 3 行：FLGO 写回测试删除成功3\n"
-                "- 第 4 行：FLGO 写回测试删除成功4\n"
+                "- 第 1 行：FLAGO 写回测试删除成功\n"
+                "- 第 2 行：FLAGO 写回测试删除成功2\n"
+                "- 第 3 行：FLAGO 写回测试删除成功3\n"
+                "- 第 4 行：FLAGO 写回测试删除成功4\n"
             ),
         )
 
@@ -702,12 +702,12 @@ class BitableTenRecordsWithIdsResourceReader:
                 "- 测试内容（类型：1）\n"
                 "- 测试列2（类型：1）\n"
                 "\n记录索引：\n"
-                "- 第 1 条：record_id=rec1；测试内容=FLGO 写回测试成功；测试列2=\n"
+                "- 第 1 条：record_id=rec1；测试内容=FLAGO 写回测试成功；测试列2=\n"
                 "- 第 10 条：record_id=rec10；测试内容=测试列1内容；测试列2=测试数据\n"
                 "\n记录摘录：\n"
                 "| 测试内容 | 测试列2 |\n"
                 "| --- | --- |\n"
-                "| FLGO 写回测试成功 |  |\n"
+                "| FLAGO 写回测试成功 |  |\n"
                 "| 测试列1内容 | 测试数据 |"
             ),
         )
@@ -1310,7 +1310,7 @@ async def test_assistant_infers_doc_append_proposal_for_explicit_writeback() -> 
         actor_id="ou_user",
         conversation_id="chat-1",
         conversation_type=ConversationType.PRIVATE,
-        text="请把“FLGO 写回测试成功”写入这个文档：https://docs.feishu.cn/docx/docx123",
+        text="请把“FLAGO 写回测试成功”写入这个文档：https://docs.feishu.cn/docx/docx123",
     )
 
     response = await assistant.handle(request)
@@ -1321,7 +1321,7 @@ async def test_assistant_infers_doc_append_proposal_for_explicit_writeback() -> 
     assert proposal.actor_id == "ou_user"
     assert proposal.action_type.value == "doc_append"
     assert proposal.target == {"document_id": "docx123"}
-    assert proposal.payload == {"content": "FLGO 写回测试成功"}
+    assert proposal.payload == {"content": "FLAGO 写回测试成功"}
     assert (proposal.expires_at - proposal.created_at).total_seconds() == 300
 
 
@@ -1333,7 +1333,7 @@ async def test_assistant_does_not_create_writeback_proposals_when_disabled() -> 
         actor_id="ou_user",
         conversation_id="chat-1",
         conversation_type=ConversationType.PRIVATE,
-        text="请把“FLGO 写回测试成功”写入这个文档：https://docs.feishu.cn/docx/docx123",
+        text="请把“FLAGO 写回测试成功”写入这个文档：https://docs.feishu.cn/docx/docx123",
     )
 
     response = await assistant.handle(request)
@@ -1349,7 +1349,7 @@ async def test_assistant_uses_resolved_wiki_doc_token_for_writeback() -> None:
         actor_id="ou_user",
         conversation_id="chat-1",
         conversation_type=ConversationType.PRIVATE,
-        text="请把“FLGO 写回测试成功”写入这个文档：https://docs.feishu.cn/wiki/wiki123",
+        text="请把“FLAGO 写回测试成功”写入这个文档：https://docs.feishu.cn/wiki/wiki123",
     )
 
     response = await assistant.handle(request)
@@ -1592,9 +1592,9 @@ async def test_assistant_uses_model_generated_content_for_doc_writeback() -> Non
 
     proposal = response.action_proposals[0]
     assert proposal.action_type == WriteActionType.DOC_APPEND
-    assert proposal.payload["content"].startswith("我是 FLGO，一个接入飞书的工作助手")
+    assert proposal.payload["content"].startswith("我是 FLAGO，一个接入飞书的工作助手")
     assert proposal.payload["content"] != "写一段你的自我介绍"
-    assert "向文档追加文本：\n我是 FLGO" in proposal.preview
+    assert "向文档追加文本：\n我是 FLAGO" in proposal.preview
 
 
 @pytest.mark.asyncio
@@ -1611,7 +1611,7 @@ async def test_assistant_uses_explicit_value_not_instruction_for_doc_writeback()
 
     proposal = response.action_proposals[0]
     assert proposal.action_type == WriteActionType.DOC_APPEND
-    assert proposal.payload == {"content": "我是 FLGO，一个接入飞书的工作助手。"}
+    assert proposal.payload == {"content": "我是 FLAGO，一个接入飞书的工作助手。"}
     assert "将以下模型生成内容写入指定文档" not in proposal.preview
 
 
@@ -1628,7 +1628,7 @@ async def test_assistant_corrects_doc_action_content_from_model_preview() -> Non
     response = await assistant.handle(request)
 
     proposal = response.action_proposals[0]
-    assert proposal.payload["content"].startswith("我是 FLGO，一个接入飞书的工作助手")
+    assert proposal.payload["content"].startswith("我是 FLAGO，一个接入飞书的工作助手")
     assert proposal.payload["content"] != "写一段你的自我介绍"
 
 
@@ -1640,7 +1640,7 @@ async def test_assistant_infers_sheet_write_proposal_for_explicit_writeback() ->
         actor_id="ou_user",
         conversation_id="chat-1",
         conversation_type=ConversationType.PRIVATE,
-        text="测试表格请把“FLGO 写回测试成功”写入这个excel表 https://docs.feishu.cn/sheets/sht123",
+        text="测试表格请把“FLAGO 写回测试成功”写入这个excel表 https://docs.feishu.cn/sheets/sht123",
     )
 
     response = await assistant.handle(request)
@@ -1650,7 +1650,7 @@ async def test_assistant_infers_sheet_write_proposal_for_explicit_writeback() ->
     proposal = response.action_proposals[0]
     assert proposal.action_type.value == "sheet_write_range"
     assert proposal.target == {"spreadsheet_token": "sht123", "range": "sheet1!A1:A1"}
-    assert proposal.payload == {"values": [["FLGO 写回测试成功"]]}
+    assert proposal.payload == {"values": [["FLAGO 写回测试成功"]]}
 
 
 @pytest.mark.asyncio
@@ -1661,7 +1661,7 @@ async def test_assistant_appends_sheet_write_to_next_row_by_default() -> None:
         actor_id="ou_user",
         conversation_id="chat-1",
         conversation_type=ConversationType.PRIVATE,
-        text="请把“FLGO 写回测试删除成功2”写入这个excel表 https://docs.feishu.cn/sheets/sht123",
+        text="请把“FLAGO 写回测试删除成功2”写入这个excel表 https://docs.feishu.cn/sheets/sht123",
     )
 
     response = await assistant.handle(request)
@@ -1671,7 +1671,7 @@ async def test_assistant_appends_sheet_write_to_next_row_by_default() -> None:
         "range": "sheet1!A2:A2",
     }
     assert response.action_proposals[0].preview == (
-        "向电子表格 sheet1!A2:A2 写入：FLGO 写回测试删除成功2"
+        "向电子表格 sheet1!A2:A2 写入：FLAGO 写回测试删除成功2"
     )
 
 
@@ -1684,7 +1684,7 @@ async def test_assistant_respects_sheet_cell_named_in_message() -> None:
         conversation_id="chat-1",
         conversation_type=ConversationType.PRIVATE,
         text=(
-            "请把“FLGO 写回测试删除成功3”填入B1格 "
+            "请把“FLAGO 写回测试删除成功3”填入B1格 "
             "https://docs.feishu.cn/sheets/sht123"
         ),
     )
@@ -1696,7 +1696,7 @@ async def test_assistant_respects_sheet_cell_named_in_message() -> None:
         "range": "sheet1!B1:B1",
     }
     assert response.action_proposals[0].preview == (
-        "向电子表格 sheet1!B1:B1 写入：FLGO 写回测试删除成功3"
+        "向电子表格 sheet1!B1:B1 写入：FLAGO 写回测试删除成功3"
     )
 
 
@@ -1709,7 +1709,7 @@ async def test_assistant_respects_sheet_cell_named_after_join_word() -> None:
         conversation_id="chat-1",
         conversation_type=ConversationType.PRIVATE,
         text=(
-            "测试表格请把“FLGO 写回测试删除成功4”加入这个excel表的c2格 "
+            "测试表格请把“FLAGO 写回测试删除成功4”加入这个excel表的c2格 "
             "https://docs.feishu.cn/sheets/sht123"
         ),
     )
@@ -1721,7 +1721,7 @@ async def test_assistant_respects_sheet_cell_named_after_join_word() -> None:
         "range": "sheet1!C2:C2",
     }
     assert response.action_proposals[0].preview == (
-        "向电子表格 sheet1!C2:C2 写入：FLGO 写回测试删除成功4"
+        "向电子表格 sheet1!C2:C2 写入：FLAGO 写回测试删除成功4"
     )
 
 
@@ -1734,7 +1734,7 @@ async def test_assistant_respects_sheet_row_column_named_in_message() -> None:
         conversation_id="chat-1",
         conversation_type=ConversationType.PRIVATE,
         text=(
-            "测试表格请把“FLGO 写回测试删除成功5”加入这个excel表第3行第4列 "
+            "测试表格请把“FLAGO 写回测试删除成功5”加入这个excel表第3行第4列 "
             "https://docs.feishu.cn/sheets/sht123"
         ),
     )
@@ -1746,7 +1746,7 @@ async def test_assistant_respects_sheet_row_column_named_in_message() -> None:
         "range": "sheet1!D3:D3",
     }
     assert response.action_proposals[0].preview == (
-        "向电子表格 sheet1!D3:D3 写入：FLGO 写回测试删除成功5"
+        "向电子表格 sheet1!D3:D3 写入：FLAGO 写回测试删除成功5"
     )
 
 
@@ -1759,7 +1759,7 @@ async def test_assistant_respects_chinese_sheet_row_column_named_in_message() ->
         conversation_id="chat-1",
         conversation_type=ConversationType.PRIVATE,
         text=(
-            "测试表格请把“FLGO 写回测试删除成功5”加入这个excel表第三行第四列 "
+            "测试表格请把“FLAGO 写回测试删除成功5”加入这个excel表第三行第四列 "
             "https://docs.feishu.cn/sheets/sht123"
         ),
     )
@@ -1780,7 +1780,7 @@ async def test_assistant_corrects_model_sheet_range_when_message_names_cell() ->
         conversation_id="chat-1",
         conversation_type=ConversationType.PRIVATE,
         text=(
-            "测试表格请把“FLGO 写回测试删除成功4”加入这个excel表的c2格 "
+            "测试表格请把“FLAGO 写回测试删除成功4”加入这个excel表的c2格 "
             "https://docs.feishu.cn/sheets/sht123"
         ),
     )
@@ -1792,7 +1792,7 @@ async def test_assistant_corrects_model_sheet_range_when_message_names_cell() ->
         "range": "sheet1!C2:C2",
     }
     assert response.action_proposals[0].preview == (
-        "向电子表格 sheet1!C2:C2 写入：FLGO 写回测试删除成功4"
+        "向电子表格 sheet1!C2:C2 写入：FLAGO 写回测试删除成功4"
     )
 
 
@@ -1804,7 +1804,7 @@ async def test_assistant_corrects_model_sheet_range_when_message_names_row_colum
         conversation_id="chat-1",
         conversation_type=ConversationType.PRIVATE,
         text=(
-            "测试表格请把“FLGO 写回测试删除成功5”加入这个excel表第3行第4列 "
+            "测试表格请把“FLAGO 写回测试删除成功5”加入这个excel表第3行第4列 "
             "https://docs.feishu.cn/sheets/sht123"
         ),
     )
@@ -1825,7 +1825,7 @@ async def test_assistant_uses_model_text_sheet_target_before_default_append() ->
         conversation_id="chat-1",
         conversation_type=ConversationType.PRIVATE,
         text=(
-            "测试表格请把“FLGO 写回测试删除成功6”加入这个excel表 "
+            "测试表格请把“FLAGO 写回测试删除成功6”加入这个excel表 "
             "https://docs.feishu.cn/sheets/sht123"
         ),
     )
@@ -1837,7 +1837,7 @@ async def test_assistant_uses_model_text_sheet_target_before_default_append() ->
         "range": "sheet1!C4:C4",
     }
     assert response.action_proposals[0].preview == (
-        "向电子表格 sheet1!C4:C4 写入：FLGO 写回测试删除成功6"
+        "向电子表格 sheet1!C4:C4 写入：FLAGO 写回测试删除成功6"
     )
 
 
@@ -1852,7 +1852,7 @@ async def test_assistant_corrects_wrong_tool_range_from_model_text_target() -> N
         conversation_id="chat-1",
         conversation_type=ConversationType.PRIVATE,
         text=(
-            "测试表格请把“FLGO 写回测试删除成功6”加入这个excel表 "
+            "测试表格请把“FLAGO 写回测试删除成功6”加入这个excel表 "
             "https://docs.feishu.cn/sheets/sht123"
         ),
     )
@@ -1864,7 +1864,7 @@ async def test_assistant_corrects_wrong_tool_range_from_model_text_target() -> N
         "range": "sheet1!C4:C4",
     }
     assert response.action_proposals[0].preview == (
-        "向电子表格 sheet1!C4:C4 写入：FLGO 写回测试删除成功6"
+        "向电子表格 sheet1!C4:C4 写入：FLAGO 写回测试删除成功6"
     )
 
 
@@ -1973,7 +1973,7 @@ async def test_assistant_normalizes_single_cell_sheet_range_for_writeback() -> N
         conversation_id="chat-1",
         conversation_type=ConversationType.PRIVATE,
         text=(
-            "请把“FLGO 写回测试成功”写入这个表格 "
+            "请把“FLAGO 写回测试成功”写入这个表格 "
             "https://docs.feishu.cn/sheets/sht123?sheet=sheet1&range=B2"
         ),
     )
@@ -1995,7 +1995,7 @@ async def test_assistant_respects_sheet_range_named_in_message() -> None:
         conversation_id="chat-1",
         conversation_type=ConversationType.PRIVATE,
         text=(
-            "请把“FLGO 写回测试成功”写入 B1:C1 范围 "
+            "请把“FLAGO 写回测试成功”写入 B1:C1 范围 "
             "https://docs.feishu.cn/sheets/sht123"
         ),
     )
@@ -2048,7 +2048,7 @@ async def test_assistant_infers_bitable_create_record_proposal_for_explicit_writ
         actor_id="ou_user",
         conversation_id="chat-1",
         conversation_type=ConversationType.PRIVATE,
-        text="请把“FLGO 写回测试成功”写入这个多维表 https://docs.feishu.cn/base/app123",
+        text="请把“FLAGO 写回测试成功”写入这个多维表 https://docs.feishu.cn/base/app123",
     )
 
     response = await assistant.handle(request)
@@ -2057,7 +2057,7 @@ async def test_assistant_infers_bitable_create_record_proposal_for_explicit_writ
     proposal = response.action_proposals[0]
     assert proposal.action_type.value == "bitable_create_record"
     assert proposal.target == {"app_token": "app123", "table_id": "tbl1"}
-    assert proposal.payload == {"fields": {"关键词": "FLGO 写回测试成功"}}
+    assert proposal.payload == {"fields": {"关键词": "FLAGO 写回测试成功"}}
 
 
 @pytest.mark.asyncio
@@ -2183,7 +2183,7 @@ async def test_assistant_uses_explicit_value_not_instruction_for_bitable_update(
         "record_id": "rec10",
     }
     assert proposal.payload == {
-        "fields": {"测试列2": "该多维表共10条记录，主要用于FLGO写回测试功能验证。"}
+        "fields": {"测试列2": "该多维表共10条记录，主要用于FLAGO写回测试功能验证。"}
     }
     assert "record_id" not in proposal.payload["fields"]["测试列2"]
     assert "覆盖原有值" not in proposal.payload["fields"]["测试列2"]
@@ -2219,8 +2219,8 @@ async def test_assistant_uses_markdown_table_new_value_for_bitable_update() -> N
     assert proposal.payload == {
         "fields": {
             "测试列2": (
-                "该多维表共10条记录，主要记录FLGO写回测试结果，其中8条为"
-                '"FLGO 写回测试成功"，1条为"FLGO 测试成功"，1条为'
+                "该多维表共10条记录，主要记录FLAGO写回测试结果，其中8条为"
+                '"FLAGO 写回测试成功"，1条为"FLAGO 测试成功"，1条为'
                 '"测试列1内容"。最后一条的测试列2原值为"测试数据"。整体为功能验证用途。'
             )
         }
@@ -2247,7 +2247,7 @@ async def test_assistant_uses_model_crud_json_plan_without_keyword_matching() ->
     assert proposal.action_type == WriteActionType.BITABLE_CREATE_RECORD
     assert proposal.target == {"app_token": "app123", "table_id": "tbl1"}
     assert proposal.payload == {"fields": {"测试列2": "模型结构化 CRUD 计划写入值"}}
-    assert "flgo_writeback" not in response.text
+    assert "flago_writeback" not in response.text
 
 
 @pytest.mark.asyncio
@@ -2271,8 +2271,8 @@ async def test_assistant_creates_bitable_record_when_user_requests_last_row_summ
     assert proposal.payload == {
         "fields": {
             "测试内容": (
-                "该多维表格共 10 条记录，主要记录 FLGO 写回测试结果，"
-                "其中 8 条为“FLGO 写回测试成功”。整体为功能验证用途。"
+                "该多维表格共 10 条记录，主要记录 FLAGO 写回测试结果，"
+                "其中 8 条为“FLAGO 写回测试成功”。整体为功能验证用途。"
             )
         }
     }
@@ -2306,8 +2306,8 @@ async def test_assistant_creates_bitable_record_for_increase_to_field_last_row()
     assert proposal.payload == {
         "fields": {
             "测试列2": (
-                "该多维表格共10条记录，主要用于FLGO写回功能测试，"
-                "其中7条记录测试内容为“FLGO写回测试成功”，1条为“FLGO测试成功”，"
+                "该多维表格共10条记录，主要用于FLAGO写回功能测试，"
+                "其中7条记录测试内容为“FLAGO写回测试成功”，1条为“FLAGO测试成功”，"
                 "1条记录含“测试列1内容”但测试列2数据异常，另有1条记录内容为无效预览文本。"
             )
         }
@@ -2344,8 +2344,8 @@ async def test_assistant_updates_bitable_last_row_when_user_requests_replace() -
     assert proposal.payload == {
         "fields": {
             "测试列2": (
-                "该多维表格共10条记录，其中8条为“FLGO写回测试成功”，"
-                "1条为“FLGO测试成功”，最后1条原含“测试数据”；整体为FLGO功能验证测试。"
+                "该多维表格共10条记录，其中8条为“FLAGO写回测试成功”，"
+                "1条为“FLAGO测试成功”，最后1条原含“测试数据”；整体为FLAGO功能验证测试。"
             )
         }
     }
@@ -2383,7 +2383,7 @@ async def test_assistant_respects_model_update_operation_over_user_append_wordin
     assert proposal.payload == {
         "fields": {
             "测试列2": (
-                "该多维表共 10 条记录，测试内容均为 FLGO 写回测试相关，"
+                "该多维表共 10 条记录，测试内容均为 FLAGO 写回测试相关，"
                 "测试列2仅最后一条含测试数据，其余为空。整体为功能验证测试。"
             )
         }
@@ -2413,7 +2413,7 @@ async def test_assistant_corrects_bitable_update_to_create_for_last_row_summary(
     assert proposal.action_type == WriteActionType.BITABLE_CREATE_RECORD
     assert proposal.target == {"app_token": "app123", "table_id": "tbl1"}
     assert proposal.payload == {
-        "fields": {"测试内容": "该多维表格共 10 条记录，主要记录 FLGO 写回测试结果。"}
+        "fields": {"测试内容": "该多维表格共 10 条记录，主要记录 FLAGO 写回测试结果。"}
     }
 
 
@@ -2425,12 +2425,12 @@ async def test_assistant_uses_matrix_header_field_for_bitable_writeback() -> Non
         actor_id="ou_user",
         conversation_id="chat-1",
         conversation_type=ConversationType.PRIVATE,
-        text="请把“FLGO 写回测试成功”写入这个多维表 https://docs.feishu.cn/base/app123",
+        text="请把“FLAGO 写回测试成功”写入这个多维表 https://docs.feishu.cn/base/app123",
     )
 
     response = await assistant.handle(request)
 
-    assert response.action_proposals[0].payload == {"fields": {"文本": "FLGO 写回测试成功"}}
+    assert response.action_proposals[0].payload == {"fields": {"文本": "FLAGO 写回测试成功"}}
 
 
 @pytest.mark.asyncio
@@ -2441,13 +2441,13 @@ async def test_assistant_uses_test_content_field_for_bitable_writeback() -> None
         actor_id="ou_user",
         conversation_id="chat-1",
         conversation_type=ConversationType.PRIVATE,
-        text="请把“FLGO 写回测试成功”写入这个多维表 https://docs.feishu.cn/base/app123",
+        text="请把“FLAGO 写回测试成功”写入这个多维表 https://docs.feishu.cn/base/app123",
     )
 
     response = await assistant.handle(request)
 
     assert response.action_proposals[0].payload == {
-        "fields": {"测试内容": "FLGO 写回测试成功"}
+        "fields": {"测试内容": "FLAGO 写回测试成功"}
     }
 
 
@@ -2460,14 +2460,14 @@ async def test_assistant_respects_explicit_bitable_field_request() -> None:
         conversation_id="chat-1",
         conversation_type=ConversationType.PRIVATE,
         text=(
-            "请把“FLGO 写回测试成功”写入这个多维表的标题字段 "
+            "请把“FLAGO 写回测试成功”写入这个多维表的标题字段 "
             "https://docs.feishu.cn/base/app123"
         ),
     )
 
     response = await assistant.handle(request)
 
-    assert response.action_proposals[0].payload == {"fields": {"标题": "FLGO 写回测试成功"}}
+    assert response.action_proposals[0].payload == {"fields": {"标题": "FLAGO 写回测试成功"}}
 
 
 @pytest.mark.asyncio
@@ -2478,12 +2478,12 @@ async def test_assistant_selects_generic_text_like_bitable_field() -> None:
         actor_id="ou_user",
         conversation_id="chat-1",
         conversation_type=ConversationType.PRIVATE,
-        text="请把“FLGO 写回测试成功”写入这个多维表 https://docs.feishu.cn/base/app123",
+        text="请把“FLAGO 写回测试成功”写入这个多维表 https://docs.feishu.cn/base/app123",
     )
 
     response = await assistant.handle(request)
 
-    assert response.action_proposals[0].payload == {"fields": {"客户需求": "FLGO 写回测试成功"}}
+    assert response.action_proposals[0].payload == {"fields": {"客户需求": "FLAGO 写回测试成功"}}
 
 
 @pytest.mark.asyncio
@@ -2494,12 +2494,12 @@ async def test_assistant_scores_header_fields_without_type_metadata() -> None:
         actor_id="ou_user",
         conversation_id="chat-1",
         conversation_type=ConversationType.PRIVATE,
-        text="请把“FLGO 写回测试成功”写入这个多维表 https://docs.feishu.cn/base/app123",
+        text="请把“FLAGO 写回测试成功”写入这个多维表 https://docs.feishu.cn/base/app123",
     )
 
     response = await assistant.handle(request)
 
-    assert response.action_proposals[0].payload == {"fields": {"项目说明": "FLGO 写回测试成功"}}
+    assert response.action_proposals[0].payload == {"fields": {"项目说明": "FLAGO 写回测试成功"}}
 
 
 @pytest.mark.asyncio
@@ -2529,7 +2529,7 @@ async def test_assistant_does_not_create_bitable_writeback_without_known_fields(
         actor_id="ou_user",
         conversation_id="chat-1",
         conversation_type=ConversationType.PRIVATE,
-        text="请把“FLGO 写回测试成功”写入这个多维表 https://docs.feishu.cn/base/app123",
+        text="请把“FLAGO 写回测试成功”写入这个多维表 https://docs.feishu.cn/base/app123",
     )
 
     response = await assistant.handle(request)

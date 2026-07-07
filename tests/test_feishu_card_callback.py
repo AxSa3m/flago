@@ -1,6 +1,6 @@
 import pytest
 
-from flgo.feishu.card_callback import is_url_verification, parse_card_callback
+from flago.feishu.card_callback import is_url_verification, parse_card_callback
 
 
 def test_parse_simple_card_callback_payload() -> None:
@@ -25,7 +25,7 @@ def test_parse_feishu_event_card_callback_payload() -> None:
                 "operator": {"open_id": "ou_user"},
                 "action": {
                     "value": {
-                        "flgo_action": "writeback.cancel",
+                        "flago_action": "writeback.cancel",
                         "action_id": "action-2",
                     }
                 },

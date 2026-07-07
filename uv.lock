@@ -318,8 +318,8 @@ wheels = [
 ]
 
 [[package]]
-name = "flgo"
-version = "0.2.0"
+name = "flago"
+version = "0.1.0"
 source = { editable = "." }
 dependencies = [
     { name = "aiosqlite" },

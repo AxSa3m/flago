@@ -1,5 +1,5 @@
-from flgo.config import Settings
-from flgo.models import WritebackConfirmationMode
+from flago.config import Settings
+from flago.models import WritebackConfirmationMode
 
 
 def test_context_and_memory_privacy_defaults_are_conservative() -> None:

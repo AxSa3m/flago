@@ -1,26 +1,26 @@
 import pytest
 
-from flgo.config import Settings
-from flgo.model_providers import (
+from flago.config import Settings
+from flago.model_providers import (
     ModelMessageRole,
     ProviderCapability,
     build_assistant_model_request,
     build_assistant_prompt,
 )
-from flgo.model_providers.echo import EchoModelProvider
-from flgo.model_providers.registry import (
+from flago.model_providers.echo import EchoModelProvider
+from flago.model_providers.registry import (
     ModelProviderRegistry,
     ModelRouter,
     build_model_router,
 )
-from flgo.model_providers.types import (
+from flago.model_providers.types import (
     ModelRequest,
     ModelResponse,
     ModelUsage,
     ProviderConfig,
     ProviderKind,
 )
-from flgo.models import (
+from flago.models import (
     AssistantRequest,
     AuditEventType,
     ChatContextMessage,

@@ -1,4 +1,4 @@
-# 飞灵（FLGO） 小白安装与配置指南
+# Flago（FLAGO） 小白安装与配置指南
 
 这份指南按“照着做”的顺序写。你不需要理解源码结构，只需要完成：
 
@@ -19,20 +19,20 @@
 如果你只是本机自用，服务地址保持 `http://127.0.0.1:8000` 即可。
 只有当你要让其他电脑访问这个后台，或部署到服务器时，才需要改成自己的公网 HTTPS 地址。
 
-## 1. 启动 飞灵（FLGO）
+## 1. 启动 Flago（FLAGO）
 
 ### 方式 A：使用便携包
 
-解压 `flgo-portable-windows.zip` 后，双击：
+解压 `flago-portable-windows.zip` 后，双击：
 
 ```text
-start-flgo.cmd
+start-flago.cmd
 ```
 
 macOS 或 Linux 解压后，在终端运行：
 
 ```bash
-./start-flgo.sh
+./start-flago.sh
 ```
 
 第一次启动时，程序会自动从 `.env.example` 复制出 `.env`，然后打开本地配置后台。
@@ -43,7 +43,7 @@ macOS 或 Linux 解压后，在终端运行：
 
 ```bash
 uv sync
-uv run flgo service start --open-admin
+uv run flago service start --open-admin
 ```
 
 浏览器会打开：
@@ -60,7 +60,7 @@ http://127.0.0.1:8000/admin/setup
 
 ## 2. 理解“服务地址”是干什么的
 
-服务地址不是机器人聊天消息入口。机器人聊天消息通过飞书长连接进入 飞灵（FLGO）。
+服务地址不是机器人聊天消息入口。机器人聊天消息通过飞书长连接进入 Flago（FLAGO）。
 
 服务地址主要用于三件事：
 
@@ -87,7 +87,7 @@ http://127.0.0.1:8000/admin/oauth/callback
 
 打开飞书开放平台，创建一个自建应用。
 
-飞灵（FLGO） 不会自动帮你创建飞书应用，也不会默认连接作者或其他人的机器人。你在后台填写哪个
+Flago（FLAGO） 不会自动帮你创建飞书应用，也不会默认连接作者或其他人的机器人。你在后台填写哪个
 App ID 和 App Secret，程序就连接哪个自建应用。
 
 需要开启：
@@ -169,7 +169,7 @@ https://your-domain.example.com/oauth/feishu/callback
 https://your-domain.example.com/admin/oauth/callback
 ```
 
-改完服务地址或飞书后台回调地址后，需要重启 飞灵（FLGO）。
+改完服务地址或飞书后台回调地址后，需要重启 Flago（FLAGO）。
 
 ## 6. 在配置后台填写飞书应用信息
 
@@ -215,82 +215,82 @@ App ID 和 App Secret 来自飞书开放平台的应用凭证页面。
 
 ```text
 助手
-- 助手信息              flgo.assistant.name.view
+- 助手信息              flago.assistant.name.view
 
 模型
-- 查看模型              flgo.model.view
-- 恢复默认模型          flgo.model.default
-- 使用 Gemini           flgo.model.use.gemini
-- 使用 DeepSeek         flgo.model.use.deepseek
-- 使用 OpenAI           flgo.model.use.openai
-- 使用 Qwen             flgo.model.use.qwen
-- 使用 Doubao           flgo.model.use.doubao
-- 使用 Minimax          flgo.model.use.minimax
-- 使用 Claude           flgo.model.use.claude
+- 查看模型              flago.model.view
+- 恢复默认模型          flago.model.default
+- 使用 Gemini           flago.model.use.gemini
+- 使用 DeepSeek         flago.model.use.deepseek
+- 使用 OpenAI           flago.model.use.openai
+- 使用 Qwen             flago.model.use.qwen
+- 使用 Doubao           flago.model.use.doubao
+- 使用 Minimax          flago.model.use.minimax
+- 使用 Claude           flago.model.use.claude
 
 授权
-- 飞书授权              flgo.auth.start
-- 授权状态              flgo.auth.status
+- 飞书授权              flago.auth.start
+- 授权状态              flago.auth.status
 
 写入
-- 写入状态              flgo.writeback.status
-- 自动写入开启          flgo.writeback.auto.enable
-- 自动写入关闭          flgo.writeback.auto.disable
-- 写入恢复默认          flgo.writeback.auto.clear
-- 最近写入              flgo.writeback.history
-- 撤回                  flgo.writeback.undo
+- 写入状态              flago.writeback.status
+- 自动写入开启          flago.writeback.auto.enable
+- 自动写入关闭          flago.writeback.auto.disable
+- 写入恢复默认          flago.writeback.auto.clear
+- 最近写入              flago.writeback.history
+- 撤回                  flago.writeback.undo
 
 记忆
-- 查看记忆              flgo.memory.view
-- 删除记忆              flgo.memory.delete
-- 关闭记忆              flgo.memory.disable
-- 开启记忆              flgo.memory.enable
+- 查看记忆              flago.memory.view
+- 删除记忆              flago.memory.delete
+- 关闭记忆              flago.memory.disable
+- 开启记忆              flago.memory.enable
 
 帮助
-- 使用说明              flgo.help
-- 本地配置网页          flgo.admin.open
+- 使用说明              flago.help
+- 本地配置网页          flago.admin.open
 ```
 
 可选兼容菜单：
 
 ```text
-flgo.assistant.info.view
-flgo.context.view
-flgo.context.enable
-flgo.context.disable
+flago.assistant.info.view
+flago.context.view
+flago.context.enable
+flago.context.disable
 ```
 
 上下文现在默认开启，一般不需要放开启/关闭菜单。
 
 ## 9. 启动、停止和重启
 
-打开终端进入 飞灵（FLGO） 目录。
+打开终端进入 Flago（FLAGO） 目录。
 
 查看服务状态：
 
 ```bash
-uv run flgo service status
+uv run flago service status
 ```
 
 启动并打开后台：
 
 ```bash
-uv run flgo service start --open-admin
+uv run flago service start --open-admin
 ```
 
 重启：
 
 ```bash
-uv run flgo service restart
+uv run flago service restart
 ```
 
 停止：
 
 ```bash
-uv run flgo service stop
+uv run flago service stop
 ```
 
-如果你使用便携包，通常双击 `start-flgo.cmd` 就够了。
+如果你使用便携包，通常双击 `start-flago.cmd` 就够了。
 
 ## 10. 第一次验证
 
@@ -312,7 +312,7 @@ uv run flgo service stop
 先运行：
 
 ```bash
-uv run flgo service status
+uv run flago service status
 ```
 
 如果端口被占用，关闭占用 8000 端口的程序，或在后台高级配置里修改端口。
@@ -374,7 +374,7 @@ uv run flgo service status
 保存全局配置后，点击后台“服务控制 > 重启服务”，或运行：
 
 ```bash
-uv run flgo service restart
+uv run flago service restart
 ```
 
 ## 12. 最小可用配置清单
