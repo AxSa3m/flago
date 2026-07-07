@@ -1,7 +1,7 @@
-# Flago（FLAGO）
+# 飞灵 Flago（FLAGO）
 
 Flago 是一个 **Python 3.13 + uv 本地飞书工作助手**。项目名来自
-**Feishu/Lark link to Anthropic, Gemini and OpenAI**，默认中文助手名是“飞灵”。
+**Feishu/Lark link to Anthropic, Gemini and OpenAI**，默认中文助手名“飞灵”。
 
 它通过飞书长连接机器人接收私聊或群聊 `@机器人` 消息，按用户授权读取飞书文档、电子表格、多维表格和网页链接，可调用 Gemini、Anthropic Claude、OpenAI 兼容模型等生成回复，并返回飞书消息。Flago 主要解决飞书机器人或 Aily 配置外部模型时的限制问题，用户可自行配置所需的模型 API 接口。
 
