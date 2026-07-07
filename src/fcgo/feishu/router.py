@@ -284,19 +284,20 @@ class FeishuMessageRouter:
         if not fresh:
             logger.info("duplicate_feishu_bot_menu event_id=%s", event.event_id)
             return
-        if event.event_key.strip().lower() == "fcgo.memory.delete":
+        key = _normalize_menu_key(event.event_key)
+        if key == "fcgo.memory.delete":
             await self._send_memory_delete_confirmation(event, receive_id, receive_id_type)
             return
-        if event.event_key.strip().lower() == "fcgo.auth.start":
+        if key == "fcgo.auth.start":
             await self._send_menu_oauth_card(event, receive_id, receive_id_type, force_link=True)
             return
-        if event.event_key.strip().lower() == "fcgo.auth.status":
+        if key == "fcgo.auth.status":
             await self._send_menu_oauth_card(event, receive_id, receive_id_type, force_link=False)
             return
-        if event.event_key.strip().lower() == "fcgo.writeback.undo":
+        if key == "fcgo.writeback.undo":
             await self._send_menu_undo_card(event, receive_id, receive_id_type)
             return
-        if event.event_key.strip().lower() == "fcgo.admin.open":
+        if key == "fcgo.admin.open":
             await self._send_menu_admin_card(event, receive_id, receive_id_type)
             return
         text = await self._handle_menu_action(event)
@@ -419,7 +420,7 @@ class FeishuMessageRouter:
         await self.feishu_client.reply_text(message.chat_id, text)
 
     async def _handle_menu_action(self, event: FeishuBotMenuEvent) -> str:
-        key = event.event_key.strip().lower()
+        key = _normalize_menu_key(event.event_key)
         assistant_name = await self._assistant_name(_menu_actor_id(event))
         if key == "fcgo.model.view":
             return await self._model_status_text(
@@ -1577,7 +1578,7 @@ def _oauth_status_text(
     status: AuthorizationStatus,
     *,
     authorization_url: str = "",
-    assistant_name: str = "小智",
+    assistant_name: str = "飞灵",
 ) -> str:
     if status.usable:
         lines = [f"{assistant_name} 的飞书资源授权状态：可用。"]
@@ -1607,7 +1608,7 @@ def _oauth_status_card(
     status: AuthorizationStatus,
     *,
     authorization_url: str = "",
-    assistant_name: str = "小智",
+    assistant_name: str = "飞灵",
 ) -> dict[str, object]:
     if status.usable:
         template = "green"
@@ -1666,7 +1667,14 @@ def _oauth_status_card(
     }
 
 
-def _admin_open_card(admin_url: str, *, assistant_name: str = "小智") -> dict[str, object]:
+def _normalize_menu_key(event_key: str) -> str:
+    key = event_key.strip().lower()
+    if key.startswith("flgo."):
+        return "fcgo." + key.removeprefix("flgo.")
+    return key
+
+
+def _admin_open_card(admin_url: str, *, assistant_name: str = "飞灵") -> dict[str, object]:
     return {
         "config": {"wide_screen_mode": True},
         "header": {
@@ -2016,7 +2024,7 @@ def _clean_assistant_name(name: str) -> tuple[str, str | None]:
     cleaned = re.sub(r"[\x00-\x1f\x7f]", "", name).strip()
     cleaned = re.sub(r"\s+", " ", cleaned)
     if not cleaned:
-        return "", "助手名称不能为空。用法：/助手 命名 小智"
+        return "", "助手名称不能为空。用法：/助手 命名 飞灵"
     if len(cleaned) > 20:
         return "", "助手名称太长了，请控制在 20 个字符以内。"
     if any(marker in cleaned for marker in ("```", "<script", "</", "[", "]", "(", ")")):
@@ -2149,7 +2157,7 @@ def _resolved_model_spec(
     return f"{provider}/{model or 'provider-default'}"
 
 
-def _model_command_help(assistant_name: str = "小智") -> str:
+def _model_command_help(assistant_name: str = "飞灵") -> str:
     return (
         f"{assistant_name} 的模型指令：\n"
         "- /模型 查看\n\n"
@@ -2157,14 +2165,14 @@ def _model_command_help(assistant_name: str = "小智") -> str:
     )
 
 
-def _model_menu_only_text(assistant_name: str = "小智") -> str:
+def _model_menu_only_text(assistant_name: str = "飞灵") -> str:
     return (
         f"{assistant_name} 的模型切换请通过飞书机器人自定义菜单操作。"
         "可发送 /模型 查看 检查当前配置。"
     )
 
 
-def _writeback_command_help(assistant_name: str = "小智") -> str:
+def _writeback_command_help(assistant_name: str = "飞灵") -> str:
     return (
         f"{assistant_name} 的写入指令：\n"
         "- /写入 状态\n"
@@ -2189,7 +2197,7 @@ def _assistant_command_help() -> str:
     return (
         "助手信息指令：\n"
         "- /助手 信息\n"
-        "- /助手 名称 小智\n"
+        "- /助手 名称 飞灵\n"
         "- /助手 简介 简洁、直接，擅长整理飞书文档\n"
         "- /助手 恢复默认"
     )
@@ -2230,7 +2238,7 @@ def _menu_idempotency_key(event: FeishuBotMenuEvent) -> str:
     return f"feishu_bot_menu:{event.operator_open_id}:{event.event_key}:{event.timestamp}"
 
 
-def _menu_help_text(assistant_name: str = "小智") -> str:
+def _menu_help_text(assistant_name: str = "飞灵") -> str:
     return (
         f"{assistant_name} 菜单入口：\n"
         "- 助手：查看当前助手信息。\n"
@@ -2252,7 +2260,7 @@ def _menu_help_text(assistant_name: str = "小智") -> str:
     )
 
 
-def _context_status_text(assistant_name: str = "小智") -> str:
+def _context_status_text(assistant_name: str = "飞灵") -> str:
     return (
         f"{assistant_name} 的上下文默认开启，无需手动开关。\n"
         "近期消息会按当前会话范围全文进入回答上下文；超出近期窗口的旧消息会压缩成会话摘要。"
@@ -2260,7 +2268,7 @@ def _context_status_text(assistant_name: str = "小智") -> str:
     )
 
 
-def _privacy_command_help(assistant_name: str = "小智") -> str:
+def _privacy_command_help(assistant_name: str = "飞灵") -> str:
     return (
         f"{assistant_name} 的隐私控制指令：\n"
         "- /授权\n"

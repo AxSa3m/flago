@@ -1,6 +1,6 @@
 # 用户授权与隐私操作指南
 
-本文面向 FCGO 的普通使用者和本地部署管理员，说明飞书授权、助手命名、上下文读取、长期记忆和隐私验证方法。
+本文面向 飞灵（FLGO） 的普通使用者和本地部署管理员，说明飞书授权、助手命名、上下文读取、长期记忆和隐私验证方法。
 
 ## 用户常用操作
 
@@ -24,7 +24,7 @@
 
 或点击机器人自定义菜单中的“授权”。机器人会发送一张授权卡片，点击“点击授权”后在浏览器完成飞书 OAuth 授权。
 
-授权成功后，FCGO 会把用户 token 保存到本地 SQLite。后续读取用户有权限的飞书文档、电子表格、多维表格和 Wiki 时会自动复用 token。若启用了 `FCGO_OAUTH_ENABLE_OFFLINE_ACCESS=true` 且飞书后台已开通 `offline_access`，FCGO 会在 access token 过期时用 refresh token 自动续期。
+授权成功后，飞灵（FLGO） 会把用户 token 保存到本地 SQLite。后续读取用户有权限的飞书文档、电子表格、多维表格和 Wiki 时会自动复用 token。若启用了 `FCGO_OAUTH_ENABLE_OFFLINE_ACCESS=true` 且飞书后台已开通 `offline_access`，飞灵（FLGO） 会在 access token 过期时用 refresh token 自动续期。
 
 查看当前授权状态：
 
@@ -35,7 +35,7 @@
 预期回复：
 
 ```text
-小智 的飞书资源授权状态：可用。
+飞灵 的飞书资源授权状态：可用。
 ```
 
 如果提示缺少 scope，需要管理员先在飞书开发者后台开通对应权限并发布应用，然后用户重新授权。
@@ -65,7 +65,7 @@
 默认回复：
 
 ```text
-当前助手名称：小智（默认）。
+当前助手名称：飞灵（默认）。
 ```
 
 设置个人助手名称：
@@ -89,7 +89,7 @@
 预期回复：
 
 ```text
-已恢复默认助手名称：小智。
+已恢复默认助手名称：飞灵。
 ```
 
 说明：
@@ -109,7 +109,7 @@
 没有记忆时会回复：
 
 ```text
-暂时没有保存你的长期记忆。小智 默认不会保存完整聊天原文。
+暂时没有保存你的长期记忆。飞灵 默认不会保存完整聊天原文。
 ```
 
 新增或更新一条带 key 的偏好记忆：
@@ -136,7 +136,7 @@
 已记录：偏好：输出尽量用表格。
 ```
 
-普通聊天中如果说“记住我叫 Sa3m”“我的项目代号是空杯”这类内容，FCGO 会先发送“确认保存长期记忆”卡片。只有点击“保存”后才会写入长期记忆；点击“取消”或不处理则不会保存。
+普通聊天中如果说“记住我叫 Sa3m”“我的项目代号是空杯”这类内容，飞灵（FLGO） 会先发送“确认保存长期记忆”卡片。只有点击“保存”后才会写入长期记忆；点击“取消”或不处理则不会保存。
 
 修改指定偏好：
 
@@ -206,32 +206,32 @@
 
 ```text
 助手
-- 助手信息        fcgo.assistant.name.view
+- 助手信息        flgo.assistant.name.view
 
 授权
-- 飞书授权        fcgo.auth.start
-- 授权状态        fcgo.auth.status
+- 飞书授权        flgo.auth.start
+- 授权状态        flgo.auth.status
 
 上下文
-- 查看上下文        fcgo.context.view
+- 查看上下文        flgo.context.view
 
 写入
-- 写入状态        fcgo.writeback.status
-- 自动写入开启    fcgo.writeback.auto.enable
-- 自动写入关闭    fcgo.writeback.auto.disable
-- 写入恢复默认    fcgo.writeback.auto.clear
-- 最近写入        fcgo.writeback.history
-- 撤回            fcgo.writeback.undo
+- 写入状态        flgo.writeback.status
+- 自动写入开启    flgo.writeback.auto.enable
+- 自动写入关闭    flgo.writeback.auto.disable
+- 写入恢复默认    flgo.writeback.auto.clear
+- 最近写入        flgo.writeback.history
+- 撤回            flgo.writeback.undo
 
 记忆
-- 查看记忆        fcgo.memory.view
-- 删除记忆        fcgo.memory.delete
-- 关闭记忆        fcgo.memory.disable
-- 开启记忆        fcgo.memory.enable
+- 查看记忆        flgo.memory.view
+- 删除记忆        flgo.memory.delete
+- 关闭记忆        flgo.memory.disable
+- 开启记忆        flgo.memory.enable
 
 帮助
-- 使用说明        fcgo.help
-- 本地配置网页    fcgo.admin.open
+- 使用说明        flgo.help
+- 本地配置网页    flgo.admin.open
 ```
 
 菜单事件需要订阅 `application.bot.menu_v6`，并启用长连接事件接收。
@@ -257,7 +257,7 @@ FCGO_OAUTH_ENABLE_OFFLINE_ACCESS=false
 FCGO_OAUTH_ENABLE_OFFLINE_ACCESS=true
 ```
 
-只有当飞书开发者后台已经开通 `offline_access` 时才开启。否则飞书授权页会提示 `20027` 应用权限不足。开启后，用户重新授权并拿到 refresh token，FCGO 才能自动刷新 access token。
+只有当飞书开发者后台已经开通 `offline_access` 时才开启。否则飞书授权页会提示 `20027` 应用权限不足。开启后，用户重新授权并拿到 refresh token，飞灵（FLGO） 才能自动刷新 access token。
 
 ### 上下文配置
 
@@ -287,7 +287,7 @@ FCGO_CONTEXT_MAX_CHARS=6000
 FCGO_MEMORY_STORE_RAW_TEXT=false
 FCGO_MEMORY_ITEM_MAX_CHARS=2000
 FCGO_MEMORY_CONTEXT_MAX_CHARS=4000
-FCGO_ASSISTANT_DEFAULT_NAME=小智
+FCGO_ASSISTANT_DEFAULT_NAME=飞灵
 ```
 
 含义：
@@ -318,7 +318,7 @@ FCGO_ASSISTANT_DEFAULT_NAME=小智
 
 ## 不会保存什么
 
-FCGO 默认不会把以下内容写入长期存储：
+飞灵（FLGO） 默认不会把以下内容写入长期存储：
 
 - 完整聊天原文。
 - 飞书文档、电子表格、多维表格正文。
@@ -367,7 +367,7 @@ for row in conn.execute("select scope, count(*) from context_message_cache group
 
 1. 发送 `/授权 状态`，确认授权可用或明确列出缺失 scope。
 2. 发送 `/上下文 查看`，确认回复说明上下文默认开启和摘要边界。
-3. 发送 `/助手 名称`，确认默认名称为 `小智`；发送 `/助手 命名 小飞` 后再 `/帮助`，确认帮助文案使用 `小飞`。
+3. 发送 `/助手 名称`，确认默认名称为 `飞灵`；发送 `/助手 命名 小飞` 后再 `/帮助`，确认帮助文案使用 `小飞`。
 4. 发送 `/记忆 记住 输出格式=优先表格` 和 `/记忆 修改 语言风格=简洁中文`，再发送 `/记忆 查看`，确认能看到两条偏好。
 5. 发送 `记住我叫 Sa3m`，确认出现“确认保存长期记忆”卡片；点“取消”后 `/记忆 查看` 不应新增；再次发送并点“保存”后 `/记忆 查看` 应出现称呼记忆。
 6. 发送 `/记忆 删除 语言风格`，再发送 `/记忆 查看`，确认只删除了对应 key。

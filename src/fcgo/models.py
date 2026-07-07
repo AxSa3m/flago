@@ -160,7 +160,7 @@ class AssistantRequest(BaseModel):
     conversation_id: str
     conversation_type: ConversationType
     text: str
-    assistant_name: str = "小智"
+    assistant_name: str = "飞灵"
     assistant_profile: str = ""
     writeback_enabled: bool = False
     model_provider: str | None = None

@@ -89,7 +89,7 @@ def _system_instructions(
     assistant_profile: str = "",
     writeback_enabled: bool,
 ) -> list[str]:
-    name = assistant_name.strip() or "小智"
+    name = assistant_name.strip() or "飞灵"
     profile = assistant_profile.strip()
     writeback_instructions = (
         [

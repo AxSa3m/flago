@@ -68,64 +68,64 @@ MENU_GROUPS: tuple[tuple[str, tuple[tuple[str, str], ...]], ...] = (
     (
         "助手",
         (
-            ("fcgo.assistant.name.view", "查看助手信息"),
-            ("fcgo.assistant.info.view", "查看助手信息（兼容 key）"),
+            ("flgo.assistant.name.view", "查看助手信息"),
+            ("flgo.assistant.info.view", "查看助手信息（兼容 key）"),
         ),
     ),
     (
         "模型",
         (
-            ("fcgo.model.view", "查看当前模型"),
-            ("fcgo.model.default", "恢复默认模型"),
-            ("fcgo.model.use.gemini", "使用 Gemini"),
-            ("fcgo.model.use.deepseek", "使用 DeepSeek"),
-            ("fcgo.model.use.openai", "使用 OpenAI"),
-            ("fcgo.model.use.qwen", "使用 Qwen"),
-            ("fcgo.model.use.doubao", "使用 Doubao"),
-            ("fcgo.model.use.minimax", "使用 Minimax"),
-            ("fcgo.model.use.claude", "使用 Claude"),
+            ("flgo.model.view", "查看当前模型"),
+            ("flgo.model.default", "恢复默认模型"),
+            ("flgo.model.use.gemini", "使用 Gemini"),
+            ("flgo.model.use.deepseek", "使用 DeepSeek"),
+            ("flgo.model.use.openai", "使用 OpenAI"),
+            ("flgo.model.use.qwen", "使用 Qwen"),
+            ("flgo.model.use.doubao", "使用 Doubao"),
+            ("flgo.model.use.minimax", "使用 Minimax"),
+            ("flgo.model.use.claude", "使用 Claude"),
         ),
     ),
     (
         "授权",
         (
-            ("fcgo.auth.start", "飞书授权"),
-            ("fcgo.auth.status", "授权状态"),
+            ("flgo.auth.start", "飞书授权"),
+            ("flgo.auth.status", "授权状态"),
         ),
     ),
     (
         "上下文",
         (
-            ("fcgo.context.view", "查看上下文策略"),
-            ("fcgo.context.enable", "兼容入口：上下文默认开启"),
-            ("fcgo.context.disable", "兼容入口：上下文默认开启"),
+            ("flgo.context.view", "查看上下文策略"),
+            ("flgo.context.enable", "兼容入口：上下文默认开启"),
+            ("flgo.context.disable", "兼容入口：上下文默认开启"),
         ),
     ),
     (
         "写入",
         (
-            ("fcgo.writeback.status", "写入状态"),
-            ("fcgo.writeback.auto.enable", "自动写入开启"),
-            ("fcgo.writeback.auto.disable", "自动写入关闭"),
-            ("fcgo.writeback.auto.clear", "写入恢复默认"),
-            ("fcgo.writeback.history", "最近写入"),
-            ("fcgo.writeback.undo", "撤回最近写入，需要确认"),
+            ("flgo.writeback.status", "写入状态"),
+            ("flgo.writeback.auto.enable", "自动写入开启"),
+            ("flgo.writeback.auto.disable", "自动写入关闭"),
+            ("flgo.writeback.auto.clear", "写入恢复默认"),
+            ("flgo.writeback.history", "最近写入"),
+            ("flgo.writeback.undo", "撤回最近写入，需要确认"),
         ),
     ),
     (
         "记忆",
         (
-            ("fcgo.memory.view", "查看记忆"),
-            ("fcgo.memory.delete", "删除记忆，需要确认"),
-            ("fcgo.memory.disable", "关闭记忆"),
-            ("fcgo.memory.enable", "开启记忆"),
+            ("flgo.memory.view", "查看记忆"),
+            ("flgo.memory.delete", "删除记忆，需要确认"),
+            ("flgo.memory.disable", "关闭记忆"),
+            ("flgo.memory.enable", "开启记忆"),
         ),
     ),
     (
         "帮助",
         (
-            ("fcgo.help", "使用说明"),
-            ("fcgo.admin.open", "本地配置网页"),
+            ("flgo.help", "使用说明"),
+            ("flgo.admin.open", "本地配置网页"),
         ),
     ),
 )
@@ -1547,7 +1547,7 @@ def _service_control_card() -> str:
               <h2>服务控制</h2>
               <p class="hint">
                 保存全局配置后通常需要重启服务。启动能力也可通过
-                <code>uv run fcgo service start --open-admin</code> 使用。
+                <code>uv run flgo service start --open-admin</code> 使用。
               </p>
               <div class="service-status-panel">
                 <div>
@@ -1699,7 +1699,7 @@ async def _setup_admin_page(
               <h2>填写你创建好的飞书应用</h2>
               <p>
                 如果还没有创建，请先去飞书开放平台创建自建应用，打开机器人能力和长连接事件，
-                再回到这里填写应用凭证。FCGO 只会连接你填入的这个应用，不会默认使用任何人的机器人。
+                再回到这里填写应用凭证。飞灵只会连接你填入的这个应用，不会默认使用任何人的机器人。
               </p>
               <div class="settings-list one-column">
                 {_setting_fields_for(
@@ -1746,9 +1746,9 @@ async def _setup_admin_page(
                 最后给机器人发一条“帮助”确认它能回复。
               </p>
               <div class="setup-menu-minimal">
-                <div><strong>后台配置</strong><code>fcgo.admin.open</code></div>
-                <div><strong>使用说明</strong><code>fcgo.help</code></div>
-                <div><strong>授权状态</strong><code>fcgo.auth.status</code></div>
+                <div><strong>后台配置</strong><code>flgo.admin.open</code></div>
+                <div><strong>使用说明</strong><code>flgo.help</code></div>
+                <div><strong>授权状态</strong><code>flgo.auth.status</code></div>
               </div>
               <ol class="setup-checklist">
                 <li>点击下面的“保存配置”。</li>

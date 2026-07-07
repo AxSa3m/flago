@@ -2,13 +2,13 @@
 
 ## 目标
 
-降低 FCGO 的安装和维护门槛。用户安装后应优先通过本地配置网页完成配置，而不是直接编辑源码或大量环境变量。
+降低 飞灵（FLGO） 的安装和维护门槛。用户安装后应优先通过本地配置网页完成配置，而不是直接编辑源码或大量环境变量。
 
 ## 当前实现
 
 - 新增本地配置后台入口：`/admin`。
 - 新增首次运行配置向导入口：`/admin/setup`。
-- 新增机器人菜单事件：`fcgo.admin.open`。
+- 新增机器人菜单事件：`flgo.admin.open`。
 - 新增文本入口：`/配置`、`/后台`。
 - 后台使用飞书 OAuth 登录；首次登录的飞书用户绑定为本机后台管理员。
 - 当前后台支持编辑个人助手名称/简介、长期记忆开关、长期记忆内容、个人默认模型。
@@ -24,9 +24,9 @@
 - 首次配置向导采用一步一页的安装向导，只保留服务地址、飞书应用、模型接口和最终检查；高级能力开关不在首次流程中打扰用户。
 - 模型和媒体测试按钮使用前端异步请求，不刷新页面、不改变滚动位置；测试结果 5 秒后自动消失。
 - 普通配置页提供“服务控制”卡片，可查看运行状态、端口、进程和日志位置，并触发重启或停止服务。
-- 新增 `uv run fcgo service status/start/restart/stop`，安装器和用户都可以通过同一套命令控制本地服务。
+- 新增 `uv run flgo service status/start/restart/stop`，安装器和用户都可以通过同一套命令控制本地服务。
 - 新增 `scripts/fcgo_launcher.py`，用于启动服务并打开本地配置后台。
-- 新增 `uv run fcgo package build`，可生成当前平台的便携启动包；`--target all` 可生成
+- 新增 `uv run flgo package build`，可生成当前平台的便携启动包；`--target all` 可生成
   Windows/macOS/Linux 三个平台脚本包。
 - 便携包不会复制 `.env`、`.venv`、数据库、日志和 PowerShell 脚本，避免泄露本机密钥或触发脚本误报。
 - 新增 [小白安装与配置指南](beginner-installation-guide.md)，按启动、飞书配置、模型配置、菜单配置和排错顺序引导非技术用户。
@@ -105,8 +105,8 @@
    - 执行本地 doctor 检查。
 
 3. 跨平台打包
-   - 已完成第一阶段：Windows 输出可双击的 `start-fcgo.cmd` 便携启动包。
-   - 已完成第一阶段：macOS/Linux 输出 `start-fcgo.sh` 便携启动包，并明确当前不是图形安装器。
+   - 已完成第一阶段：Windows 输出可双击的 `start-flgo.cmd` 便携启动包。
+   - 已完成第一阶段：macOS/Linux 输出 `start-flgo.sh` 便携启动包，并明确当前不是图形安装器。
    - 已完成第一阶段：打包产物首次启动时从 `.env.example` 生成 `.env`，不携带本机配置、SQLite 数据库或日志。
    - 待完整安装器阶段：输出 MSI/EXE、DMG/PKG、DEB/AppImage 等原生安装体验。
 

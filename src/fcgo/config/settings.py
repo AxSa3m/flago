@@ -23,7 +23,7 @@ class Settings(BaseSettings):
     host: str = Field(default="127.0.0.1", alias="FCGO_HOST")
     port: int = Field(default=8000, alias="FCGO_PORT")
     base_url: str = Field(default="http://127.0.0.1:8000", alias="FCGO_BASE_URL")
-    sqlite_path: Path = Field(default=Path("data/fcgo.sqlite3"), alias="FCGO_SQLITE_PATH")
+    sqlite_path: Path = Field(default=Path("data/flgo.sqlite3"), alias="FCGO_SQLITE_PATH")
     start_long_connection: bool = Field(default=False, alias="FCGO_START_LONG_CONNECTION")
     admin_enabled: bool = Field(default=True, alias="FCGO_ADMIN_ENABLED")
     admin_config_path: Path = Field(default=Path(".env"), alias="FCGO_ADMIN_CONFIG_PATH")
@@ -31,7 +31,7 @@ class Settings(BaseSettings):
         default=SecretStr(""),
         alias="FCGO_ADMIN_SESSION_SECRET",
     )
-    assistant_default_name: str = Field(default="小智", alias="FCGO_ASSISTANT_DEFAULT_NAME")
+    assistant_default_name: str = Field(default="飞灵", alias="FCGO_ASSISTANT_DEFAULT_NAME")
     assistant_default_profile: str = Field(
         default="简洁、可靠、直接，优先给出可执行的回答。",
         alias="FCGO_ASSISTANT_DEFAULT_PROFILE",

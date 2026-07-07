@@ -1,6 +1,6 @@
 # 多模型 Provider 配置模板
 
-本文面向开源部署者，说明 FCGO 多模型配置、安全、成本和测试边界。
+本文面向开源部署者，说明 飞灵（FLGO） 多模型配置、安全、成本和测试边界。
 
 ## 通用配置
 
@@ -96,7 +96,7 @@ FCGO_OPENAI_COMPATIBLE_TIMEOUT_SECONDS=60
 
 ## Claude
 
-Claude Provider 通过 Anthropic Messages API 接入，当前启用文本聊天，不声明 FCGO 工具调用能力。
+Claude Provider 通过 Anthropic Messages API 接入，当前启用文本聊天，不声明 飞灵（FLGO） 工具调用能力。
 
 ```env
 FCGO_DEFAULT_PROVIDER=claude

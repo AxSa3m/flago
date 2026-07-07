@@ -15,12 +15,12 @@ if TYPE_CHECKING:
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(prog="fcgo")
+    parser = argparse.ArgumentParser(prog="flgo")
     subparsers = parser.add_subparsers(dest="command", required=True)
     subparsers.add_parser("serve", help="Run FastAPI server and optional Feishu worker")
     subparsers.add_parser("worker", help="Run only the Feishu long-connection worker")
     subparsers.add_parser("doctor", help="Validate local config and external credentials")
-    service_parser = subparsers.add_parser("service", help="Control local FCGO service")
+    service_parser = subparsers.add_parser("service", help="Control local FLGO service")
     service_parser.add_argument(
         "action",
         choices=("start", "stop", "restart", "status"),
@@ -31,7 +31,7 @@ def main() -> None:
         action="store_true",
         help="open local admin page after start or restart",
     )
-    package_parser = subparsers.add_parser("package", help="Build distributable FCGO package")
+    package_parser = subparsers.add_parser("package", help="Build distributable FLGO package")
     package_parser.add_argument("action", choices=("build",), help="package action")
     package_parser.add_argument(
         "--target",

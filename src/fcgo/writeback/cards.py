@@ -10,7 +10,7 @@ def assistant_response_card(
     text: str,
     proposals: list[ActionProposal],
     *,
-    assistant_name: str = "小智",
+    assistant_name: str = "飞灵",
 ) -> dict[str, object]:
     elements: list[dict[str, object]] = []
     if text.strip():
@@ -36,7 +36,7 @@ def assistant_response_card(
 def proposal_card(
     proposal: ActionProposal,
     *,
-    assistant_name: str = "小智",
+    assistant_name: str = "飞灵",
 ) -> dict[str, object]:
     return assistant_response_card("", [proposal], assistant_name=assistant_name)
 

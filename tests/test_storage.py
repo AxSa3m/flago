@@ -180,13 +180,13 @@ async def test_assistant_name_preference_roundtrip_clear_and_audit(tmp_path) -> 
 
     await store.save_assistant_name_preference(
         subject_id="ou_user",
-        assistant_name="小智",
+        assistant_name="飞灵",
         updated_by="ou_user",
     )
     saved = await store.get_assistant_name_preference("ou_user")
 
     assert saved is not None
-    assert saved.assistant_name == "小智"
+    assert saved.assistant_name == "飞灵"
     assert saved.updated_by == "ou_user"
 
     await store.save_assistant_name_preference(

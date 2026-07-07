@@ -348,7 +348,7 @@ def _model_attachments(request: AssistantRequest) -> list[ModelAttachment]:
 
 
 def _system_prompt(request: AssistantRequest, tool_specs: list[dict[str, Any]]) -> str:
-    assistant_name = request.assistant_name.strip() or "小智"
+    assistant_name = request.assistant_name.strip() or "飞灵"
     assistant_profile = request.assistant_profile.strip()
     decision_schema = AgentDecision.model_json_schema()
     lines = [

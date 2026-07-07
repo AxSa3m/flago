@@ -490,7 +490,7 @@ def _request(text: str) -> AssistantRequest:
         conversation_id="private:oc_chat",
         conversation_type=ConversationType.PRIVATE,
         text=text,
-        assistant_name="小智",
+        assistant_name="飞灵",
     )
 
 

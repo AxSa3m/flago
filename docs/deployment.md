@@ -120,7 +120,7 @@ GEMINI_BASE_URL=https://your-gemini-compatible-gateway.example.com
 每次修改后先运行：
 
 ```powershell
-uv run fcgo doctor
+uv run flgo doctor
 ```
 
 当 `FCGO_DEFAULT_PROVIDER=gemini` 时，doctor 会执行一个轻量 Gemini 请求。只有默认直连报告
@@ -186,7 +186,7 @@ DIFY_BASE_URL=
 部署时需要使用以下任一方式：
 
 - 本地测试：`FCGO_BASE_URL=http://127.0.0.1:8000`。
-- 服务器部署：将 FCGO 部署到带 HTTPS 域名的服务器。
+- 服务器部署：将 飞灵（FLGO） 部署到带 HTTPS 域名的服务器。
 - 隧道或反向代理：使用公网 HTTPS 域名转发到 `127.0.0.1:8000`。
 
 例如外部地址是 `https://fcgo.example.com`：
@@ -210,43 +210,43 @@ https://fcgo.example.com/admin/oauth/callback
 配置：
 
 ```text
-fcgo.assistant.name.view 查看助手信息
-fcgo.assistant.info.view 查看助手信息（兼容 key）
-fcgo.model.view          查看模型状态
-fcgo.model.default       恢复个人默认模型
-fcgo.model.use.gemini    使用 Gemini
-fcgo.model.use.deepseek  使用 DeepSeek
-fcgo.model.use.openai    使用 OpenAI
-fcgo.model.use.qwen      使用 Qwen
-fcgo.model.use.doubao    使用 Doubao
-fcgo.model.use.minimax   使用 Minimax
-fcgo.model.use.claude    使用 Claude
-fcgo.auth.start          发起飞书授权
-fcgo.auth.status         查看授权状态
-fcgo.context.view        查看上下文策略
-fcgo.context.enable      兼容入口：上下文默认开启
-fcgo.context.disable     兼容入口：上下文默认开启
-fcgo.writeback.status    查看写入策略
-fcgo.writeback.auto.enable   开启个人自动写入
-fcgo.writeback.auto.disable  关闭个人自动写入
-fcgo.writeback.auto.clear    清除个人自动写入偏好
-fcgo.writeback.history       查看最近写入
-fcgo.writeback.undo          撤回最近写入，需要确认
-fcgo.memory.view         查看长期记忆
-fcgo.memory.delete       清空长期记忆，需要确认
-fcgo.memory.disable      关闭长期记忆
-fcgo.memory.enable       开启长期记忆
-fcgo.help                查看帮助
-fcgo.admin.open          打开本地配置网页
+flgo.assistant.name.view 查看助手信息
+flgo.assistant.info.view 查看助手信息（兼容 key）
+flgo.model.view          查看模型状态
+flgo.model.default       恢复个人默认模型
+flgo.model.use.gemini    使用 Gemini
+flgo.model.use.deepseek  使用 DeepSeek
+flgo.model.use.openai    使用 OpenAI
+flgo.model.use.qwen      使用 Qwen
+flgo.model.use.doubao    使用 Doubao
+flgo.model.use.minimax   使用 Minimax
+flgo.model.use.claude    使用 Claude
+flgo.auth.start          发起飞书授权
+flgo.auth.status         查看授权状态
+flgo.context.view        查看上下文策略
+flgo.context.enable      兼容入口：上下文默认开启
+flgo.context.disable     兼容入口：上下文默认开启
+flgo.writeback.status    查看写入策略
+flgo.writeback.auto.enable   开启个人自动写入
+flgo.writeback.auto.disable  关闭个人自动写入
+flgo.writeback.auto.clear    清除个人自动写入偏好
+flgo.writeback.history       查看最近写入
+flgo.writeback.undo          撤回最近写入，需要确认
+flgo.memory.view         查看长期记忆
+flgo.memory.delete       清空长期记忆，需要确认
+flgo.memory.disable      关闭长期记忆
+flgo.memory.enable       开启长期记忆
+flgo.help                查看帮助
+flgo.admin.open          打开本地配置网页
 ```
 
 菜单事件需要订阅 `application.bot.menu_v6`，并确保长连接事件接收已启用。菜单点击后，
-FCGO 会通过 open_id 给操作者发送结果；模型菜单设置的是该用户的个人默认模型。
+飞灵（FLGO） 会通过 open_id 给操作者发送结果；模型菜单设置的是该用户的个人默认模型。
 文本对话不会触发模型切换；`/模型 查看` 仅用于查看当前配置。
 记忆菜单作用于点击菜单的用户，不会查看或修改其他用户的长期记忆。
-菜单里的 `fcgo.memory.delete` 会发送清空全部长期记忆的确认卡片；按 key 删除单条记忆请使用文本命令。
+菜单里的 `flgo.memory.delete` 会发送清空全部长期记忆的确认卡片；按 key 删除单条记忆请使用文本命令。
 写入菜单作用于点击菜单的用户；自动写入只影响该用户个人偏好，不会影响其他用户。
-帮助菜单里的 `fcgo.admin.open` 会发送本地配置后台链接。首次打开 `/admin` 需要使用飞书登录；
+帮助菜单里的 `flgo.admin.open` 会发送本地配置后台链接。首次打开 `/admin` 需要使用飞书登录；
 首次成功登录的飞书用户会绑定为本机后台管理员。
 
 用户授权入口：
@@ -329,7 +329,7 @@ FCGO_WEB_BLOCKED_HOSTS=
 - Office Open XML 文件在解析前检查压缩包条目数和解压后体积，避免压缩炸弹。
 - 可执行文件不会执行，压缩包不会解压，脚本文件只按纯文本读取。
 
-私聊中没有显式链接、且用户明确要求搜索/读取飞书文档、表格、多维表、知识库或资料时，FCGO 会按用户 OAuth
+私聊中没有显式链接、且用户明确要求搜索/读取飞书文档、表格、多维表、知识库或资料时，飞灵（FLGO） 会按用户 OAuth
 搜索本人可见云文档和 Wiki，并只读取前几个支持的命中项。搜索不会全量扫描云空间，也不会把资源正文保存到
 SQLite 或审计 detail。如果搜索响应包含可打开 URL，会直接使用飞书返回的地址；否则使用
 `FEISHU_DOCS_BASE_URL` 和资源 token 生成链接。
@@ -358,7 +358,7 @@ FCGO_MEMORY_CONTEXT_MAX_CHARS=4000
 [上下文读取、用户授权和长期记忆隐私规格](context-privacy-memory.md)。
 
 当前会话聊天历史读取使用应用权限 `im:message:readonly` 和 tenant token，不依赖用户 OAuth。
-FCGO 会短期缓存最近聊天原文，用于减少重复飞书 API 调用；缓存按 TTL 自动清理。
+飞灵（FLGO） 会短期缓存最近聊天原文，用于减少重复飞书 API 调用；缓存按 TTL 自动清理。
 每次模型请求会优先注入近期全文消息，并受
 `FCGO_CONTEXT_INJECT_MESSAGE_LIMIT` 和 `FCGO_CONTEXT_MAX_CHARS` 限制。
 超过近期窗口或字符预算的旧消息会压缩成当前会话滚动摘要。长期记忆开启时，私聊会话摘要会作为用户可查看、可删除的 `会话摘要` 记忆保存；聊天缓存不会写入长期记忆，系统也不会保存完整聊天原文。
@@ -394,7 +394,7 @@ FCGO 会短期缓存最近聊天原文，用于减少重复飞书 API 调用；�
 运行：
 
 ```powershell
-uv run fcgo doctor
+uv run flgo doctor
 ```
 
 doctor 会检查：
@@ -411,7 +411,7 @@ doctor 会检查：
 仅启动 HTTP 服务：
 
 ```powershell
-uv run fcgo serve
+uv run flgo serve
 ```
 
 Windows 本地开发推荐使用稳定重启脚本，它会停止旧服务、启动新服务并自动做健康检查：
@@ -423,10 +423,10 @@ Windows 本地开发推荐使用稳定重启脚本，它会停止旧服务、启
 也可以使用统一的服务控制命令：
 
 ```powershell
-uv run fcgo service status
-uv run fcgo service start --open-admin
-uv run fcgo service restart
-uv run fcgo service stop
+uv run flgo service status
+uv run flgo service start --open-admin
+uv run flgo service restart
+uv run flgo service stop
 ```
 
 `status` 会返回当前健康状态、端口、进程 ID 和日志位置。端口被其他程序占用时，
@@ -450,7 +450,7 @@ http://127.0.0.1:8000/admin/setup
 启动 HTTP 服务并同时启动飞书长连接 worker：
 
 ```powershell
-uv run fcgo serve
+uv run flgo serve
 ```
 
 前提是 `.env` 已设置：
@@ -462,7 +462,7 @@ FCGO_START_LONG_CONNECTION=true
 只启动长连接 worker：
 
 ```powershell
-uv run fcgo worker
+uv run flgo worker
 ```
 
 不要同时运行多个 `fcgo worker` 或多个启用了长连接的 `fcgo serve`，否则可能重复消费飞书事件。
@@ -491,7 +491,7 @@ Get-NetTCPConnection -LocalPort 8000 -State Listen
 Get-Content .\server.err.log -Tail 80
 ```
 
-否则直接查看运行 `uv run fcgo serve` 的终端输出。
+否则直接查看运行 `uv run flgo serve` 的终端输出。
 
 ## 7. 部署后验证
 

@@ -645,7 +645,7 @@ class WebResourceReader:
                 timeout=self.settings.web_timeout_seconds,
                 follow_redirects=True,
                 headers={
-                    "User-Agent": "FCGO/0.1 (+https://github.com/fcgo)",
+                    "User-Agent": "FLGO/0.1 (+https://github.com/AxSa3m/flgo)",
                     "Accept": "text/html,application/xhtml+xml,text/plain;q=0.9,*/*;q=0.1",
                 },
             ) as client:

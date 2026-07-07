@@ -1,7 +1,7 @@
 [project]
-name = "fcgo"
+name = "flgo"
 version = "0.1.0"
-description = "Gemini-powered local Feishu work assistant."
+description = "飞灵（FLGO）：local Feishu/Lark work assistant powered by Gemini and OpenAI-compatible models."
 readme = "README.md"
 requires-python = ">=3.13"
 dependencies = [
@@ -33,6 +33,7 @@ dev = [
 ]
 
 [project.scripts]
+flgo = "fcgo.cli:main"
 fcgo = "fcgo.cli:main"
 
 [build-system]

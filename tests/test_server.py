@@ -71,8 +71,8 @@ def test_oauth_callback_consumes_state_and_saves_token(tmp_path) -> None:
 
     assert response.status_code == 200
     assert "授权成功" in response.text
-    assert "小智 已保存你的飞书授权" in response.text
-    assert "<title>小智 授权成功</title>" in response.text
+    assert "飞灵 已保存你的飞书授权" in response.text
+    assert "<title>飞灵 授权成功</title>" in response.text
     assert "5 秒后尝试自动关闭" in response.text
     assert "关闭页面" in response.text
     assert "window.close()" in response.text
@@ -287,7 +287,7 @@ def test_admin_page_updates_all_config_form_and_lists_menus(tmp_path, monkeypatc
         tested_admin = client.get(test_model.headers["location"])
         payload = {
             "csrf": csrf.group(1),
-            "assistant_name": "小智",
+            "assistant_name": "飞灵",
             "assistant_profile": "简洁直接",
             "memory_enabled": "false",
             "memory_content": "更新后的长期记忆",
@@ -297,7 +297,7 @@ def test_admin_page_updates_all_config_form_and_lists_menus(tmp_path, monkeypatc
             "env__FCGO_AGENT_MODE": "agent",
             "env__FCGO_WRITEBACK_ENABLED": "true",
             "env__FCGO_WRITEBACK_CONFIRMATION_MODE": "low_risk_direct",
-            "env__GEMINI_DISPLAY_NAME": "小智专用 Gemini",
+            "env__GEMINI_DISPLAY_NAME": "飞灵专用 Gemini",
             "env__GEMINI_API_KEY": "gemini-key",
             "env__DEEPSEEK_API_KEY": "sk-deepseek-test",
             "env__COMFYUI_DISPLAY_NAME": "本地 Comfy 工作流",
@@ -422,7 +422,7 @@ def test_admin_page_updates_all_config_form_and_lists_menus(tmp_path, monkeypatc
     assert "首次配置向导" in setup_text
     assert "欢迎配置你的飞书助手" in setup_text
     assert "本程序不会自动创建飞书应用" in setup_text
-    assert "FCGO 只会连接你填入的这个应用" in setup_text
+    assert "飞灵只会连接你填入的这个应用" in setup_text
     assert "开始配置" in setup_text
     assert "先跳过" in setup_text
     assert "保存配置" in setup_text
@@ -436,7 +436,7 @@ def test_admin_page_updates_all_config_form_and_lists_menus(tmp_path, monkeypatc
     assert 'data-setup-step="0"' in setup_text
     assert "FCGO_AGENT_MODE" not in setup_text
     assert "FEISHU_VERIFICATION_TOKEN" not in setup_text
-    assert "fcgo.admin.open" in setup_text
+    assert "flgo.admin.open" in setup_text
     assert "测试完成" not in admin_text
     assert 'showTransientResult(slot, "pending", "测试中...")' in admin_text
     assert 'data-provider="gemini"' in admin_text
@@ -450,8 +450,8 @@ def test_admin_page_updates_all_config_form_and_lists_menus(tmp_path, monkeypatc
     assert 'fetch("/admin/service"' in admin_text
     assert "DEEPSEEK_API_KEY" in admin_text
     assert "旧的长期记忆" in admin_text
-    assert "fcgo.writeback.undo" in admin_text
-    assert "fcgo.admin.open" in admin_text
+    assert "flgo.writeback.undo" in admin_text
+    assert "flgo.admin.open" in admin_text
     assert "添加模型接口" in admin_text
     assert "model-config-dialog" in admin_text
     assert "open-model-dialog" in admin_text

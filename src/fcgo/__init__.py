@@ -1,4 +1,4 @@
-"""FCGO: Gemini-powered local Feishu work assistant."""
+"""飞灵（FLGO）: local Feishu/Lark work assistant."""
 
 __all__ = ["__version__"]
 

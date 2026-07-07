@@ -82,7 +82,7 @@ def test_build_assistant_prompt_includes_resource_context_without_provider_sdk_d
 
     prompt = build_assistant_prompt(request)
 
-    assert "你是 小智" in prompt
+    assert "你是 飞灵" in prompt
     assert "Agent observations" in prompt
     assert "当前用户消息" in prompt
     assert "这个文档说了什么？" in prompt

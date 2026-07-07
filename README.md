@@ -1,6 +1,6 @@
-# FCGO
+# 飞灵（FLGO）
 
-FCGO 是一个 **Python 3.13 + uv 本地飞书工作助手**。它通过飞书长连接机器人接收私聊或群聊 `@机器人` 消息，按用户授权读取飞书文档、电子表格、多维表格和网页链接，调用 Gemini 或其他已配置模型生成回复，并返回飞书。
+飞灵（FLGO） 是一个 **Python 3.13 + uv 本地飞书工作助手**。它通过飞书长连接机器人接收私聊或群聊 `@机器人` 消息，按用户授权读取飞书文档、电子表格、多维表格和网页链接，调用 Gemini 或其他已配置模型生成回复，并返回飞书。
 
 当前部署已启用确认式写回：明确写入请求会先生成预览卡片，只有用户确认后才执行。
 `FCGO_WRITEBACK_ENABLED=false` 时可切回读取优先模式。
@@ -22,28 +22,28 @@ FCGO 是一个 **Python 3.13 + uv 本地飞书工作助手**。它通过飞书�
 ```powershell
 uv sync
 Copy-Item .env.example .env
-uv run fcgo serve
+uv run flgo serve
 ```
 
 启动本地服务并打开配置后台：
 
 ```powershell
-uv run fcgo service start --open-admin
+uv run flgo service start --open-admin
 ```
 
 查看、重启、停止本地服务：
 
 ```powershell
-uv run fcgo service status
-uv run fcgo service restart
-uv run fcgo service stop
+uv run flgo service status
+uv run flgo service restart
+uv run flgo service stop
 ```
 
 生成便携启动包：
 
 ```powershell
-uv run fcgo package build
-uv run fcgo package build --target all
+uv run flgo package build
+uv run flgo package build --target all
 ```
 
 健康检查：
@@ -61,7 +61,7 @@ uv run pytest
 检查本地配置和外部凭证：
 
 ```powershell
-uv run fcgo doctor
+uv run flgo doctor
 ```
 
 更多文档：
@@ -102,7 +102,7 @@ uv run fcgo doctor
 - `FCGO_OPENAI_COMPATIBLE_HTTP_PROXY`，可选；OpenAI 兼容 Provider 共用代理
 - `FCGO_BASE_URL`
 - `FCGO_SQLITE_PATH`
-- `FCGO_ASSISTANT_DEFAULT_NAME`，默认 `小智`；用户未设置个人助手名称时使用
+- `FCGO_ASSISTANT_DEFAULT_NAME`，默认 `飞灵`；用户未设置个人助手名称时使用
 - `FCGO_AGENT_MODE`，默认 `legacy`；可设为 `agent` 启用 Agent + Tools JSON parser 编排
 - `FCGO_AGENT_MAX_STEPS`，默认 `4`；Agent 模式下单次请求最多工具轮数
 - `FCGO_AGENT_TOOL_TIMEOUT_SECONDS`，默认 `30`；Agent 工具默认超时时间
@@ -136,7 +136,7 @@ DEEPSEEK_MODEL=your-model-name
 
 ## 飞书用户授权
 
-用户在飞书里发送 `/授权`，机器人会返回一次性 OAuth 链接。授权成功后，FCGO
+用户在飞书里发送 `/授权`，机器人会返回一次性 OAuth 链接。授权成功后，飞灵（FLGO）
 会把用户 token 保存到本地 SQLite，用于后续按用户权限读取飞书文档、电子表格和多维表格。
 后续会自动复用 token；如果启用了 `FCGO_OAUTH_ENABLE_OFFLINE_ACCESS=true` 且飞书后台已开通
 `offline_access`，还会在 access token 过期时自动刷新。
@@ -163,7 +163,7 @@ auth:user.id:read drive:drive.search:readonly search:docs:read docx:document:rea
 - 音频、视频、压缩包、旧版 Office 和可执行文件只返回类型与安全说明，不执行、不解压、不转码。
 - 普通超链接、`@文档` 和内嵌网页返回飞书 blocks API 提供的显示文本、标题与 URL。
 
-飞书不会通过 blocks API 统一返回任意外链的预览正文。FCGO 不会把链接显示文本当成已经读取的网页内容，
+飞书不会通过 blocks API 统一返回任意外链的预览正文。飞灵（FLGO） 不会把链接显示文本当成已经读取的网页内容，
 也不会自动递归抓取文档中的所有外链。普通网页读取只在用户或 Agent 明确读取外链时触发，并会拦截本机、
 内网和保留地址；可通过 `FCGO_WEB_READ_ENABLED`、`FCGO_WEB_ALLOWED_HOSTS`、`FCGO_WEB_BLOCKED_HOSTS`
 和 `FCGO_WEB_MAX_BYTES` 控制读取范围。
@@ -183,7 +183,7 @@ auth:user.id:read drive:drive.search:readonly search:docs:read docx:document:rea
 - `/帮助`：查看可用命令；没有配置自定义菜单时也可使用。
 - `/助手 名称`：查看当前助手名称。
 - `/助手 命名 小飞`：设置当前用户的个人助手名称。
-- `/助手 默认名称`：恢复默认助手名称，默认是 `小智`。
+- `/助手 默认名称`：恢复默认助手名称，默认是 `飞灵`。
 - `/上下文 查看`：查看当前上下文策略；不会读取历史、不会调用模型。
 - `/记忆 查看`：查看当前用户的长期记忆摘要和偏好。
 - `/记忆 记住 输出格式=优先表格`：新增或更新一条带 key 的偏好记忆。
@@ -195,16 +195,16 @@ auth:user.id:read drive:drive.search:readonly search:docs:read docx:document:rea
 - `/记忆 开启`：重新开启当前用户的长期记忆。
 
 记忆管理命令只允许在私聊中操作，避免个人记忆展示到群聊。
-普通聊天中识别到“记住我叫…”“我的项目代号是…”这类候选记忆时，FCGO 会先发送确认卡片；用户点击“保存”后才写入长期记忆。
-FCGO 默认不会保存完整聊天原文、飞书资源正文、网页正文或附件正文。隐私边界见
+普通聊天中识别到“记住我叫…”“我的项目代号是…”这类候选记忆时，飞灵（FLGO） 会先发送确认卡片；用户点击“保存”后才写入长期记忆。
+飞灵（FLGO） 默认不会保存完整聊天原文、飞书资源正文、网页正文或附件正文。隐私边界见
 [上下文读取、用户授权和长期记忆隐私规格](docs/context-privacy-memory.md)。
 
 当前会话聊天历史读取使用应用权限 `im:message:readonly` 和 tenant token，不依赖用户 OAuth。
-FCGO 会把最近聊天做短期 TTL 缓存，并在每次请求前把近期窗口内的消息按时间顺序作为
+飞灵（FLGO） 会把最近聊天做短期 TTL 缓存，并在每次请求前把近期窗口内的消息按时间顺序作为
 全文上下文注入；超过近期窗口或字符预算的旧消息会压缩成当前会话滚动摘要。长期记忆开启时，
 私聊会话摘要会作为用户可查看、可删除的 `会话摘要` 记忆保存；不会保存完整聊天原文。
 
-私聊中没有显式链接、且用户明确要求搜索/读取飞书文档、表格、多维表或资料时，FCGO 会使用
+私聊中没有显式链接、且用户明确要求搜索/读取飞书文档、表格、多维表或资料时，飞灵（FLGO） 会使用
 飞书“搜索云文档”和“搜索 Wiki”接口按用户 OAuth 搜索本人可见资源，只读取前几个支持的命中项进入本次模型请求。
 如果搜索响应包含可打开 URL，会直接使用飞书返回的地址；否则使用 `FEISHU_DOCS_BASE_URL`
 和资源 token 生成链接。系统不全量扫描云空间，不建立长期索引，也不会把搜索关键词正文或资源正文写入审计日志。
@@ -245,37 +245,37 @@ FCGO 会把最近聊天做短期 TTL 缓存，并在每次请求前把近期窗�
 
 ## 飞书机器人菜单
 
-飞书开发者后台可以给机器人配置自定义菜单。FCGO 已支持以下事件 key：
+飞书开发者后台可以给机器人配置自定义菜单。飞灵（FLGO） 已支持以下事件 key：
 
 ```text
-fcgo.assistant.name.view 查看助手信息
-fcgo.assistant.info.view 查看助手信息（兼容 key）
-fcgo.model.view          查看模型状态
-fcgo.model.default       恢复个人默认模型
-fcgo.model.use.gemini    使用 Gemini
-fcgo.model.use.deepseek  使用 DeepSeek
-fcgo.model.use.openai    使用 OpenAI
-fcgo.model.use.qwen      使用 Qwen
-fcgo.model.use.doubao    使用 Doubao
-fcgo.model.use.minimax   使用 Minimax
-fcgo.model.use.claude    使用 Claude
-fcgo.auth.start          发起飞书授权
-fcgo.auth.status         查看授权状态
-fcgo.context.view        查看上下文策略
-fcgo.context.enable      兼容入口：上下文默认开启
-fcgo.context.disable     兼容入口：上下文默认开启
-fcgo.writeback.status    查看写入策略
-fcgo.writeback.auto.enable   开启个人自动写入
-fcgo.writeback.auto.disable  关闭个人自动写入
-fcgo.writeback.auto.clear    清除个人自动写入偏好
-fcgo.writeback.history       查看最近写入
-fcgo.writeback.undo          撤回最近写入，需要确认
-fcgo.memory.view         查看长期记忆
-fcgo.memory.delete       清空长期记忆，需要确认
-fcgo.memory.disable      关闭长期记忆
-fcgo.memory.enable       开启长期记忆
-fcgo.help                查看帮助
-fcgo.admin.open          打开本地配置网页
+flgo.assistant.name.view 查看助手信息
+flgo.assistant.info.view 查看助手信息（兼容 key）
+flgo.model.view          查看模型状态
+flgo.model.default       恢复个人默认模型
+flgo.model.use.gemini    使用 Gemini
+flgo.model.use.deepseek  使用 DeepSeek
+flgo.model.use.openai    使用 OpenAI
+flgo.model.use.qwen      使用 Qwen
+flgo.model.use.doubao    使用 Doubao
+flgo.model.use.minimax   使用 Minimax
+flgo.model.use.claude    使用 Claude
+flgo.auth.start          发起飞书授权
+flgo.auth.status         查看授权状态
+flgo.context.view        查看上下文策略
+flgo.context.enable      兼容入口：上下文默认开启
+flgo.context.disable     兼容入口：上下文默认开启
+flgo.writeback.status    查看写入策略
+flgo.writeback.auto.enable   开启个人自动写入
+flgo.writeback.auto.disable  关闭个人自动写入
+flgo.writeback.auto.clear    清除个人自动写入偏好
+flgo.writeback.history       查看最近写入
+flgo.writeback.undo          撤回最近写入，需要确认
+flgo.memory.view         查看长期记忆
+flgo.memory.delete       清空长期记忆，需要确认
+flgo.memory.disable      关闭长期记忆
+flgo.memory.enable       开启长期记忆
+flgo.help                查看帮助
+flgo.admin.open          打开本地配置网页
 ```
 
 建议菜单结构：

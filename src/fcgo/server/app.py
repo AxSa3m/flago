@@ -184,7 +184,7 @@ def _oauth_result_page(
     title: str,
     message: str,
     detail: str,
-    assistant_name: str = "小智",
+    assistant_name: str = "飞灵",
 ) -> str:
     accent = "#16a34a" if ok else "#f97316"
     bg = "#ecfdf5" if ok else "#fff7ed"

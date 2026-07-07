@@ -18,7 +18,7 @@ def test_build_windows_portable_package_excludes_local_secrets(tmp_path: Path) -
     launcher = Path(result["launcher"])
 
     assert package_dir.exists()
-    assert launcher.name == "start-fcgo.cmd"
+    assert launcher.name == "start-flgo.cmd"
     assert Path(result["archive"]).suffix == ".zip"
     assert (package_dir / ".env.example").exists()
     assert not (package_dir / ".env").exists()
@@ -36,7 +36,7 @@ def test_build_windows_portable_package_excludes_local_secrets(tmp_path: Path) -
     assert "set FCGO_ENV=prod" in launcher_text
     assert "set FCGO_RESTART_TIMEOUT_SECONDS=120" in launcher_text
     assert "set UV_LINK_MODE=copy" in launcher_text
-    assert "uv run fcgo service start --open-admin" in launcher_text
+    assert "uv run flgo service start --open-admin" in launcher_text
     assert "powershell" not in launcher_text.lower()
 
 
@@ -51,7 +51,7 @@ def test_build_unix_portable_package_marks_launcher_executable(tmp_path: Path) -
     package_dir = Path(result["package_dir"])
     launcher = Path(result["launcher"])
 
-    assert launcher.name == "start-fcgo.sh"
+    assert launcher.name == "start-flgo.sh"
     assert Path(result["archive"]).name.endswith(".tar.gz")
     if os.name != "nt":
         assert (launcher.stat().st_mode & 0o111) != 0
@@ -76,7 +76,7 @@ def _fake_workspace(tmp_path: Path) -> Path:
     (workspace / "logs").mkdir()
     (workspace / "pyproject.toml").write_text("[project]\nname='fcgo'\n", encoding="utf-8")
     (workspace / "uv.lock").write_text("", encoding="utf-8")
-    (workspace / "README.md").write_text("# FCGO\n", encoding="utf-8")
+    (workspace / "README.md").write_text("# 飞灵（FLGO）\n", encoding="utf-8")
     (workspace / ".env.example").write_text(
         "\n".join(
             (

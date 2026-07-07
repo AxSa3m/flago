@@ -48,7 +48,7 @@ def build_portable_package(
     root = workspace or workspace_root()
     selected_target = target or current_target()
     output_root = dist_dir or root / "dist"
-    package_name = f"fcgo-portable-{selected_target}"
+    package_name = f"flgo-portable-{selected_target}"
     package_dir = output_root / package_name
     archive_base = output_root / package_name
 
@@ -91,11 +91,11 @@ def _ignore(directory: str, names: list[str]) -> set[str]:
 
 def _write_launcher(package_dir: Path, target: PackageTarget) -> Path:
     if target == "windows":
-        launcher = package_dir / "start-fcgo.cmd"
+        launcher = package_dir / "start-flgo.cmd"
         launcher.write_text(_windows_launcher(), encoding="utf-8", newline="\r\n")
         return launcher
 
-    launcher = package_dir / "start-fcgo.sh"
+    launcher = package_dir / "start-flgo.sh"
     launcher.write_text(_unix_launcher(), encoding="utf-8", newline="\n")
     with suppress(OSError):
         launcher.chmod(launcher.stat().st_mode | 0o755)
@@ -131,7 +131,7 @@ if errorlevel 1 (
   exit /b 1
 )
 
-uv run fcgo service start --open-admin
+uv run flgo service start --open-admin
 pause
 """
 
@@ -156,7 +156,7 @@ if ! command -v uv >/dev/null 2>&1; then
 fi
 
 uv sync
-uv run fcgo service start --open-admin
+uv run flgo service start --open-admin
 """
 
 
@@ -204,17 +204,17 @@ def _prepare_portable_env_example(path: Path) -> None:
 
 def _write_portable_readme(package_dir: Path, target: PackageTarget) -> None:
     if target == "windows":
-        launch = "双击 `start-fcgo.cmd`"
+        launch = "双击 `start-flgo.cmd`"
         limitation = "Windows 当前提供便携启动包；完整图形安装器会在后续版本补齐。"
     else:
-        launch = "在终端运行 `./start-fcgo.sh`"
+        launch = "在终端运行 `./start-flgo.sh`"
         limitation = "macOS/Linux 当前提供便携启动包；完整图形安装器会在后续版本补齐。"
 
-    text = f"""# FCGO 便携启动包
+    text = f"""# 飞灵（FLGO）便携启动包
 
 ## 这是什么
 
-这是一个可直接启动 FCGO 的便携包。它不会包含你的本机 `.env`、数据库、日志或密钥。
+这是一个可直接启动飞灵（FLGO）的便携包。它不会包含你的本机 `.env`、数据库、日志或密钥。
 
 ## 启动前需要什么
 
@@ -237,8 +237,8 @@ def _write_portable_readme(package_dir: Path, target: PackageTarget) -> None:
 如果启动失败，先在终端运行：
 
 ```bash
-uv run fcgo service status
-uv run fcgo doctor
+uv run flgo service status
+uv run flgo doctor
 ```
 """
     (package_dir / "README-portable.md").write_text(text, encoding="utf-8")
