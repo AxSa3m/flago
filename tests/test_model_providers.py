@@ -1,26 +1,26 @@
 import pytest
 
-from fcgo.config import Settings
-from fcgo.model_providers import (
+from flgo.config import Settings
+from flgo.model_providers import (
     ModelMessageRole,
     ProviderCapability,
     build_assistant_model_request,
     build_assistant_prompt,
 )
-from fcgo.model_providers.echo import EchoModelProvider
-from fcgo.model_providers.registry import (
+from flgo.model_providers.echo import EchoModelProvider
+from flgo.model_providers.registry import (
     ModelProviderRegistry,
     ModelRouter,
     build_model_router,
 )
-from fcgo.model_providers.types import (
+from flgo.model_providers.types import (
     ModelRequest,
     ModelResponse,
     ModelUsage,
     ProviderConfig,
     ProviderKind,
 )
-from fcgo.models import (
+from flgo.models import (
     AssistantRequest,
     AuditEventType,
     ChatContextMessage,

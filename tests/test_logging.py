@@ -1,4 +1,4 @@
-from fcgo.logging import redact
+from flgo.logging import redact
 
 
 def test_redact_masks_common_secret_shapes() -> None:

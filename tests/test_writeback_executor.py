@@ -1,7 +1,7 @@
 import pytest
 
-from fcgo.models import WriteActionType
-from fcgo.writeback.executor import FeishuWriteExecutor
+from flgo.models import WriteActionType
+from flgo.writeback.executor import FeishuWriteExecutor
 
 
 class FakeOpenAPI:

@@ -1,15 +1,15 @@
 import pytest
 
-from fcgo.config import Settings
-from fcgo.media_workflows import (
+from flgo.config import Settings
+from flgo.media_workflows import (
     MediaWorkflowRegistry,
     MediaWorkflowRequest,
     MockMediaWorkflowProvider,
     build_media_workflow_registry,
 )
-from fcgo.media_workflows.registry import media_workflow_provider_configs
-from fcgo.media_workflows.types import MediaJobStatus
-from fcgo.model_providers.types import ProviderCapability
+from flgo.media_workflows.registry import media_workflow_provider_configs
+from flgo.media_workflows.types import MediaJobStatus
+from flgo.model_providers.types import ProviderCapability
 
 
 @pytest.mark.asyncio

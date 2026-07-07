@@ -7,12 +7,12 @@ import respx
 from httpx import Response
 from pypdf import PdfWriter
 
-from fcgo.config import Settings
-from fcgo.feishu.openapi import DownloadedFile
-from fcgo.model_providers.types import ModelRequest, ModelResponse
-from fcgo.models import AuditEventType, ResourceRef, ResourceType
-from fcgo.resources.reader import FeishuResourceReader, FeishuResourceSearcher, WebResourceReader
-from fcgo.storage import SQLiteStore
+from flgo.config import Settings
+from flgo.feishu.openapi import DownloadedFile
+from flgo.model_providers.types import ModelRequest, ModelResponse
+from flgo.models import AuditEventType, ResourceRef, ResourceType
+from flgo.resources.reader import FeishuResourceReader, FeishuResourceSearcher, WebResourceReader
+from flgo.storage import SQLiteStore
 
 
 class FakeFeishuAPI:
@@ -740,7 +740,7 @@ async def test_read_feishu_wiki_rejects_non_doc_nodes() -> None:
 
 @pytest.mark.asyncio
 async def test_read_feishu_resource_audits_error_category_without_raw_error(tmp_path) -> None:
-    store = SQLiteStore(tmp_path / "fcgo.sqlite3")
+    store = SQLiteStore(tmp_path / "flgo.sqlite3")
     await store.init()
     api = FakeFeishuAPI()
     api.store = store

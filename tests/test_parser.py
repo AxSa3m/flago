@@ -1,5 +1,5 @@
-from fcgo.models import ResourceType
-from fcgo.resources.parser import extract_urls, parse_resource_url, parse_resource_urls
+from flgo.models import ResourceType
+from flgo.resources.parser import extract_urls, parse_resource_url, parse_resource_urls
 
 
 def test_extract_urls() -> None:

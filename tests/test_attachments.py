@@ -7,8 +7,8 @@ from openpyxl import Workbook
 from PIL import Image
 from pptx import Presentation
 
-from fcgo.resources import attachments
-from fcgo.resources.attachments import extract_attachment
+from flgo.resources import attachments
+from flgo.resources.attachments import extract_attachment
 
 
 def test_extract_docx_text_and_table() -> None:
@@ -32,7 +32,7 @@ def test_extract_xlsx_cells() -> None:
     worksheet = workbook.active
     worksheet.title = "数据"
     worksheet.append(["项目", "状态"])
-    worksheet.append(["FCGO", "进行中"])
+    worksheet.append(["FLGO", "进行中"])
     output = BytesIO()
     workbook.save(output)
 
@@ -40,7 +40,7 @@ def test_extract_xlsx_cells() -> None:
 
     assert result.kind == "Excel"
     assert "[工作表：数据]" in result.text
-    assert "FCGO | 进行中" in result.text
+    assert "FLGO | 进行中" in result.text
 
 
 def test_extract_pptx_slide_text() -> None:

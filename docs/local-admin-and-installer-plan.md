@@ -13,7 +13,7 @@
 - 后台使用飞书 OAuth 登录；首次登录的飞书用户绑定为本机后台管理员。
 - 当前后台支持编辑个人助手名称/简介、长期记忆开关、长期记忆内容、个人默认模型。
 - 当前后台采用普通配置 + 独立高级配置页：普通配置展示常用开关、模式和 Provider；`/admin/advanced` 保留完整参数编辑能力。
-- 当前后台支持编辑 `Settings` 中声明的环境参数，并写入 `FCGO_ADMIN_CONFIG_PATH` 指向的配置文件；默认写入项目 `.env`。
+- 当前后台支持编辑 `Settings` 中声明的环境参数，并写入 `FLGO_ADMIN_CONFIG_PATH` 指向的配置文件；默认写入项目 `.env`。
 - 当前后台列出机器人自定义菜单的全部已支持事件 key，方便在飞书开发者后台逐项配置。
 - 模型密钥、飞书 App ID、机器人 Open ID 和本地配置路径只展示是否已配置，不在页面回显明文；输入框留空表示不修改，点击“清空”按钮并保存才会删除。
 - Provider 和模型名在普通配置中保持联动；不允许保存明显不匹配的个人默认模型或系统默认模型。
@@ -25,7 +25,7 @@
 - 模型和媒体测试按钮使用前端异步请求，不刷新页面、不改变滚动位置；测试结果 5 秒后自动消失。
 - 普通配置页提供“服务控制”卡片，可查看运行状态、端口、进程和日志位置，并触发重启或停止服务。
 - 新增 `uv run flgo service status/start/restart/stop`，安装器和用户都可以通过同一套命令控制本地服务。
-- 新增 `scripts/fcgo_launcher.py`，用于启动服务并打开本地配置后台。
+- 新增 `scripts/flgo_launcher.py`，用于启动服务并打开本地配置后台。
 - 新增 `uv run flgo package build`，可生成当前平台的便携启动包；`--target all` 可生成
   Windows/macOS/Linux 三个平台脚本包。
 - 便携包不会复制 `.env`、`.venv`、数据库、日志和 PowerShell 脚本，避免泄露本机密钥或触发脚本误报。
@@ -42,11 +42,11 @@
 
 ## 当前配置范围
 
-后台会根据 `fcgo.config.Settings` 自动生成配置表单。当前已覆盖：
+后台会根据 `flgo.config.Settings` 自动生成配置表单。当前已覆盖：
 
 1. 飞书应用配置：App ID、App Secret、Verification Token、Encrypt Key、Base URL、OAuth 回调地址相关参数。
 2. 模型接口配置：Gemini、DeepSeek、OpenAI、Qwen、Doubao、Minimax、Claude 的 Key、Base URL、Model。
-3. Agent 配置：`FCGO_AGENT_MODE`、最大工具步数、工具超时。
+3. Agent 配置：`FLGO_AGENT_MODE`、最大工具步数、工具超时。
 4. 写入配置：写入开关、默认确认策略、是否允许用户开启低风险自动执行。
 5. 附件能力：图片理解、音视频理解、OCR、附件大小限制。
 6. Web 读取：允许域名、禁止域名、超时和大小限制。
@@ -87,7 +87,7 @@
 - 助手默认名称/简介等开发者级默认值。
 - 后台会话密钥和配置文件位置。
 
-后台页面不允许直接关闭 `FCGO_ADMIN_ENABLED`，避免管理员从网页把后台锁死。
+后台页面不允许直接关闭 `FLGO_ADMIN_ENABLED`，避免管理员从网页把后台锁死。
 
 当前模型和媒体接口仍遵循运行时架构限制：每个内置 Provider 保存一套 API Key/Base URL 配置，同一 Provider 下可以选择不同模型或接口显示名称；同一 Provider 多套 API Key/Base URL 连接、按别名路由调用需要后续 profile 架构支持。
 
@@ -95,8 +95,8 @@
 
 1. 桌面启动器
    - 已完成第一阶段：启动/停止/重启本地服务。
-   - 已完成第一阶段：服务控制复用 `fcgo.local_service`，返回明确 JSON 和健康检查结果。
-   - 已完成第一阶段：`scripts/fcgo_launcher.py` 可启动服务并打开 `/admin`。
+   - 已完成第一阶段：服务控制复用 `flgo.local_service`，返回明确 JSON 和健康检查结果。
+   - 已完成第一阶段：`scripts/flgo_launcher.py` 可启动服务并打开 `/admin`。
    - 待安装器阶段：把 Python 脚本包装成小白用户可双击的桌面入口。
 
 2. 首次运行向导

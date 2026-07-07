@@ -5,11 +5,11 @@ import pytest
 import respx
 from pydantic import SecretStr
 
-from fcgo.config import Settings
-from fcgo.model_providers import ModelMessage, ModelMessageRole, ModelRequest
-from fcgo.model_providers.claude import ClaudeProvider
-from fcgo.model_providers.registry import build_model_router
-from fcgo.model_providers.types import ProviderCapability, ProviderConfig, ProviderKind
+from flgo.config import Settings
+from flgo.model_providers import ModelMessage, ModelMessageRole, ModelRequest
+from flgo.model_providers.claude import ClaudeProvider
+from flgo.model_providers.registry import build_model_router
+from flgo.model_providers.types import ProviderCapability, ProviderConfig, ProviderKind
 
 
 @pytest.mark.asyncio

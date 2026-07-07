@@ -5,11 +5,11 @@ import pytest
 import respx
 from pydantic import SecretStr
 
-from fcgo.config import Settings
-from fcgo.model_providers import ModelMessage, ModelMessageRole, ModelRequest
-from fcgo.model_providers.openai_compatible import OpenAICompatibleProvider
-from fcgo.model_providers.registry import build_model_router
-from fcgo.model_providers.types import ProviderCapability, ProviderConfig, ProviderKind
+from flgo.config import Settings
+from flgo.model_providers import ModelMessage, ModelMessageRole, ModelRequest
+from flgo.model_providers.openai_compatible import OpenAICompatibleProvider
+from flgo.model_providers.registry import build_model_router
+from flgo.model_providers.types import ProviderCapability, ProviderConfig, ProviderKind
 
 
 @pytest.mark.asyncio

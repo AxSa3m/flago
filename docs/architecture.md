@@ -2,18 +2,18 @@
 
 ## 模块
 
-- `fcgo.config`：配置加载和环境变量管理。
-- `fcgo.logging`：日志初始化和密钥脱敏。
-- `fcgo.models`：核心 Pydantic 数据模型。
-- `fcgo.storage`：SQLite 存储 token、幂等键、模型偏好和审计日志。
-- `fcgo.feishu`：飞书客户端、OAuth、长连接 worker、OpenAPI 封装和消息路由。
-- `fcgo.gemini`：Gemini 模型提供方，是当前默认真实 Provider。
-- `fcgo.model_providers`：通用模型请求/响应协议、Provider 无关的提示词构建器、注册表和运行时路由。
-- `fcgo.agent`：助手编排层，连接消息、资源、工具和模型；当前同时保留 legacy
+- `flgo.config`：配置加载和环境变量管理。
+- `flgo.logging`：日志初始化和密钥脱敏。
+- `flgo.models`：核心 Pydantic 数据模型。
+- `flgo.storage`：SQLite 存储 token、幂等键、模型偏好和审计日志。
+- `flgo.feishu`：飞书客户端、OAuth、长连接 worker、OpenAPI 封装和消息路由。
+- `flgo.gemini`：Gemini 模型提供方，是当前默认真实 Provider。
+- `flgo.model_providers`：通用模型请求/响应协议、Provider 无关的提示词构建器、注册表和运行时路由。
+- `flgo.agent`：助手编排层，连接消息、资源、工具和模型；当前同时保留 legacy
   Assistant 与新 AgentOrchestrator。
-- `fcgo.resources`：飞书资源和网页链接解析/读取。
-- `fcgo.writeback`：确认式写回、待确认动作、执行与撤回记录。
-- `fcgo.server`：FastAPI 服务入口。
+- `flgo.resources`：飞书资源和网页链接解析/读取。
+- `flgo.writeback`：确认式写回、待确认动作、执行与撤回记录。
+- `flgo.server`：FastAPI 服务入口。
 
 上下文读取、用户授权和长期记忆的隐私边界见
 [上下文读取、用户授权和长期记忆隐私规格](context-privacy-memory.md)。相关实现默认开启当前会话上下文读取，并禁止长期保存完整正文。
@@ -22,7 +22,7 @@
 
 1. 飞书长连接收到消息事件。
 2. `FeishuMessageRouter` 做消息幂等检查并构造 `AssistantRequest`。
-3. 路由根据 `FCGO_AGENT_MODE` 选择编排层：
+3. 路由根据 `FLGO_AGENT_MODE` 选择编排层：
    - `legacy`：使用旧 `Assistant`，保持当前线上可用行为。
    - `agent`：使用 `AgentOrchestrator`，要求模型输出 `AgentDecision` JSON。
 4. `ModelRouter` 根据默认 Provider、用户模型偏好和请求模型配置选择具体 Provider。
@@ -32,7 +32,7 @@
 
 ## Agent + Tools 双轨协议
 
-内部协议由 `fcgo.models` 定义：
+内部协议由 `flgo.models` 定义：
 
 - `AgentDecision`：模型每轮只允许输出 `final_response`、`tool_calls`、`writeback_drafts`。
 - `ToolCall`：统一工具名、参数和 call id。
@@ -65,7 +65,7 @@
 ## 多模型 Provider
 
 当前运行时代码通过 `ModelProviderRegistry` 和 `ModelRouter` 装配 Provider。默认 Provider
-由 `FCGO_DEFAULT_PROVIDER` 控制，默认模型可通过 `FCGO_DEFAULT_MODEL` 覆盖；目前已实现
+由 `FLGO_DEFAULT_PROVIDER` 控制，默认模型可通过 `FLGO_DEFAULT_MODEL` 覆盖；目前已实现
 `gemini`、`openai`、`deepseek`、`qwen`、`doubao`、`minimax`、`claude` 和本地开发用 `echo`。
 后续多模型接入规划见
 [多模型 Provider 架构规划](multi-model-provider-architecture.md)，目标是支持
@@ -77,10 +77,10 @@ Seedance、ComfyUI API 等不同类型 Provider，并通过统一能力矩阵、
 
 环境变量：
 
-- `FCGO_WRITEBACK_ENABLED=false|true`：关闭时不会保存或执行任何写回。
-- `FCGO_WRITEBACK_AUTO_EXECUTE_ENABLED=false|true`：控制用户是否可以通过 `/写回 自动开启`
+- `FLGO_WRITEBACK_ENABLED=false|true`：关闭时不会保存或执行任何写回。
+- `FLGO_WRITEBACK_AUTO_EXECUTE_ENABLED=false|true`：控制用户是否可以通过 `/写回 自动开启`
   启用个人低风险自动写回；默认关闭。
-- `FCGO_WRITEBACK_CONFIRMATION_MODE=always|low_risk_direct|draft_only`
+- `FLGO_WRITEBACK_CONFIRMATION_MODE=always|low_risk_direct|draft_only`
   - `always`：每次确认；所有写入、修改、删除都生成确认卡片。
   - `low_risk_direct`：低风险自动执行；明确目标的文档开头/末尾追加可直接执行，修改、删除、表格和多维表仍需确认。
   - `draft_only`：仅生成草稿；只返回草稿，不保存 pending action，不执行。
@@ -92,7 +92,7 @@ Agent v1 只稳定支持文档开头、文档末尾、表格范围、多维表�
 
 ## 本地存储
 
-SQLite 默认位置为 `data/fcgo.sqlite3`，包含：
+SQLite 默认位置为 `data/flgo.sqlite3`，包含：
 
 - `oauth_tokens`
 - `idempotency_keys`
@@ -101,4 +101,4 @@ SQLite 默认位置为 `data/fcgo.sqlite3`，包含：
 
 隐私默认配置：
 
-- `FCGO_MEMORY_STORE_RAW_TEXT=false`
+- `FLGO_MEMORY_STORE_RAW_TEXT=false`

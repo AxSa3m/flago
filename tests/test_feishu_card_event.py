@@ -1,6 +1,6 @@
 from lark_oapi.event.callback.model.p2_card_action_trigger import P2CardActionTrigger
 
-from fcgo.feishu.card_event import card_action_response, parse_card_action_event
+from flgo.feishu.card_event import card_action_response, parse_card_action_event
 
 
 def test_parse_card_action_event() -> None:
@@ -13,7 +13,7 @@ def test_parse_card_action_event() -> None:
                     "operator": {"open_id": "ou_user"},
                     "action": {
                         "value": {
-                            "fcgo_action": "writeback.confirm",
+                            "flgo_action": "writeback.confirm",
                             "action_id": "action-1",
                         }
                     },
@@ -39,7 +39,7 @@ def test_parse_memory_delete_card_action_event() -> None:
                     "operator": {"open_id": "ou_user"},
                     "action": {
                         "value": {
-                            "fcgo_action": "fcgo.memory.delete.confirm",
+                            "flgo_action": "flgo.memory.delete.confirm",
                             "action_id": "memory-delete-1",
                         }
                     },
@@ -50,7 +50,7 @@ def test_parse_memory_delete_card_action_event() -> None:
 
     assert callback.actor_id == "ou_user"
     assert callback.action == "confirm"
-    assert callback.action_key == "fcgo.memory.delete.confirm"
+    assert callback.action_key == "flgo.memory.delete.confirm"
     assert callback.action_id == "memory-delete-1"
 
 
@@ -64,7 +64,7 @@ def test_parse_memory_save_card_action_event() -> None:
                     "operator": {"open_id": "ou_user"},
                     "action": {
                         "value": {
-                            "fcgo_action": "fcgo.memory.save.confirm",
+                            "flgo_action": "flgo.memory.save.confirm",
                             "action_id": "memory-save-1",
                             "memory_key": "nickname",
                             "memory_kind": "称呼",
@@ -78,7 +78,7 @@ def test_parse_memory_save_card_action_event() -> None:
 
     assert callback.actor_id == "ou_user"
     assert callback.action == "confirm"
-    assert callback.action_key == "fcgo.memory.save.confirm"
+    assert callback.action_key == "flgo.memory.save.confirm"
     assert callback.action_id == "memory-save-1"
     assert callback.value["memory_content"] == "你叫Sa3m。"
 

@@ -3,7 +3,7 @@ from __future__ import annotations
 import os
 from pathlib import Path
 
-from fcgo.packaging import build_portable_package
+from flgo.packaging import build_portable_package
 
 
 def test_build_windows_portable_package_excludes_local_secrets(tmp_path: Path) -> None:
@@ -26,15 +26,15 @@ def test_build_windows_portable_package_excludes_local_secrets(tmp_path: Path) -
     assert not (package_dir / "server.err.log").exists()
     env_example = (package_dir / ".env.example").read_text(encoding="utf-8")
     launcher_text = launcher.read_text(encoding="utf-8")
-    assert "FCGO_ENV=prod" in env_example
-    assert "FCGO_START_LONG_CONNECTION=false" in env_example
+    assert "FLGO_ENV=prod" in env_example
+    assert "FLGO_START_LONG_CONNECTION=false" in env_example
     assert "FEISHU_APP_ID=\n" in env_example
     assert "FEISHU_APP_SECRET=\n" in env_example
     assert "GEMINI_API_KEY=\n" in env_example
     assert "cli_xxx" not in env_example
     assert "GEMINI_API_KEY=xxx" not in env_example
-    assert "set FCGO_ENV=prod" in launcher_text
-    assert "set FCGO_RESTART_TIMEOUT_SECONDS=120" in launcher_text
+    assert "set FLGO_ENV=prod" in launcher_text
+    assert "set FLGO_RESTART_TIMEOUT_SECONDS=120" in launcher_text
     assert "set UV_LINK_MODE=copy" in launcher_text
     assert "uv run flgo service start --open-admin" in launcher_text
     assert "powershell" not in launcher_text.lower()
@@ -56,8 +56,8 @@ def test_build_unix_portable_package_marks_launcher_executable(tmp_path: Path) -
     if os.name != "nt":
         assert (launcher.stat().st_mode & 0o111) != 0
     launcher_text = launcher.read_text(encoding="utf-8")
-    assert 'export FCGO_ENV="${FCGO_ENV:-prod}"' in launcher_text
-    assert 'export FCGO_RESTART_TIMEOUT_SECONDS="${FCGO_RESTART_TIMEOUT_SECONDS:-120}"' in (
+    assert 'export FLGO_ENV="${FLGO_ENV:-prod}"' in launcher_text
+    assert 'export FLGO_RESTART_TIMEOUT_SECONDS="${FLGO_RESTART_TIMEOUT_SECONDS:-120}"' in (
         launcher_text
     )
     assert 'export UV_LINK_MODE="${UV_LINK_MODE:-copy}"' in launcher_text
@@ -69,19 +69,19 @@ def test_build_unix_portable_package_marks_launcher_executable(tmp_path: Path) -
 
 def _fake_workspace(tmp_path: Path) -> Path:
     workspace = tmp_path / "workspace"
-    (workspace / "src" / "fcgo").mkdir(parents=True)
+    (workspace / "src" / "flgo").mkdir(parents=True)
     (workspace / "scripts").mkdir()
     (workspace / "docs").mkdir()
     (workspace / "data").mkdir()
     (workspace / "logs").mkdir()
-    (workspace / "pyproject.toml").write_text("[project]\nname='fcgo'\n", encoding="utf-8")
+    (workspace / "pyproject.toml").write_text("[project]\nname='flgo'\n", encoding="utf-8")
     (workspace / "uv.lock").write_text("", encoding="utf-8")
     (workspace / "README.md").write_text("# 飞灵（FLGO）\n", encoding="utf-8")
     (workspace / ".env.example").write_text(
         "\n".join(
             (
-                "FCGO_ENV=dev",
-                "FCGO_BASE_URL=http://127.0.0.1:8000",
+                "FLGO_ENV=dev",
+                "FLGO_BASE_URL=http://127.0.0.1:8000",
                 "FEISHU_APP_ID=cli_xxx",
                 "FEISHU_APP_SECRET=xxx",
                 "GEMINI_API_KEY=xxx",
@@ -92,7 +92,7 @@ def _fake_workspace(tmp_path: Path) -> Path:
     )
     (workspace / ".env").write_text("SECRET=do-not-copy\n", encoding="utf-8")
     (workspace / "server.err.log").write_text("local log\n", encoding="utf-8")
-    (workspace / "src" / "fcgo" / "__init__.py").write_text("", encoding="utf-8")
+    (workspace / "src" / "flgo" / "__init__.py").write_text("", encoding="utf-8")
     (workspace / "scripts" / "restart_server.py").write_text("print('ok')\n", encoding="utf-8")
     (workspace / "scripts" / "bad.ps1").write_text("Write-Host bad\n", encoding="utf-8")
     (workspace / "docs" / "guide.md").write_text("guide\n", encoding="utf-8")

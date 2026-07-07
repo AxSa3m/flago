@@ -3,8 +3,8 @@ import asyncio
 import pytest
 from lark_oapi.event.callback.model.p2_card_action_trigger import P2CardActionTrigger
 
-from fcgo.config import Settings
-from fcgo.feishu.worker import (
+from flgo.config import Settings
+from flgo.feishu.worker import (
     FeishuLongConnectionWorker,
     _configure_lark_ws_proxy,
     _run_or_schedule,
@@ -73,7 +73,7 @@ def test_worker_handles_card_action_trigger() -> None:
                     "operator": {"open_id": "ou_user"},
                     "action": {
                         "value": {
-                            "fcgo_action": "writeback.confirm",
+                            "flgo_action": "writeback.confirm",
                             "action_id": "action-1",
                         }
                     },
@@ -100,7 +100,7 @@ def test_worker_handles_memory_delete_card_without_writeback() -> None:
                     "operator": {"open_id": "ou_user"},
                     "action": {
                         "value": {
-                            "fcgo_action": "fcgo.memory.delete.confirm",
+                            "flgo_action": "flgo.memory.delete.confirm",
                             "action_id": "memory-delete-1",
                         }
                     },
@@ -127,7 +127,7 @@ def test_worker_cancels_memory_delete_card_without_writeback() -> None:
                     "operator": {"open_id": "ou_user"},
                     "action": {
                         "value": {
-                            "fcgo_action": "fcgo.memory.delete.cancel",
+                            "flgo_action": "flgo.memory.delete.cancel",
                             "action_id": "memory-delete-1",
                         }
                     },
@@ -154,7 +154,7 @@ def test_worker_handles_memory_save_card_without_writeback() -> None:
                     "operator": {"open_id": "ou_user"},
                     "action": {
                         "value": {
-                            "fcgo_action": "fcgo.memory.save.confirm",
+                            "flgo_action": "flgo.memory.save.confirm",
                             "action_id": "memory-save-1",
                             "memory_key": "nickname",
                             "memory_kind": "称呼",
@@ -191,7 +191,7 @@ def test_worker_cancels_memory_save_card_without_writeback() -> None:
                     "operator": {"open_id": "ou_user"},
                     "action": {
                         "value": {
-                            "fcgo_action": "fcgo.memory.save.cancel",
+                            "flgo_action": "flgo.memory.save.cancel",
                             "action_id": "memory-save-1",
                         }
                     },
@@ -222,7 +222,7 @@ def test_worker_returns_fast_ack_when_confirm_is_slow() -> None:
                     "operator": {"open_id": "ou_user"},
                     "action": {
                         "value": {
-                            "fcgo_action": "writeback.confirm",
+                            "flgo_action": "writeback.confirm",
                             "action_id": "action-1",
                         }
                     },

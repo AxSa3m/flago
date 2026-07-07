@@ -5,15 +5,15 @@ import pytest
 import respx
 from httpx import Response
 
-from fcgo.config import Settings
-from fcgo.feishu.oauth import FeishuOAuthService, MissingOAuthScopeError
-from fcgo.storage import SQLiteStore
+from flgo.config import Settings
+from flgo.feishu.oauth import FeishuOAuthService, MissingOAuthScopeError
+from flgo.storage import SQLiteStore
 
 
 def _settings(tmp_path) -> Settings:
     return Settings(
         env="test",
-        sqlite_path=tmp_path / "fcgo.sqlite3",
+        sqlite_path=tmp_path / "flgo.sqlite3",
         base_url="http://localhost:8000",
         feishu_app_id="cli_test",
         feishu_app_secret="secret",
@@ -26,7 +26,7 @@ def _settings(tmp_path) -> Settings:
 
 @pytest.mark.asyncio
 async def test_create_authorization_url_persists_state(tmp_path) -> None:
-    store = SQLiteStore(tmp_path / "fcgo.sqlite3")
+    store = SQLiteStore(tmp_path / "flgo.sqlite3")
     await store.init()
     service = FeishuOAuthService(_settings(tmp_path), store)
 
@@ -51,7 +51,7 @@ async def test_create_authorization_url_persists_state(tmp_path) -> None:
 
 @pytest.mark.asyncio
 async def test_create_authorization_url_can_request_offline_access(tmp_path) -> None:
-    store = SQLiteStore(tmp_path / "fcgo.sqlite3")
+    store = SQLiteStore(tmp_path / "flgo.sqlite3")
     await store.init()
     settings = _settings(tmp_path).model_copy(update={"oauth_enable_offline_access": True})
     service = FeishuOAuthService(settings, store)
@@ -65,7 +65,7 @@ async def test_create_authorization_url_can_request_offline_access(tmp_path) -> 
 @pytest.mark.asyncio
 @respx.mock
 async def test_complete_authorization_exchanges_code_and_saves_token(tmp_path) -> None:
-    store = SQLiteStore(tmp_path / "fcgo.sqlite3")
+    store = SQLiteStore(tmp_path / "flgo.sqlite3")
     await store.init()
     service = FeishuOAuthService(_settings(tmp_path), store)
     _, state = await service.create_authorization_url("ou_user")
@@ -99,7 +99,7 @@ async def test_complete_authorization_exchanges_code_and_saves_token(tmp_path) -
 @pytest.mark.asyncio
 @respx.mock
 async def test_get_valid_access_token_refreshes_expired_token(tmp_path) -> None:
-    store = SQLiteStore(tmp_path / "fcgo.sqlite3")
+    store = SQLiteStore(tmp_path / "flgo.sqlite3")
     await store.init()
     service = FeishuOAuthService(_settings(tmp_path), store)
     await store.save_oauth_token(
@@ -137,7 +137,7 @@ async def test_get_valid_access_token_refreshes_expired_token(tmp_path) -> None:
 async def test_get_valid_access_token_preserves_scope_and_refresh_when_refresh_omits_them(
     tmp_path,
 ) -> None:
-    store = SQLiteStore(tmp_path / "fcgo.sqlite3")
+    store = SQLiteStore(tmp_path / "flgo.sqlite3")
     await store.init()
     service = FeishuOAuthService(_settings(tmp_path), store)
     await store.save_oauth_token(
@@ -177,7 +177,7 @@ async def test_get_valid_access_token_preserves_scope_and_refresh_when_refresh_o
 
 @pytest.mark.asyncio
 async def test_get_valid_access_token_rejects_missing_required_scope(tmp_path) -> None:
-    store = SQLiteStore(tmp_path / "fcgo.sqlite3")
+    store = SQLiteStore(tmp_path / "flgo.sqlite3")
     await store.init()
     service = FeishuOAuthService(_settings(tmp_path), store)
     await store.save_oauth_token(
@@ -200,7 +200,7 @@ async def test_get_valid_access_token_rejects_missing_required_scope(tmp_path) -
 
 @pytest.mark.asyncio
 async def test_authorization_status_reports_missing_token(tmp_path) -> None:
-    store = SQLiteStore(tmp_path / "fcgo.sqlite3")
+    store = SQLiteStore(tmp_path / "flgo.sqlite3")
     await store.init()
     service = FeishuOAuthService(_settings(tmp_path), store)
 
@@ -214,7 +214,7 @@ async def test_authorization_status_reports_missing_token(tmp_path) -> None:
 
 @pytest.mark.asyncio
 async def test_authorization_status_reports_usable_token(tmp_path) -> None:
-    store = SQLiteStore(tmp_path / "fcgo.sqlite3")
+    store = SQLiteStore(tmp_path / "flgo.sqlite3")
     await store.init()
     service = FeishuOAuthService(_settings(tmp_path), store)
     await store.save_oauth_token(
@@ -235,7 +235,7 @@ async def test_authorization_status_reports_usable_token(tmp_path) -> None:
 
 @pytest.mark.asyncio
 async def test_authorization_status_reports_missing_configured_scopes(tmp_path) -> None:
-    store = SQLiteStore(tmp_path / "fcgo.sqlite3")
+    store = SQLiteStore(tmp_path / "flgo.sqlite3")
     await store.init()
     service = FeishuOAuthService(_settings(tmp_path), store)
     await store.save_oauth_token(
@@ -258,7 +258,7 @@ async def test_authorization_status_reports_missing_configured_scopes(tmp_path) 
 
 @pytest.mark.asyncio
 async def test_authorization_status_does_not_require_offline_access_scope(tmp_path) -> None:
-    store = SQLiteStore(tmp_path / "fcgo.sqlite3")
+    store = SQLiteStore(tmp_path / "flgo.sqlite3")
     await store.init()
     settings = _settings(tmp_path).model_copy(update={"oauth_enable_offline_access": True})
     service = FeishuOAuthService(settings, store)

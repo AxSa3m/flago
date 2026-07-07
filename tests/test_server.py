@@ -8,18 +8,18 @@ import respx
 from fastapi.testclient import TestClient
 from httpx import ConnectError, Response
 
-from fcgo.config import Settings
-from fcgo.model_providers.types import ModelResponse
-from fcgo.models import ActionProposal, PendingActionStatus, WriteActionType
-from fcgo.server import create_app
-from fcgo.storage import SQLiteStore
-from fcgo.writeback.executor import FeishuWriteExecutor
+from flgo.config import Settings
+from flgo.model_providers.types import ModelResponse
+from flgo.models import ActionProposal, PendingActionStatus, WriteActionType
+from flgo.server import create_app
+from flgo.storage import SQLiteStore
+from flgo.writeback.executor import FeishuWriteExecutor
 
 
 def test_healthz(tmp_path) -> None:
     settings = Settings(
         env="test",
-        sqlite_path=tmp_path / "fcgo.sqlite3",
+        sqlite_path=tmp_path / "flgo.sqlite3",
         gemini_api_key="",
         feishu_app_secret="",
     )
@@ -233,11 +233,11 @@ def test_admin_page_updates_all_config_form_and_lists_menus(tmp_path, monkeypatc
         triggered_service_actions: list[str] = []
 
         monkeypatch.setattr(
-            "fcgo.server.admin.service_status",
+            "flgo.server.admin.service_status",
             lambda **kwargs: fake_service_status,
         )
         monkeypatch.setattr(
-            "fcgo.server.admin.trigger_service_action",
+            "flgo.server.admin.trigger_service_action",
             lambda action: triggered_service_actions.append(action)
             or {
                 "action": action,
@@ -257,7 +257,7 @@ def test_admin_page_updates_all_config_form_and_lists_menus(tmp_path, monkeypatc
                 calls.append(request)
                 return ModelResponse(text="OK", provider=request.provider, model=request.model)
 
-        monkeypatch.setattr("fcgo.server.admin.build_model_router", lambda settings: FakeRouter())
+        monkeypatch.setattr("flgo.server.admin.build_model_router", lambda settings: FakeRouter())
         test_model = client.post(
             "/admin/model/test",
             content=urlencode(
@@ -293,10 +293,10 @@ def test_admin_page_updates_all_config_form_and_lists_menus(tmp_path, monkeypatc
             "memory_content": "更新后的长期记忆",
             "personal_provider": "gemini",
             "personal_model": "gemini-2.5-flash",
-            "env__FCGO_BASE_URL": "https://fcgo.example.test",
-            "env__FCGO_AGENT_MODE": "agent",
-            "env__FCGO_WRITEBACK_ENABLED": "true",
-            "env__FCGO_WRITEBACK_CONFIRMATION_MODE": "low_risk_direct",
+            "env__FLGO_BASE_URL": "https://flgo.example.test",
+            "env__FLGO_AGENT_MODE": "agent",
+            "env__FLGO_WRITEBACK_ENABLED": "true",
+            "env__FLGO_WRITEBACK_CONFIRMATION_MODE": "low_risk_direct",
             "env__GEMINI_DISPLAY_NAME": "飞灵专用 Gemini",
             "env__GEMINI_API_KEY": "gemini-key",
             "env__DEEPSEEK_API_KEY": "sk-deepseek-test",
@@ -434,7 +434,7 @@ def test_admin_page_updates_all_config_form_and_lists_menus(tmp_path, monkeypatc
     assert 'data-setup-callback-path="/oauth/feishu/callback"' in setup_text
     assert 'data-setup-callback-path="/admin/oauth/callback"' in setup_text
     assert 'data-setup-step="0"' in setup_text
-    assert "FCGO_AGENT_MODE" not in setup_text
+    assert "FLGO_AGENT_MODE" not in setup_text
     assert "FEISHU_VERIFICATION_TOKEN" not in setup_text
     assert "flgo.admin.open" in setup_text
     assert "测试完成" not in admin_text
@@ -444,7 +444,7 @@ def test_admin_page_updates_all_config_form_and_lists_menus(tmp_path, monkeypatc
     assert "new URLSearchParams()" in admin_text
     assert '"Content-Type": "application/x-www-form-urlencoded;charset=UTF-8"' in admin_text
     assert 'const fallback = ok ? "连接正常" : "连接失败";' in admin_text
-    assert "FCGO_BASE_URL" in admin_text
+    assert "FLGO_BASE_URL" in admin_text
     assert "服务控制" in admin_text
     assert 'data-service-action="restart"' in admin_text
     assert 'fetch("/admin/service"' in admin_text
@@ -472,22 +472,22 @@ def test_admin_page_updates_all_config_form_and_lists_menus(tmp_path, monkeypatc
     assert "飞书资源搜索" in admin_text
     assert "dev 用于本地开发" in admin_text
     assert "每次确认 (always)" in admin_text
-    assert "FCGO_LOG_LEVEL" in admin_text
+    assert "FLGO_LOG_LEVEL" in admin_text
     assert "<option value=\"INFO\" selected>INFO</option>" in admin_text
     assert 'id="personal-provider"' in admin_text
     assert 'id="personal-model"' in admin_text
-    assert "FCGO_ADMIN_ENABLED" not in admin_text
+    assert "FLGO_ADMIN_ENABLED" not in admin_text
     assert "cli_test" not in admin_text
     assert str(env_path) not in admin_text
     assert "全部高级参数" in advanced_text
-    assert "FCGO_SQLITE_PATH" in advanced_text
+    assert "FLGO_SQLITE_PATH" in advanced_text
     assert "clear-button" in advanced_text
     saved_env = env_path.read_text(encoding="utf-8")
-    assert "FCGO_BASE_URL=https://fcgo.example.test" in saved_env
-    assert "FCGO_AGENT_MODE=agent" in saved_env
-    assert "FCGO_DEFAULT_PROVIDER=gemini" in saved_env
-    assert "FCGO_WRITEBACK_ENABLED=true" in saved_env
-    assert "FCGO_WRITEBACK_CONFIRMATION_MODE=low_risk_direct" in saved_env
+    assert "FLGO_BASE_URL=https://flgo.example.test" in saved_env
+    assert "FLGO_AGENT_MODE=agent" in saved_env
+    assert "FLGO_DEFAULT_PROVIDER=gemini" in saved_env
+    assert "FLGO_WRITEBACK_ENABLED=true" in saved_env
+    assert "FLGO_WRITEBACK_CONFIRMATION_MODE=low_risk_direct" in saved_env
     assert "GEMINI_DISPLAY_NAME=" in saved_env
     assert "DEEPSEEK_API_KEY=sk-deepseek-test" in saved_env
     assert "COMFYUI_BASE_URL=" not in saved_env
@@ -505,7 +505,7 @@ def test_local_setup_bootstrap_allows_first_run_without_feishu_login(tmp_path) -
     settings = _settings(tmp_path).model_copy(
         update={
             "admin_config_path": env_path,
-            "base_url": "https://fcgo.example.test",
+            "base_url": "https://flgo.example.test",
         }
     )
 
@@ -521,9 +521,9 @@ def test_local_setup_bootstrap_allows_first_run_without_feishu_login(tmp_path) -
                     "csrf": csrf.group(1),
                     "next": "/admin/setup",
                     "config_scope": "setup",
-                    "env__FCGO_BASE_URL": "http://127.0.0.1:8000",
-                    "env__FCGO_ENV": "dev",
-                    "env__FCGO_AGENT_MODE": "agent",
+                    "env__FLGO_BASE_URL": "http://127.0.0.1:8000",
+                    "env__FLGO_ENV": "dev",
+                    "env__FLGO_AGENT_MODE": "agent",
                 }
             ),
             headers={"content-type": "application/x-www-form-urlencoded"},
@@ -537,13 +537,13 @@ def test_local_setup_bootstrap_allows_first_run_without_feishu_login(tmp_path) -
     assert setup.status_code == 200
     assert "首次安装模式" in setup.text
     assert "飞书登录绑定管理员" in setup.text
-    assert "https://fcgo.example.test" not in setup.text
+    assert "https://flgo.example.test" not in setup.text
     assert "http://127.0.0.1:8000/oauth/feishu/callback" in setup.text
     assert "http://127.0.0.1:8000/admin/oauth/callback" in setup.text
     assert update.status_code == 303
     assert "saved=config" in update.headers["location"]
     assert owner is None
-    assert "FCGO_BASE_URL=http://127.0.0.1:8000" in env_path.read_text(
+    assert "FLGO_BASE_URL=http://127.0.0.1:8000" in env_path.read_text(
         encoding="utf-8"
     )
 
@@ -575,7 +575,7 @@ def test_card_callback_confirms_pending_action(tmp_path, monkeypatch) -> None:
                     "operator": {"open_id": "ou_user"},
                     "action": {
                         "value": {
-                            "fcgo_action": "writeback.confirm",
+                            "flgo_action": "writeback.confirm",
                             "action_id": proposal.id,
                         }
                     },
@@ -701,7 +701,7 @@ def test_card_callback_supports_url_verification(tmp_path) -> None:
 def test_card_callback_reports_disabled_when_writeback_paused(tmp_path) -> None:
     settings = Settings(
         env="test",
-        sqlite_path=tmp_path / "fcgo.sqlite3",
+        sqlite_path=tmp_path / "flgo.sqlite3",
         feishu_app_id="cli_test",
         feishu_app_secret="secret",
         gemini_api_key="",
@@ -726,7 +726,7 @@ def test_card_callback_reports_disabled_when_writeback_paused(tmp_path) -> None:
 def _settings(tmp_path) -> Settings:
     return Settings(
         env="test",
-        sqlite_path=tmp_path / "fcgo.sqlite3",
+        sqlite_path=tmp_path / "flgo.sqlite3",
         base_url="http://localhost:8000",
         feishu_app_id="cli_test",
         feishu_app_secret="secret",

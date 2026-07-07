@@ -29,7 +29,7 @@ uv --version
 进入项目目录并安装依赖：
 
 ```powershell
-cd D:\CodingSpace\feishuGemini\fcgo
+cd D:\CodingSpace\feishuGemini\flgo
 uv sync
 ```
 
@@ -49,24 +49,24 @@ Copy-Item .env.example .env
 - `GEMINI_MODEL`
 - `GEMINI_HTTP_PROXY`：可选；当前网络或地区无法访问 Google AI API 时填写本地代理，例如 `http://127.0.0.1:7890`
 - `GEMINI_BASE_URL`：可选；使用 Gemini 兼容网关时填写
-- `FCGO_DEFAULT_PROVIDER` / `FCGO_DEFAULT_MODEL`：可选；用于选择部署默认 Provider 和模型
+- `FLGO_DEFAULT_PROVIDER` / `FLGO_DEFAULT_MODEL`：可选；用于选择部署默认 Provider 和模型
 - OpenAI 兼容 Provider：如需使用 OpenAI、DeepSeek、Qwen、Doubao 或 Minimax，填入对应
   `API_KEY`、`BASE_URL`、`MODEL`
-- `FCGO_BASE_URL`
-- `FCGO_START_LONG_CONNECTION=true`
-- `FCGO_AGENT_MODE=legacy`：默认保持当前稳定编排；测试 Agent + Tools 时改为 `agent`
-- `FCGO_WRITEBACK_ENABLED=false`：默认关闭写回；测试确认式写回时改为 `true`
-- `FCGO_WRITEBACK_AUTO_EXECUTE_ENABLED=false`：默认不允许用户开启低风险自动执行；需要该能力时改为 `true`
-- `FCGO_WRITEBACK_CONFIRMATION_MODE=always`：写回确认策略，可选 `always`（每次确认）、`low_risk_direct`（低风险自动执行）、`draft_only`（仅生成草稿）
+- `FLGO_BASE_URL`
+- `FLGO_START_LONG_CONNECTION=true`
+- `FLGO_AGENT_MODE=legacy`：默认保持当前稳定编排；测试 Agent + Tools 时改为 `agent`
+- `FLGO_WRITEBACK_ENABLED=false`：默认关闭写回；测试确认式写回时改为 `true`
+- `FLGO_WRITEBACK_AUTO_EXECUTE_ENABLED=false`：默认不允许用户开启低风险自动执行；需要该能力时改为 `true`
+- `FLGO_WRITEBACK_CONFIRMATION_MODE=always`：写回确认策略，可选 `always`（每次确认）、`low_risk_direct`（低风险自动执行）、`draft_only`（仅生成草稿）
 
 最小 Gemini 直连配置示例：
 
 ```env
-FCGO_ENV=prod
-FCGO_BASE_URL=https://fcgo.example.com
-FCGO_START_LONG_CONNECTION=true
-FCGO_DEFAULT_PROVIDER=gemini
-FCGO_AGENT_MODE=legacy
+FLGO_ENV=prod
+FLGO_BASE_URL=https://flgo.example.com
+FLGO_START_LONG_CONNECTION=true
+FLGO_DEFAULT_PROVIDER=gemini
+FLGO_AGENT_MODE=legacy
 
 FEISHU_APP_ID=cli_xxx
 FEISHU_APP_SECRET=xxx
@@ -76,12 +76,12 @@ GEMINI_MODEL=gemini-2.5-flash
 GEMINI_HTTP_PROXY=
 GEMINI_BASE_URL=
 
-FCGO_WRITEBACK_ENABLED=false
-FCGO_WRITEBACK_AUTO_EXECUTE_ENABLED=false
-FCGO_WRITEBACK_CONFIRMATION_MODE=always
+FLGO_WRITEBACK_ENABLED=false
+FLGO_WRITEBACK_AUTO_EXECUTE_ENABLED=false
+FLGO_WRITEBACK_CONFIRMATION_MODE=always
 ```
 
-`FCGO_BASE_URL` 必须填写部署服务的外部访问根地址，不要包含
+`FLGO_BASE_URL` 必须填写部署服务的外部访问根地址，不要包含
 `/oauth/feishu/callback` 路径。OAuth 完整回调地址由程序自动拼接。
 
 ### Gemini 网络路径
@@ -123,7 +123,7 @@ GEMINI_BASE_URL=https://your-gemini-compatible-gateway.example.com
 uv run flgo doctor
 ```
 
-当 `FCGO_DEFAULT_PROVIDER=gemini` 时，doctor 会执行一个轻量 Gemini 请求。只有默认直连报告
+当 `FLGO_DEFAULT_PROVIDER=gemini` 时，doctor 会执行一个轻量 Gemini 请求。只有默认直连报告
 网络、地区或 TLS 错误时，才切换到代理或兼容网关。API Key、额度或权限错误不能通过代理解决。
 doctor 通过后再重启正式服务。
 
@@ -131,7 +131,7 @@ OpenAI 兼容 Provider 只有在同一组 `API_KEY`、`BASE_URL`、`MODEL` 都�
 例如：
 
 ```env
-FCGO_DEFAULT_PROVIDER=deepseek
+FLGO_DEFAULT_PROVIDER=deepseek
 DEEPSEEK_API_KEY=sk-...
 DEEPSEEK_BASE_URL=https://your-openai-compatible-endpoint/v1
 DEEPSEEK_MODEL=your-model-name
@@ -140,7 +140,7 @@ DEEPSEEK_MODEL=your-model-name
 如果你所在网络访问某个 OpenAI 兼容接口也需要代理，可以配置：
 
 ```env
-FCGO_OPENAI_COMPATIBLE_HTTP_PROXY=http://127.0.0.1:7890
+FLGO_OPENAI_COMPATIBLE_HTTP_PROXY=http://127.0.0.1:7890
 ```
 
 媒体与工作流 Provider 当前只完成接口设计和 mock 测试，真实 Seedance、ComfyUI、Coze、Dify
@@ -170,12 +170,12 @@ DIFY_BASE_URL=
 - 记忆保存/删除确认卡片需要启用卡片交互回调；当前 worker 通过长连接处理卡片操作。
 - 开通聊天历史读取权限 `im:message:readonly`，用于当前会话近期上下文。
 - 应用权限管理中开通 OAuth 读取权限，例如 `docx:document:readonly`、`docs:document.media:download`、`wiki:node:read`、`sheets:spreadsheet:readonly`、`bitable:app:readonly`、`base:table:read`、`base:record:read`、`base:field:read`、`base:view:read`。
-- 如需自动刷新用户 access token，需要在飞书开发者后台开通 `offline_access`，然后设置 `FCGO_OAUTH_ENABLE_OFFLINE_ACCESS=true`。未开通时不要开启，否则飞书授权页会报 `20027` 应用权限不足。
-- 机器人授权回调地址：`{FCGO_BASE_URL}/oauth/feishu/callback`
-- 本地配置后台登录回调地址：`{FCGO_BASE_URL}/admin/oauth/callback`
+- 如需自动刷新用户 access token，需要在飞书开发者后台开通 `offline_access`，然后设置 `FLGO_OAUTH_ENABLE_OFFLINE_ACCESS=true`。未开通时不要开启，否则飞书授权页会报 `20027` 应用权限不足。
+- 机器人授权回调地址：`{FLGO_BASE_URL}/oauth/feishu/callback`
+- 本地配置后台登录回调地址：`{FLGO_BASE_URL}/admin/oauth/callback`
 
 写回和记忆确认卡片均通过长连接接收卡片操作。启用写回时设置
-`FCGO_WRITEBACK_ENABLED=true`；关闭时不会创建或执行写回。
+`FLGO_WRITEBACK_ENABLED=true`；关闭时不会创建或执行写回。
 
 ### 配置 OAuth 回调
 
@@ -185,21 +185,21 @@ DIFY_BASE_URL=
 
 部署时需要使用以下任一方式：
 
-- 本地测试：`FCGO_BASE_URL=http://127.0.0.1:8000`。
+- 本地测试：`FLGO_BASE_URL=http://127.0.0.1:8000`。
 - 服务器部署：将 飞灵（FLGO） 部署到带 HTTPS 域名的服务器。
 - 隧道或反向代理：使用公网 HTTPS 域名转发到 `127.0.0.1:8000`。
 
-例如外部地址是 `https://fcgo.example.com`：
+例如外部地址是 `https://flgo.example.com`：
 
 ```env
-FCGO_BASE_URL=https://fcgo.example.com
+FLGO_BASE_URL=https://flgo.example.com
 ```
 
 飞书开发者后台登记的回调地址必须完全一致：
 
 ```text
-https://fcgo.example.com/oauth/feishu/callback
-https://fcgo.example.com/admin/oauth/callback
+https://flgo.example.com/oauth/feishu/callback
+https://flgo.example.com/admin/oauth/callback
 ```
 
 更换域名、端口或协议后，需要同时更新 `.env` 和飞书开发者后台配置，并重启服务。
@@ -255,7 +255,7 @@ flgo.admin.open          打开本地配置网页
 - 机器人返回一次性 OAuth 链接。
 - 用户在浏览器完成授权后，回调会保存该用户的 token。
 - 用户可发送 `/授权 状态` 或点击授权状态菜单，检查 token 是否可用、是否缺少 scope。
-- 授权 state 默认 10 分钟过期，可通过 `FCGO_OAUTH_STATE_TTL_SECONDS` 调整。
+- 授权 state 默认 10 分钟过期，可通过 `FLGO_OAUTH_STATE_TTL_SECONDS` 调整。
 
 飞书资源读取以用户授权为准，但不是“只要用户能看就一定能读”。它需要同时满足：
 
@@ -267,65 +267,65 @@ flgo.admin.open          打开本地配置网页
 
 ```env
 FEISHU_OAUTH_SCOPES=auth:user.id:read drive:drive.search:readonly search:docs:read docx:document:readonly docx:document docs:document.media:download wiki:node:read wiki:wiki:readonly sheets:spreadsheet:readonly sheets:spreadsheet bitable:app:readonly bitable:app base:table:read base:record:read base:record:create base:record:update base:record:delete base:field:read base:view:read
-FCGO_OAUTH_ENABLE_OFFLINE_ACCESS=false
+FLGO_OAUTH_ENABLE_OFFLINE_ACCESS=false
 ```
 
 资料搜索和表格读取默认按安全上限执行，避免把过多飞书内容一次性塞进模型上下文：
 
 ```env
 FEISHU_DOCS_BASE_URL=https://my.feishu.cn
-FCGO_RESOURCE_SEARCH_ENABLED=true
-FCGO_RESOURCE_SEARCH_RESULT_LIMIT=5
-FCGO_RESOURCE_SEARCH_READ_LIMIT=3
-FCGO_MAX_SHEET_ROWS=200
-FCGO_DOC_BLOCK_SCAN_LIMIT=1000
-FCGO_EMBEDDED_FILE_LIMIT=3
-FCGO_EMBEDDED_FILE_MAX_BYTES=20971520
-FCGO_EMBEDDED_FILE_MAX_CHARS=40000
-FCGO_ATTACHMENT_OCR_ENABLED=false
-FCGO_ATTACHMENT_OCR_COMMAND=tesseract
-FCGO_ATTACHMENT_OCR_LANGUAGES=chi_sim+eng
-FCGO_ATTACHMENT_OCR_TIMEOUT_SECONDS=15
-FCGO_ATTACHMENT_OCR_MAX_PIXELS=20000000
-FCGO_ATTACHMENT_VISION_ENABLED=false
-FCGO_ATTACHMENT_VISION_PROVIDER=gemini
-FCGO_ATTACHMENT_VISION_MODEL=
-FCGO_ATTACHMENT_VISION_MAX_BYTES=5242880
-FCGO_ATTACHMENT_VISION_MAX_PIXELS=20000000
-FCGO_ATTACHMENT_MEDIA_UNDERSTANDING_ENABLED=false
-FCGO_ATTACHMENT_MEDIA_UNDERSTANDING_PROVIDER=gemini
-FCGO_ATTACHMENT_MEDIA_UNDERSTANDING_MODEL=
-FCGO_ATTACHMENT_MEDIA_UNDERSTANDING_MAX_BYTES=20971520
-FCGO_EMBEDDED_LINK_LIMIT=20
-FCGO_PDF_DEFAULT_PAGES=2
-FCGO_PDF_MAX_PAGES=10
-FCGO_PDF_EXTRACT_TIMEOUT_SECONDS=20
-FCGO_MAX_SHEET_COLUMNS=26
-FCGO_WEB_READ_ENABLED=true
-FCGO_WEB_TIMEOUT_SECONDS=20
-FCGO_WEB_MAX_BYTES=1000000
-FCGO_WEB_ALLOWED_HOSTS=
-FCGO_WEB_BLOCKED_HOSTS=
+FLGO_RESOURCE_SEARCH_ENABLED=true
+FLGO_RESOURCE_SEARCH_RESULT_LIMIT=5
+FLGO_RESOURCE_SEARCH_READ_LIMIT=3
+FLGO_MAX_SHEET_ROWS=200
+FLGO_DOC_BLOCK_SCAN_LIMIT=1000
+FLGO_EMBEDDED_FILE_LIMIT=3
+FLGO_EMBEDDED_FILE_MAX_BYTES=20971520
+FLGO_EMBEDDED_FILE_MAX_CHARS=40000
+FLGO_ATTACHMENT_OCR_ENABLED=false
+FLGO_ATTACHMENT_OCR_COMMAND=tesseract
+FLGO_ATTACHMENT_OCR_LANGUAGES=chi_sim+eng
+FLGO_ATTACHMENT_OCR_TIMEOUT_SECONDS=15
+FLGO_ATTACHMENT_OCR_MAX_PIXELS=20000000
+FLGO_ATTACHMENT_VISION_ENABLED=false
+FLGO_ATTACHMENT_VISION_PROVIDER=gemini
+FLGO_ATTACHMENT_VISION_MODEL=
+FLGO_ATTACHMENT_VISION_MAX_BYTES=5242880
+FLGO_ATTACHMENT_VISION_MAX_PIXELS=20000000
+FLGO_ATTACHMENT_MEDIA_UNDERSTANDING_ENABLED=false
+FLGO_ATTACHMENT_MEDIA_UNDERSTANDING_PROVIDER=gemini
+FLGO_ATTACHMENT_MEDIA_UNDERSTANDING_MODEL=
+FLGO_ATTACHMENT_MEDIA_UNDERSTANDING_MAX_BYTES=20971520
+FLGO_EMBEDDED_LINK_LIMIT=20
+FLGO_PDF_DEFAULT_PAGES=2
+FLGO_PDF_MAX_PAGES=10
+FLGO_PDF_EXTRACT_TIMEOUT_SECONDS=20
+FLGO_MAX_SHEET_COLUMNS=26
+FLGO_WEB_READ_ENABLED=true
+FLGO_WEB_TIMEOUT_SECONDS=20
+FLGO_WEB_MAX_BYTES=1000000
+FLGO_WEB_ALLOWED_HOSTS=
+FLGO_WEB_BLOCKED_HOSTS=
 ```
 
 内嵌对象读取说明：
 
-- `FCGO_EMBEDDED_FILE_LIMIT` 限制单篇文档下载和检查的文件/图片数量。
-- `FCGO_EMBEDDED_FILE_MAX_BYTES` 限制单个素材下载体积。
-- `FCGO_EMBEDDED_FILE_MAX_CHARS` 限制单个附件注入模型上下文的文本长度。
-- `FCGO_ATTACHMENT_OCR_ENABLED` 默认关闭。设为 `true` 后，图片附件会调用本机
-  `FCGO_ATTACHMENT_OCR_COMMAND` 指向的 Tesseract 命令做 OCR；如果本机未安装或超时，会保留图片元数据并返回原因。
-- `FCGO_ATTACHMENT_OCR_LANGUAGES` 默认 `chi_sim+eng`，需要本机 Tesseract 已安装对应语言包。
-- `FCGO_ATTACHMENT_OCR_TIMEOUT_SECONDS` 和 `FCGO_ATTACHMENT_OCR_MAX_PIXELS` 用于限制 OCR 成本和大图风险。
-- `FCGO_ATTACHMENT_VISION_ENABLED` 默认关闭。设为 `true` 后，图片附件会优先发送给
-  `FCGO_ATTACHMENT_VISION_PROVIDER` 指定的支持视觉输入的模型做图片理解；失败时回退到 OCR 或图片元数据。
-- `FCGO_ATTACHMENT_VISION_MODEL` 可指定视觉模型，留空则使用该 Provider 默认模型。
-- `FCGO_ATTACHMENT_VISION_MAX_BYTES` 和 `FCGO_ATTACHMENT_VISION_MAX_PIXELS` 用于限制图片发送到模型的体积和尺寸。
-- `FCGO_ATTACHMENT_MEDIA_UNDERSTANDING_ENABLED` 默认关闭。设为 `true` 后，音频和视频附件会优先发送给
-  `FCGO_ATTACHMENT_MEDIA_UNDERSTANDING_PROVIDER` 指定的多模态模型做转写或内容理解；失败时回退到安全元数据说明。
-- `FCGO_ATTACHMENT_MEDIA_UNDERSTANDING_MODEL` 可指定媒体理解模型，留空则使用该 Provider 默认模型。
-- `FCGO_ATTACHMENT_MEDIA_UNDERSTANDING_MAX_BYTES` 用于限制音视频发送到模型的体积。
-- `FCGO_EMBEDDED_LINK_LIMIT` 限制单篇文档列出的超链接、`@文档` 和内嵌网页数量。
+- `FLGO_EMBEDDED_FILE_LIMIT` 限制单篇文档下载和检查的文件/图片数量。
+- `FLGO_EMBEDDED_FILE_MAX_BYTES` 限制单个素材下载体积。
+- `FLGO_EMBEDDED_FILE_MAX_CHARS` 限制单个附件注入模型上下文的文本长度。
+- `FLGO_ATTACHMENT_OCR_ENABLED` 默认关闭。设为 `true` 后，图片附件会调用本机
+  `FLGO_ATTACHMENT_OCR_COMMAND` 指向的 Tesseract 命令做 OCR；如果本机未安装或超时，会保留图片元数据并返回原因。
+- `FLGO_ATTACHMENT_OCR_LANGUAGES` 默认 `chi_sim+eng`，需要本机 Tesseract 已安装对应语言包。
+- `FLGO_ATTACHMENT_OCR_TIMEOUT_SECONDS` 和 `FLGO_ATTACHMENT_OCR_MAX_PIXELS` 用于限制 OCR 成本和大图风险。
+- `FLGO_ATTACHMENT_VISION_ENABLED` 默认关闭。设为 `true` 后，图片附件会优先发送给
+  `FLGO_ATTACHMENT_VISION_PROVIDER` 指定的支持视觉输入的模型做图片理解；失败时回退到 OCR 或图片元数据。
+- `FLGO_ATTACHMENT_VISION_MODEL` 可指定视觉模型，留空则使用该 Provider 默认模型。
+- `FLGO_ATTACHMENT_VISION_MAX_BYTES` 和 `FLGO_ATTACHMENT_VISION_MAX_PIXELS` 用于限制图片发送到模型的体积和尺寸。
+- `FLGO_ATTACHMENT_MEDIA_UNDERSTANDING_ENABLED` 默认关闭。设为 `true` 后，音频和视频附件会优先发送给
+  `FLGO_ATTACHMENT_MEDIA_UNDERSTANDING_PROVIDER` 指定的多模态模型做转写或内容理解；失败时回退到安全元数据说明。
+- `FLGO_ATTACHMENT_MEDIA_UNDERSTANDING_MODEL` 可指定媒体理解模型，留空则使用该 Provider 默认模型。
+- `FLGO_ATTACHMENT_MEDIA_UNDERSTANDING_MAX_BYTES` 用于限制音视频发送到模型的体积。
+- `FLGO_EMBEDDED_LINK_LIMIT` 限制单篇文档列出的超链接、`@文档` 和内嵌网页数量。
 - Office Open XML 文件在解析前检查压缩包条目数和解压后体积，避免压缩炸弹。
 - 可执行文件不会执行，压缩包不会解压，脚本文件只按纯文本读取。
 
@@ -335,23 +335,23 @@ SQLite 或审计 detail。如果搜索响应包含可打开 URL，会直接使�
 `FEISHU_DOCS_BASE_URL` 和资源 token 生成链接。
 
 普通网页链接只有在用户或 Agent 明确读取外链时才会抓取，不会自动递归读取飞书文档里的所有外链。
-`FCGO_WEB_READ_ENABLED=false` 可关闭普通网页读取。开启时会按 `FCGO_WEB_TIMEOUT_SECONDS` 抓取，并只读取
+`FLGO_WEB_READ_ENABLED=false` 可关闭普通网页读取。开启时会按 `FLGO_WEB_TIMEOUT_SECONDS` 抓取，并只读取
 `text/html`、`text/plain` 和 `application/xhtml+xml` 这类可读文本内容；本机、内网、保留地址、二进制或
-超过 `FCGO_WEB_MAX_BYTES` 的内容会被安全跳过。`FCGO_WEB_ALLOWED_HOSTS` 可限制只读指定域名，
-`FCGO_WEB_BLOCKED_HOSTS` 可禁止指定域名；多个域名可用空格或逗号分隔。
+超过 `FLGO_WEB_MAX_BYTES` 的内容会被安全跳过。`FLGO_WEB_ALLOWED_HOSTS` 可限制只读指定域名，
+`FLGO_WEB_BLOCKED_HOSTS` 可禁止指定域名；多个域名可用空格或逗号分隔。
 
 上下文与记忆隐私默认值：
 
 ```env
-FCGO_CONTEXT_RECENT_MESSAGE_LIMIT=50
-FCGO_CONTEXT_RECENT_TIME_WINDOW_HOURS=24
-FCGO_CONTEXT_CACHE_TTL_HOURS=24
-FCGO_CONTEXT_CACHE_REFRESH_SECONDS=60
-FCGO_CONTEXT_INJECT_MESSAGE_LIMIT=8
-FCGO_CONTEXT_MAX_CHARS=6000
-FCGO_MEMORY_STORE_RAW_TEXT=false
-FCGO_MEMORY_ITEM_MAX_CHARS=2000
-FCGO_MEMORY_CONTEXT_MAX_CHARS=4000
+FLGO_CONTEXT_RECENT_MESSAGE_LIMIT=50
+FLGO_CONTEXT_RECENT_TIME_WINDOW_HOURS=24
+FLGO_CONTEXT_CACHE_TTL_HOURS=24
+FLGO_CONTEXT_CACHE_REFRESH_SECONDS=60
+FLGO_CONTEXT_INJECT_MESSAGE_LIMIT=8
+FLGO_CONTEXT_MAX_CHARS=6000
+FLGO_MEMORY_STORE_RAW_TEXT=false
+FLGO_MEMORY_ITEM_MAX_CHARS=2000
+FLGO_MEMORY_CONTEXT_MAX_CHARS=4000
 ```
 
 默认开启当前会话上下文读取；未授权或读取失败时会降级为无历史上下文继续回答。系统不会把完整聊天、飞书资源、网页或附件正文保存为长期记忆。详细边界见
@@ -360,9 +360,9 @@ FCGO_MEMORY_CONTEXT_MAX_CHARS=4000
 当前会话聊天历史读取使用应用权限 `im:message:readonly` 和 tenant token，不依赖用户 OAuth。
 飞灵（FLGO） 会短期缓存最近聊天原文，用于减少重复飞书 API 调用；缓存按 TTL 自动清理。
 每次模型请求会优先注入近期全文消息，并受
-`FCGO_CONTEXT_INJECT_MESSAGE_LIMIT` 和 `FCGO_CONTEXT_MAX_CHARS` 限制。
+`FLGO_CONTEXT_INJECT_MESSAGE_LIMIT` 和 `FLGO_CONTEXT_MAX_CHARS` 限制。
 超过近期窗口或字符预算的旧消息会压缩成当前会话滚动摘要。长期记忆开启时，私聊会话摘要会作为用户可查看、可删除的 `会话摘要` 记忆保存；聊天缓存不会写入长期记忆，系统也不会保存完整聊天原文。
-单条长期记忆和每次注入模型上下文的长期记忆总量分别受 `FCGO_MEMORY_ITEM_MAX_CHARS` 和 `FCGO_MEMORY_CONTEXT_MAX_CHARS` 限制。
+单条长期记忆和每次注入模型上下文的长期记忆总量分别受 `FLGO_MEMORY_ITEM_MAX_CHARS` 和 `FLGO_MEMORY_CONTEXT_MAX_CHARS` 限制。
 
 用户可在飞书中使用以下隐私控制指令：
 
@@ -430,12 +430,12 @@ uv run flgo service stop
 ```
 
 `status` 会返回当前健康状态、端口、进程 ID 和日志位置。端口被其他程序占用时，
-会明确提示关闭占用程序或修改 `FCGO_PORT`。
+会明确提示关闭占用程序或修改 `FLGO_PORT`。
 
 如果只想双击或从安装器入口打开，可以使用本地启动器脚本：
 
 ```powershell
-.\.venv\Scripts\python.exe .\scripts\fcgo_launcher.py
+.\.venv\Scripts\python.exe .\scripts\flgo_launcher.py
 ```
 
 首次安装时，启动服务后可直接打开本机向导，不需要先通过飞书机器人或飞书登录：
@@ -456,7 +456,7 @@ uv run flgo serve
 前提是 `.env` 已设置：
 
 ```env
-FCGO_START_LONG_CONNECTION=true
+FLGO_START_LONG_CONNECTION=true
 ```
 
 只启动长连接 worker：
@@ -465,7 +465,7 @@ FCGO_START_LONG_CONNECTION=true
 uv run flgo worker
 ```
 
-不要同时运行多个 `fcgo worker` 或多个启用了长连接的 `fcgo serve`，否则可能重复消费飞书事件。
+不要同时运行多个 `flgo worker` 或多个启用了长连接的 `flgo serve`，否则可能重复消费飞书事件。
 
 ## 6. 健康检查
 
@@ -520,9 +520,9 @@ uv run mypy
 - doctor 报 Gemini 地区或网络错误：先保持 `GEMINI_BASE_URL` 为空，只设置 `GEMINI_HTTP_PROXY` 后重试。
 - doctor 报 Gemini API Key、额度或权限错误：检查 Key 和额度；不要通过切换代理掩盖认证问题。
 - 兼容网关无法访问：清空 `GEMINI_HTTP_PROXY`，确认 `GEMINI_BASE_URL` 是网关要求的 API 根地址。
-- OAuth 回调打不开：确认 `FCGO_BASE_URL` 是公网 HTTPS 根地址，且飞书后台登记了完全相同的回调 URL。
+- OAuth 回调打不开：确认 `FLGO_BASE_URL` 是公网 HTTPS 根地址，且飞书后台登记了完全相同的回调 URL。
 - OAuth 成功后仍缺权限：确认飞书后台已开通并发布新 scope，然后让用户重新发送 `/授权`。
-- 模型无法访问：先确认当前 `FCGO_DEFAULT_PROVIDER` 是否已注册；OpenAI 兼容 Provider 检查对应 `API_KEY`、`BASE_URL`、`MODEL` 以及 `FCGO_OPENAI_COMPATIBLE_HTTP_PROXY`；Claude 检查 `ANTHROPIC_*` 配置。
+- 模型无法访问：先确认当前 `FLGO_DEFAULT_PROVIDER` 是否已注册；OpenAI 兼容 Provider 检查对应 `API_KEY`、`BASE_URL`、`MODEL` 以及 `FLGO_OPENAI_COMPATIBLE_HTTP_PROXY`；Claude 检查 `ANTHROPIC_*` 配置。
 - 飞书消息收不到：检查应用是否启用机器人和长连接事件订阅。
 - 私有文档无法读取：先确认用户本人能打开文档；再确认开发者后台已开通对应 API 权限；最后让用户重新发送 `/授权`，确保 token 包含文档读取 scope。旧 token 只包含 `auth:user.id:read` 时无法读取文档正文。
 - 写入请求没有卡片：当前分支默认暂停写入，这是预期行为；机器人应返回草稿或操作建议。

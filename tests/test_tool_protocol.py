@@ -2,8 +2,8 @@ from datetime import UTC, datetime
 
 import pytest
 
-from fcgo.agent.tools import ToolExecutionContext, default_tool_registry, model_tool_specs
-from fcgo.models import (
+from flgo.agent.tools import ToolExecutionContext, default_tool_registry, model_tool_specs
+from flgo.models import (
     ActionProposalDraft,
     AssistantRequest,
     ConversationType,

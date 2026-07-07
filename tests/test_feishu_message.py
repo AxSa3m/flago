@@ -1,8 +1,8 @@
 from lark_oapi.api.im.v1.model.p2_im_message_receive_v1 import P2ImMessageReceiveV1
 
-from fcgo.feishu.menu import parse_bot_menu_event
-from fcgo.feishu.message import parse_text_message
-from fcgo.models import ConversationType
+from flgo.feishu.menu import parse_bot_menu_event
+from flgo.feishu.message import parse_text_message
+from flgo.models import ConversationType
 
 
 def test_parse_text_message_from_lark_sdk_object() -> None:
@@ -344,7 +344,7 @@ def test_parse_bot_menu_event_from_dict() -> None:
                         "union_id": "on_union",
                     },
                 },
-                "event_key": "fcgo.model.view",
+                "event_key": "flgo.model.view",
                 "timestamp": 1710000000,
             },
         }
@@ -352,7 +352,7 @@ def test_parse_bot_menu_event_from_dict() -> None:
 
     assert event is not None
     assert event.event_id == "evt_menu_1"
-    assert event.event_key == "fcgo.model.view"
+    assert event.event_key == "flgo.model.view"
     assert event.operator_open_id == "ou_user"
     assert event.operator_user_id == "user_1"
     assert event.operator_name == "木町"

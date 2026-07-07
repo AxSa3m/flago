@@ -1,5 +1,5 @@
-from fcgo.config import Settings
-from fcgo.models import WritebackConfirmationMode
+from flgo.config import Settings
+from flgo.models import WritebackConfirmationMode
 
 
 def test_context_and_memory_privacy_defaults_are_conservative() -> None:

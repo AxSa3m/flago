@@ -2,16 +2,16 @@ from types import SimpleNamespace
 
 import pytest
 
-from fcgo.config import Settings
-from fcgo.gemini.provider import GeminiProvider
-from fcgo.model_providers import (
+from flgo.config import Settings
+from flgo.gemini.provider import GeminiProvider
+from flgo.model_providers import (
     ModelAttachment,
     ModelMessage,
     ModelMessageRole,
     ModelRequest,
     ProviderCapability,
 )
-from fcgo.models import (
+from flgo.models import (
     AssistantRequest,
     ConversationType,
     ResourceReadResult,
@@ -89,7 +89,7 @@ def test_prompt_keeps_writeback_paused_on_read_only_branch() -> None:
     assert "当前写回功能已关闭" in prompt
     assert "不要输出写回 JSON" in prompt
     assert "可复制的草稿或操作建议" in prompt
-    assert "fcgo_writeback" not in prompt
+    assert "flgo_writeback" not in prompt
 
 
 def test_prompt_enables_confirmed_writeback_when_runtime_switch_is_on() -> None:

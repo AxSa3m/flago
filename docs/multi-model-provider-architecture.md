@@ -153,7 +153,7 @@ Seedance、ComfyUI API 不是普通聊天模型。它们应该作为媒体或工
 
 这类任务通常有更高成本和更长耗时，默认应要求用户显式触发，必要时用飞书卡片确认。
 
-当前代码已新增独立的 `fcgo.media_workflows` 协议层，不进入普通 `ModelRouter.generate_model`
+当前代码已新增独立的 `flgo.media_workflows` 协议层，不进入普通 `ModelRouter.generate_model`
 聊天路径：
 
 - `MediaWorkflowRequest`：提交图像生成、视频生成或工作流执行请求。
@@ -178,15 +178,15 @@ Seedance、ComfyUI API 不是普通聊天模型。它们应该作为媒体或工
 
 ## 配置草案
 
-短期继续使用 `.env`。当前已经实现 `FCGO_DEFAULT_PROVIDER` 和
-`FCGO_DEFAULT_MODEL`，用于部署级默认 Provider/模型选择；OpenAI-compatible Provider
+短期继续使用 `.env`。当前已经实现 `FLGO_DEFAULT_PROVIDER` 和
+`FLGO_DEFAULT_MODEL`，用于部署级默认 Provider/模型选择；OpenAI-compatible Provider
 会在同一组 `API_KEY`、`BASE_URL`、`MODEL` 都存在时注册。
 
 ```env
-FCGO_DEFAULT_PROVIDER=gemini
-FCGO_DEFAULT_MODEL=
-FCGO_MODEL_TEST_MAX_OUTPUT_TOKENS=1024
-FCGO_MODEL_PROVIDER_CONCURRENCY_LIMIT=4
+FLGO_DEFAULT_PROVIDER=gemini
+FLGO_DEFAULT_MODEL=
+FLGO_MODEL_TEST_MAX_OUTPUT_TOKENS=1024
+FLGO_MODEL_PROVIDER_CONCURRENCY_LIMIT=4
 
 GEMINI_API_KEY=
 GEMINI_BASE_URL=
@@ -195,9 +195,9 @@ GEMINI_TIMEOUT_SECONDS=60
 GEMINI_MAX_OUTPUT_TOKENS=
 GEMINI_THINKING_BUDGET=
 
-FCGO_OPENAI_COMPATIBLE_TIMEOUT_SECONDS=60
-FCGO_OPENAI_COMPATIBLE_MAX_OUTPUT_TOKENS=
-FCGO_OPENAI_COMPATIBLE_HTTP_PROXY=
+FLGO_OPENAI_COMPATIBLE_TIMEOUT_SECONDS=60
+FLGO_OPENAI_COMPATIBLE_MAX_OUTPUT_TOKENS=
+FLGO_OPENAI_COMPATIBLE_HTTP_PROXY=
 
 OPENAI_API_KEY=
 OPENAI_BASE_URL=https://api.openai.com/v1
@@ -288,7 +288,7 @@ on = ["rate_limit", "temporarily_unavailable"]
 - 生成类任务默认需要显式触发；高成本媒体生成任务建议增加确认卡片。
 - usage、latency、provider、model 可以写入审计日志；用户正文不写入审计日志。
 - 当前实现由 `ModelRouter` 统一记录模型审计元数据，并按 provider 执行并发限制和超时保护。
-- test 环境默认使用 `FCGO_MODEL_TEST_MAX_OUTPUT_TOKENS` 限制输出；dev/prod 默认不硬限制，除非显式设置 Provider 的 max token。
+- test 环境默认使用 `FLGO_MODEL_TEST_MAX_OUTPUT_TOKENS` 限制输出；dev/prod 默认不硬限制，除非显式设置 Provider 的 max token。
 
 ## 测试策略
 
