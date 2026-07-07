@@ -29,6 +29,7 @@
 - 新增 `uv run fcgo package build`，可生成当前平台的便携启动包；`--target all` 可生成
   Windows/macOS/Linux 三个平台脚本包。
 - 便携包不会复制 `.env`、`.venv`、数据库、日志和 PowerShell 脚本，避免泄露本机密钥或触发脚本误报。
+- 新增 [小白安装与配置指南](beginner-installation-guide.md)，按启动、飞书配置、模型配置、菜单配置和排错顺序引导非技术用户。
 - 全局环境参数保存后需要重启服务才会完全生效。
 
 ## 管理员模型

@@ -3,6 +3,8 @@
 FCGO 当前提供便携启动包作为安装器 MVP。它不是完整图形安装器，但已经可以把项目打成
 Windows/macOS/Linux 可解压运行的目录和压缩包。
 
+给最终用户配置时，建议配合 [小白安装与配置指南](beginner-installation-guide.md) 使用。
+
 ## 生成
 
 生成当前系统平台的包：

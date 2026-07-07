@@ -66,6 +66,7 @@ uv run fcgo doctor
 
 更多文档：
 
+- [小白安装与配置指南](docs/beginner-installation-guide.md)
 - [产品规格](docs/product-spec.md)
 - [MVP 验收测试矩阵](docs/mvp-acceptance-tests.md)
 - [架构说明](docs/architecture.md)
