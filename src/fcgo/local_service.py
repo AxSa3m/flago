@@ -39,7 +39,7 @@ def service_status(
 ) -> dict[str, Any]:
     root = workspace or workspace_root()
     service_port = port or default_port()
-    pids = fcgo_server_pids()
+    pids = fcgo_server_pids(root)
     health = True if assume_http_running else _health_ok(service_port)
     port_busy = _port_in_use(service_port)
     stdout_log, stderr_log = service_logs(root)
@@ -82,14 +82,14 @@ def run_service_action(
     if action == "status":
         return service_status(workspace=root, port=service_port)
     if action == "stop":
-        stopped = stop_service()
+        stopped = stop_service(root)
         status = service_status(workspace=root, port=service_port)
         return {"action": action, "stopped_pids": stopped, **status}
     if action == "start":
         result = start_service(workspace=root, port=service_port, startup_timeout=timeout)
         return {"action": action, **result}
     if action == "restart":
-        stopped = stop_service()
+        stopped = stop_service(root)
         result = start_service(workspace=root, port=service_port, startup_timeout=timeout)
         return {"action": action, "stopped_pids": stopped, **result}
     raise ValueError(f"unknown service action: {action}")
@@ -172,17 +172,24 @@ def start_service(
     return service_status(workspace=root, port=service_port) | {"pid": proc.pid}
 
 
-def stop_service() -> list[int]:
-    pids = fcgo_server_pids()
+def stop_service(workspace: Path | None = None) -> list[int]:
+    pids = fcgo_server_pids(workspace, exclude_current=True)
     for pid in pids:
         _kill_process(pid)
-    _wait_until_stopped()
+    _wait_until_stopped(workspace)
     return pids
 
 
-def fcgo_server_pids() -> list[int]:
+def fcgo_server_pids(
+    workspace: Path | None = None,
+    *,
+    exclude_current: bool = True,
+) -> list[int]:
     if os.name == "nt":
-        return _windows_fcgo_server_pids()
+        return _windows_fcgo_server_pids(
+            workspace,
+            exclude_pid=os.getpid() if exclude_current else None,
+        )
     return _posix_fcgo_server_pids()
 
 
@@ -193,7 +200,11 @@ def _service_python(workspace: Path) -> Path:
     return Path(sys.executable)
 
 
-def _windows_fcgo_server_pids() -> list[int]:
+def _windows_fcgo_server_pids(
+    workspace: Path | None = None,
+    *,
+    exclude_pid: int | None = None,
+) -> list[int]:
     command = (
         "Get-CimInstance Win32_Process | "
         "Where-Object { $_.Name -like 'python*' -and "
@@ -208,6 +219,46 @@ def _windows_fcgo_server_pids() -> list[int]:
     )
     if completed.returncode != 0:
         raise RuntimeError(completed.stderr.strip() or "failed to inspect processes")
+    pids = set(_parse_pids(completed.stdout))
+    if workspace is not None:
+        module_pids = set(_windows_python_pids_using_workspace_modules(workspace))
+        if exclude_pid is not None:
+            module_pids.discard(exclude_pid)
+        pids.update(module_pids)
+    return sorted(pids)
+
+
+def _windows_python_pids_using_workspace_modules(workspace: Path) -> list[int]:
+    root = str(workspace.resolve()).rstrip("\\/")
+    root_literal = "'" + root.replace("'", "''") + "'"
+    command = (
+        f"$root = {root_literal}; "
+        "$commands = @{}; "
+        "Get-CimInstance Win32_Process | "
+        "Where-Object { $_.Name -like 'python*' } | "
+        "ForEach-Object { $commands[[int]$_.ProcessId] = $_.CommandLine }; "
+        "$ids = @(); "
+        "Get-Process -Name python* -ErrorAction SilentlyContinue | ForEach-Object { "
+        "$p = $_; "
+        "$cmd = $commands[[int]$p.Id]; "
+        "if ($cmd -like '*spawn_main*' -or $cmd -like '*-m fcgo.cli serve*') { "
+        "try { "
+        "foreach ($m in $p.Modules) { "
+        "if ($m.FileName -like \"$root*\") { $ids += $p.Id; break } "
+        "} "
+        "} catch {} "
+        "} "
+        "}; "
+        "$ids | Sort-Object -Unique | ConvertTo-Json"
+    )
+    completed = subprocess.run(
+        ["powershell", "-NoProfile", "-Command", command],
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+    if completed.returncode != 0:
+        return []
     return _parse_pids(completed.stdout)
 
 
@@ -252,10 +303,10 @@ def _kill_process(pid: int) -> None:
     )
 
 
-def _wait_until_stopped() -> None:
+def _wait_until_stopped(workspace: Path | None = None) -> None:
     deadline = time.monotonic() + 10
     while time.monotonic() < deadline:
-        if not fcgo_server_pids():
+        if not fcgo_server_pids(workspace, exclude_current=True):
             return
         time.sleep(0.3)
     raise RuntimeError("old fcgo server process did not stop within 10 seconds")

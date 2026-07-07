@@ -61,6 +61,7 @@ def build_portable_package(
         source = root / name
         if source.exists():
             shutil.copy2(source, package_dir / name)
+    _prepare_portable_env_example(package_dir / ".env.example")
 
     for name in INCLUDE_DIRS:
         source = root / name
@@ -107,6 +108,10 @@ chcp 65001 >nul
 setlocal
 cd /d "%~dp0"
 
+set FCGO_ENV=prod
+set FCGO_RESTART_TIMEOUT_SECONDS=120
+set UV_LINK_MODE=copy
+
 if not exist ".env" (
   copy ".env.example" ".env" >nul
 )
@@ -136,6 +141,10 @@ def _unix_launcher() -> str:
 set -eu
 cd "$(dirname "$0")"
 
+export FCGO_ENV="${FCGO_ENV:-prod}"
+export FCGO_RESTART_TIMEOUT_SECONDS="${FCGO_RESTART_TIMEOUT_SECONDS:-120}"
+export UV_LINK_MODE="${UV_LINK_MODE:-copy}"
+
 if [ ! -f ".env" ]; then
   cp ".env.example" ".env"
 fi
@@ -149,6 +158,33 @@ fi
 uv sync
 uv run fcgo service start --open-admin
 """
+
+
+def _prepare_portable_env_example(path: Path) -> None:
+    if not path.exists():
+        return
+    replacements = {
+        "FCGO_ENV": "prod",
+        "FCGO_START_LONG_CONNECTION": "false",
+    }
+    lines = path.read_text(encoding="utf-8").splitlines()
+    updated: list[str] = []
+    seen: set[str] = set()
+    for line in lines:
+        key = (
+            line.split("=", 1)[0].strip()
+            if "=" in line and not line.lstrip().startswith("#")
+            else ""
+        )
+        if key in replacements:
+            updated.append(f"{key}={replacements[key]}")
+            seen.add(key)
+        else:
+            updated.append(line)
+    for key, value in replacements.items():
+        if key not in seen:
+            updated.append(f"{key}={value}")
+    path.write_text("\n".join(updated) + "\n", encoding="utf-8")
 
 
 def _write_portable_readme(package_dir: Path, target: PackageTarget) -> None:

@@ -4,7 +4,7 @@ from fcgo import local_service
 
 
 def test_service_status_reports_running(monkeypatch, tmp_path: Path) -> None:
-    monkeypatch.setattr(local_service, "fcgo_server_pids", lambda: [123])
+    monkeypatch.setattr(local_service, "fcgo_server_pids", lambda *args, **kwargs: [123])
     monkeypatch.setattr(local_service, "_health_ok", lambda port: True)
     monkeypatch.setattr(local_service, "_port_in_use", lambda port: True)
 
@@ -17,7 +17,7 @@ def test_service_status_reports_running(monkeypatch, tmp_path: Path) -> None:
 
 
 def test_service_status_reports_blocked_port(monkeypatch, tmp_path: Path) -> None:
-    monkeypatch.setattr(local_service, "fcgo_server_pids", lambda: [])
+    monkeypatch.setattr(local_service, "fcgo_server_pids", lambda *args, **kwargs: [])
     monkeypatch.setattr(local_service, "_health_ok", lambda port: False)
     monkeypatch.setattr(local_service, "_port_in_use", lambda port: True)
 
@@ -29,7 +29,7 @@ def test_service_status_reports_blocked_port(monkeypatch, tmp_path: Path) -> Non
 
 
 def test_service_status_reports_starting_process(monkeypatch, tmp_path: Path) -> None:
-    monkeypatch.setattr(local_service, "fcgo_server_pids", lambda: [123])
+    monkeypatch.setattr(local_service, "fcgo_server_pids", lambda *args, **kwargs: [123])
     monkeypatch.setattr(local_service, "_health_ok", lambda port: False)
     monkeypatch.setattr(local_service, "_port_in_use", lambda port: True)
 
@@ -43,7 +43,7 @@ def test_service_status_can_assume_current_http_request_is_running(
     monkeypatch,
     tmp_path: Path,
 ) -> None:
-    monkeypatch.setattr(local_service, "fcgo_server_pids", lambda: [123])
+    monkeypatch.setattr(local_service, "fcgo_server_pids", lambda *args, **kwargs: [123])
     monkeypatch.setattr(
         local_service,
         "_health_ok",
