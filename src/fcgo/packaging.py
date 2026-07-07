@@ -166,7 +166,22 @@ def _prepare_portable_env_example(path: Path) -> None:
     replacements = {
         "FCGO_ENV": "prod",
         "FCGO_START_LONG_CONNECTION": "false",
+        "FCGO_ADMIN_SESSION_SECRET": "",
+        "FEISHU_APP_ID": "",
+        "FEISHU_APP_SECRET": "",
+        "GEMINI_API_KEY": "",
+        "OPENAI_API_KEY": "",
+        "DEEPSEEK_API_KEY": "",
+        "QWEN_API_KEY": "",
+        "DOUBAO_API_KEY": "",
+        "MINIMAX_API_KEY": "",
+        "ANTHROPIC_API_KEY": "",
+        "SEEDANCE_API_KEY": "",
+        "COMFYUI_API_KEY": "",
+        "COZE_API_KEY": "",
+        "DIFY_API_KEY": "",
     }
+    append_missing = {"FCGO_ENV", "FCGO_START_LONG_CONNECTION"}
     lines = path.read_text(encoding="utf-8").splitlines()
     updated: list[str] = []
     seen: set[str] = set()
@@ -182,7 +197,7 @@ def _prepare_portable_env_example(path: Path) -> None:
         else:
             updated.append(line)
     for key, value in replacements.items():
-        if key not in seen:
+        if key not in seen and key in append_missing:
             updated.append(f"{key}={value}")
     path.write_text("\n".join(updated) + "\n", encoding="utf-8")
 

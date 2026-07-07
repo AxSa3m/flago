@@ -1657,8 +1657,8 @@ async def _setup_admin_page(
                   <p>配置完成后，可以在飞书里给机器人发消息，让它搜索、读取和处理你授权的内容。</p>
                 </div>
                 <div>
-                  <strong>你暂时不用管什么</strong>
-                  <p>写入策略、网页读取、图片理解、代理、scope、数据库路径等都可以以后在后台调整。</p>
+                  <strong>你需要先准备什么</strong>
+                  <p>先在飞书开放平台创建一个自建应用，并启用机器人能力；本程序不会自动创建飞书应用。</p>
                 </div>
               </div>
               <div class="setup-actions">
@@ -1696,10 +1696,10 @@ async def _setup_admin_page(
 
             <article class="setup-step" data-setup-step="2" hidden>
               <span class="setup-kicker">第 3 步</span>
-              <h2>连接你的飞书机器人应用</h2>
+              <h2>填写你创建好的飞书应用</h2>
               <p>
-                这两个值来自飞书开放平台的自建应用。程序会用它们确认“这个机器人确实是你的”，
-                并代表机器人接收消息、发送回复。
+                如果还没有创建，请先去飞书开放平台创建自建应用，打开机器人能力和长连接事件，
+                再回到这里填写应用凭证。FCGO 只会连接你填入的这个应用，不会默认使用任何人的机器人。
               </p>
               <div class="settings-list one-column">
                 {_setting_fields_for(

@@ -28,6 +28,11 @@ def test_build_windows_portable_package_excludes_local_secrets(tmp_path: Path) -
     launcher_text = launcher.read_text(encoding="utf-8")
     assert "FCGO_ENV=prod" in env_example
     assert "FCGO_START_LONG_CONNECTION=false" in env_example
+    assert "FEISHU_APP_ID=\n" in env_example
+    assert "FEISHU_APP_SECRET=\n" in env_example
+    assert "GEMINI_API_KEY=\n" in env_example
+    assert "cli_xxx" not in env_example
+    assert "GEMINI_API_KEY=xxx" not in env_example
     assert "set FCGO_ENV=prod" in launcher_text
     assert "set FCGO_RESTART_TIMEOUT_SECONDS=120" in launcher_text
     assert "set UV_LINK_MODE=copy" in launcher_text
@@ -73,7 +78,16 @@ def _fake_workspace(tmp_path: Path) -> Path:
     (workspace / "uv.lock").write_text("", encoding="utf-8")
     (workspace / "README.md").write_text("# FCGO\n", encoding="utf-8")
     (workspace / ".env.example").write_text(
-        "FCGO_ENV=dev\nFCGO_BASE_URL=http://127.0.0.1:8000\n",
+        "\n".join(
+            (
+                "FCGO_ENV=dev",
+                "FCGO_BASE_URL=http://127.0.0.1:8000",
+                "FEISHU_APP_ID=cli_xxx",
+                "FEISHU_APP_SECRET=xxx",
+                "GEMINI_API_KEY=xxx",
+                "",
+            )
+        ),
         encoding="utf-8",
     )
     (workspace / ".env").write_text("SECRET=do-not-copy\n", encoding="utf-8")

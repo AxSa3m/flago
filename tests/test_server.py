@@ -421,6 +421,8 @@ def test_admin_page_updates_all_config_form_and_lists_menus(tmp_path, monkeypatc
     assert "首次配置向导" not in admin_text
     assert "首次配置向导" in setup_text
     assert "欢迎配置你的飞书助手" in setup_text
+    assert "本程序不会自动创建飞书应用" in setup_text
+    assert "FCGO 只会连接你填入的这个应用" in setup_text
     assert "开始配置" in setup_text
     assert "先跳过" in setup_text
     assert "保存配置" in setup_text
