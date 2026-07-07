@@ -1,4 +1,18 @@
+<div align="center">
+
 # 飞灵 Flago（FLAGO）
+
+**Feishu/Lark local AI work assistant with configurable Gemini, Anthropic Claude and OpenAI-compatible models.**
+
+[English](README.en.md) | **中文**
+
+![version](https://img.shields.io/badge/version-v0.1.0-blue)
+![license](https://img.shields.io/badge/license-Apache--2.0-green)
+![python](https://img.shields.io/badge/Python-3.13+-3776AB)
+![runtime](https://img.shields.io/badge/runtime-uv-4B32C3)
+![Feishu](https://img.shields.io/badge/platform-Feishu%20%2F%20Lark-00A1E9)
+
+</div>
 
 Flago 是一个 **Python 3.13 + uv 本地飞书工作助手**。项目名来自
 **Feishu/Lark link to Anthropic, Gemini and OpenAI**，默认中文助手名“飞灵”。
