@@ -3,6 +3,7 @@ name = "flgo"
 version = "0.1.0"
 description = "飞灵（FLGO）：local Feishu/Lark work assistant powered by Gemini and OpenAI-compatible models."
 readme = "README.md"
+license = "Apache-2.0"
 requires-python = ">=3.13"
 dependencies = [
     "aiosqlite>=0.21.0",
