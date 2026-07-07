@@ -5,16 +5,14 @@ Flago 是一个 **Python 3.13 + uv 本地飞书工作助手**。项目名来自
 
 它通过飞书长连接机器人接收私聊或群聊 `@机器人` 消息，按用户授权读取飞书文档、电子表格、多维表格和网页链接，可调用 Gemini、Anthropic Claude、OpenAI 兼容模型等生成回复，并返回飞书消息。Flago 主要解决飞书机器人或 Aily 配置外部模型时的限制问题，用户可自行配置所需的模型 API 接口。
 
-## 当前实现范围
+## 当前能力
 
-- Python/uv 项目骨架、配置、日志和 SQLite 本地存储
-- 多模型 Provider 协议、运行时路由、Gemini Provider 和 OpenAI-compatible Provider
-- 媒体/工作流 Provider 接口层和 mock 测试；真实 Seedance、ComfyUI、Coze、Dify adapter 待后续实现
-- 飞书消息路由、长连接 worker 骨架、消息回复客户端
-- 飞书 OAuth 回调和 token 持久化骨架
-- 飞书文档/表格/多维表格读取，以及普通网页链接正文提取
-- Agent + Tools 双轨编排基础；默认仍使用 legacy 编排，可通过配置切换到 Agent 模式
-- 确认式写回能力；默认关闭，可按策略生成确认卡片、直接执行低风险追加或只返回草稿
+- 本地配置后台、首次配置引导和 SQLite 本地存储。
+- 飞书机器人长连接消息接收、私聊/群聊回复和 OAuth 授权。
+- 飞书文档、电子表格、多维表格、知识库、附件和网页链接读取。
+- Gemini、Anthropic Claude、OpenAI 兼容模型等多模型配置。
+- 当前会话上下文、长期记忆、助手名称和助手简介偏好。
+- 确认式写回能力；默认关闭，可按策略生成确认卡片、直接执行低风险追加或只返回草稿。
 
 ## 快速开始
 
@@ -66,14 +64,8 @@ uv run flago doctor
 更多文档：
 
 - [小白安装与配置指南](docs/beginner-installation-guide.md)
-- [产品规格](docs/product-spec.md)
-- [MVP 验收测试矩阵](docs/mvp-acceptance-tests.md)
-- [架构说明](docs/architecture.md)
 - [用户授权与隐私操作指南](docs/user-privacy-operations.md)
-- [上下文读取、用户授权和长期记忆隐私规格](docs/context-privacy-memory.md)
-- [助手命名与用户偏好记忆规格](docs/assistant-personalization-memory.md)
 - [多模型 Provider 配置模板](docs/model-provider-configuration.md)
-- [多模型 Provider 架构规划](docs/multi-model-provider-architecture.md)
 - [本地部署指南](docs/deployment.md)
 - [便携启动包](docs/portable-packaging.md)
 
@@ -196,7 +188,7 @@ auth:user.id:read drive:drive.search:readonly search:docs:read docx:document:rea
 记忆管理命令只允许在私聊中操作，避免个人记忆展示到群聊。
 普通聊天中识别到“记住我叫…”“我的项目代号是…”这类候选记忆时，Flago（FLAGO） 会先发送确认卡片；用户点击“保存”后才写入长期记忆。
 Flago（FLAGO） 默认不会保存完整聊天原文、飞书资源正文、网页正文或附件正文。隐私边界见
-[上下文读取、用户授权和长期记忆隐私规格](docs/context-privacy-memory.md)。
+[用户授权与隐私操作指南](docs/user-privacy-operations.md)。
 
 当前会话聊天历史读取使用应用权限 `im:message:readonly` 和 tenant token，不依赖用户 OAuth。
 Flago（FLAGO） 会把最近聊天做短期 TTL 缓存，并在每次请求前把近期窗口内的消息按时间顺序作为

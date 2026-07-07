@@ -109,18 +109,6 @@ ANTHROPIC_MAX_OUTPUT_TOKENS=4096
 # ANTHROPIC_HTTP_PROXY=http://127.0.0.1:7890
 ```
 
-## Seedance / ComfyUI（规划）
-
-Seedance 和 ComfyUI 属于媒体或工作流 Provider，不应直接作为普通聊天模型接入。后续应通过显式工具、成本确认和异步任务状态查询接入。
-
-```env
-SEEDANCE_API_KEY=
-SEEDANCE_BASE_URL=
-
-COMFYUI_BASE_URL=
-COMFYUI_API_KEY=
-```
-
 ## 安全与审计
 
 - API key、Authorization header、OAuth token 和 provider 错误会经过脱敏后再记录或展示。

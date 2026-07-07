@@ -15,3 +15,6 @@ build/
 server*.log
 service-control*.log
 .tmp/
+
+# Local-only project planning/specification notes.
+docs/_local/

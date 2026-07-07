@@ -355,7 +355,7 @@ FLAGO_MEMORY_CONTEXT_MAX_CHARS=4000
 ```
 
 默认开启当前会话上下文读取；未授权或读取失败时会降级为无历史上下文继续回答。系统不会把完整聊天、飞书资源、网页或附件正文保存为长期记忆。详细边界见
-[上下文读取、用户授权和长期记忆隐私规格](context-privacy-memory.md)。
+[用户授权与隐私操作指南](user-privacy-operations.md)。
 
 当前会话聊天历史读取使用应用权限 `im:message:readonly` 和 tenant token，不依赖用户 OAuth。
 Flago（FLAGO） 会短期缓存最近聊天原文，用于减少重复飞书 API 调用；缓存按 TTL 自动清理。

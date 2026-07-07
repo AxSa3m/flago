@@ -24,6 +24,8 @@ def test_build_windows_portable_package_excludes_local_secrets(tmp_path: Path) -
     assert not (package_dir / ".env").exists()
     assert not (package_dir / "data").exists()
     assert not (package_dir / "server.err.log").exists()
+    assert not (package_dir / "docs" / "_local").exists()
+    assert (package_dir / "docs" / "guide.md").exists()
     env_example = (package_dir / ".env.example").read_text(encoding="utf-8")
     launcher_text = launcher.read_text(encoding="utf-8")
     assert "FLAGO_ENV=prod" in env_example
@@ -72,6 +74,7 @@ def _fake_workspace(tmp_path: Path) -> Path:
     (workspace / "src" / "flago").mkdir(parents=True)
     (workspace / "scripts").mkdir()
     (workspace / "docs").mkdir()
+    (workspace / "docs" / "_local").mkdir()
     (workspace / "data").mkdir()
     (workspace / "logs").mkdir()
     (workspace / "pyproject.toml").write_text("[project]\nname='flago'\n", encoding="utf-8")
@@ -96,6 +99,9 @@ def _fake_workspace(tmp_path: Path) -> Path:
     (workspace / "scripts" / "restart_server.py").write_text("print('ok')\n", encoding="utf-8")
     (workspace / "scripts" / "bad.ps1").write_text("Write-Host bad\n", encoding="utf-8")
     (workspace / "docs" / "guide.md").write_text("guide\n", encoding="utf-8")
+    (workspace / "docs" / "_local" / "planning.md").write_text(
+        "internal\n", encoding="utf-8"
+    )
     if os.name != "nt":
         (workspace / "scripts" / "restart_server.py").chmod(0o755)
     return workspace
