@@ -1,4 +1,6 @@
 import asyncio
+import hashlib
+import json
 import re
 from datetime import UTC, datetime, timedelta
 from typing import Any
@@ -7,6 +9,7 @@ from urllib.parse import parse_qs, urlencode, urlparse
 import respx
 from fastapi.testclient import TestClient
 from httpx import ConnectError, Response
+from pydantic import SecretStr
 
 from flago.config import Settings
 from flago.model_providers.types import ModelResponse
@@ -567,9 +570,9 @@ def test_card_callback_confirms_pending_action(tmp_path, monkeypatch) -> None:
 
     monkeypatch.setattr(FeishuWriteExecutor, "execute", fake_execute)
     with TestClient(create_app(settings)) as client:
-        response = client.post(
-            "/callbacks/feishu/card",
-            json={
+        response = _post_signed_card_callback(
+            client,
+            {
                 "header": {"event_id": "evt-card-1"},
                 "event": {
                     "operator": {"open_id": "ou_user"},
@@ -618,8 +621,8 @@ def test_card_callback_is_idempotent_by_event_id(tmp_path, monkeypatch) -> None:
         },
     }
     with TestClient(create_app(settings)) as client:
-        first = client.post("/callbacks/feishu/card", json=payload)
-        second = client.post("/callbacks/feishu/card", json=payload)
+        first = _post_signed_card_callback(client, payload)
+        second = _post_signed_card_callback(client, payload)
 
     assert first.status_code == 200
     assert first.json()["status"] == "executed"
@@ -641,9 +644,9 @@ def test_card_callback_cancels_pending_action(tmp_path) -> None:
     asyncio.run(_save_pending_action(settings, proposal))
 
     with TestClient(create_app(settings)) as client:
-        response = client.post(
-            "/callbacks/feishu/card",
-            json={
+        response = _post_signed_card_callback(
+            client,
+            {
                 "actor_id": "ou_user",
                 "action": "cancel",
                 "action_id": proposal.id,
@@ -674,9 +677,9 @@ def test_card_callback_rejects_wrong_actor(tmp_path, monkeypatch) -> None:
 
     monkeypatch.setattr(FeishuWriteExecutor, "execute", fake_execute)
     with TestClient(create_app(settings)) as client:
-        response = client.post(
-            "/callbacks/feishu/card",
-            json={
+        response = _post_signed_card_callback(
+            client,
+            {
                 "actor_id": "ou_other",
                 "action": "confirm",
                 "action_id": proposal.id,
@@ -691,7 +694,11 @@ def test_card_callback_supports_url_verification(tmp_path) -> None:
     with TestClient(create_app(_settings(tmp_path))) as client:
         response = client.post(
             "/callbacks/feishu/card",
-            json={"type": "url_verification", "challenge": "challenge-token"},
+            json={
+                "type": "url_verification",
+                "challenge": "challenge-token",
+                "token": "verify-token",
+            },
         )
 
     assert response.status_code == 200
@@ -704,14 +711,15 @@ def test_card_callback_reports_disabled_when_writeback_paused(tmp_path) -> None:
         sqlite_path=tmp_path / "flago.sqlite3",
         feishu_app_id="cli_test",
         feishu_app_secret="secret",
+        feishu_verification_token="verify-token",
         gemini_api_key="",
         writeback_enabled=False,
     )
 
     with TestClient(create_app(settings)) as client:
-        response = client.post(
-            "/callbacks/feishu/card",
-            json={
+        response = _post_signed_card_callback(
+            client,
+            {
                 "actor_id": "ou_user",
                 "action": "confirm",
                 "action_id": "action-1",
@@ -723,6 +731,72 @@ def test_card_callback_reports_disabled_when_writeback_paused(tmp_path) -> None:
     assert "写入功能当前已暂停" in response.json()["message"]
 
 
+def test_card_callback_rejects_missing_signature(tmp_path, monkeypatch) -> None:
+    settings = _settings(tmp_path)
+
+    async def fake_execute(self, **kwargs):
+        raise AssertionError("unsigned callback must not execute")
+
+    monkeypatch.setattr(FeishuWriteExecutor, "execute", fake_execute)
+    with TestClient(create_app(settings)) as client:
+        response = client.post(
+            "/callbacks/feishu/card",
+            json={
+                "actor_id": "ou_user",
+                "action": "confirm",
+                "action_id": "forged-action",
+            },
+        )
+
+    assert response.status_code == 401
+
+
+def test_card_callback_rejects_wrong_signature(tmp_path, monkeypatch) -> None:
+    settings = _settings(tmp_path)
+
+    async def fake_execute(self, **kwargs):
+        raise AssertionError("invalid callback must not execute")
+
+    monkeypatch.setattr(FeishuWriteExecutor, "execute", fake_execute)
+    with TestClient(create_app(settings)) as client:
+        response = client.post(
+            "/callbacks/feishu/card",
+            content=json.dumps(
+                {
+                    "actor_id": "ou_user",
+                    "action": "confirm",
+                    "action_id": "forged-action",
+                }
+            ),
+            headers={
+                "Content-Type": "application/json",
+                "X-Lark-Request-Timestamp": "1700000000",
+                "X-Lark-Request-Nonce": "wrong-nonce",
+                "X-Lark-Signature": "wrong-signature",
+            },
+        )
+
+    assert response.status_code == 401
+
+
+def test_card_callback_fails_closed_without_verification_token(tmp_path) -> None:
+    settings = _settings(tmp_path)
+    settings.feishu_verification_token = SecretStr("")
+
+    with TestClient(create_app(settings)) as client:
+        response = client.post(
+            "/callbacks/feishu/card",
+            json={
+                "actor_id": "ou_user",
+                "action": "confirm",
+                "action_id": "forged-action",
+            },
+        )
+
+    assert response.status_code == 503
+    assert response.json()["detail"] == "飞书卡片回调验证尚未配置"
+
+
 def _settings(tmp_path) -> Settings:
     return Settings(
         env="test",
@@ -730,6 +804,7 @@ def _settings(tmp_path) -> Settings:
         base_url="http://localhost:8000",
         feishu_app_id="cli_test",
         feishu_app_secret="secret",
+        feishu_verification_token="verify-token",
         feishu_base_url="https://open.feishu.test",
         feishu_auth_base_url="https://accounts.feishu.test",
         gemini_api_key="",
@@ -741,3 +816,22 @@ async def _save_pending_action(settings: Settings, proposal: ActionProposal) -> 
     store = SQLiteStore(settings.sqlite_path)
     await store.init()
     await store.save_pending_action(proposal)
+
+
+def _post_signed_card_callback(client: TestClient, payload: dict[str, Any]):
+    body = json.dumps(payload, separators=(",", ":")).encode("utf-8")
+    timestamp = "1700000000"
+    nonce = "test-nonce"
+    signature = hashlib.sha1(
+        (timestamp + nonce + "verify-token").encode("utf-8") + body
+    ).hexdigest()
+    return client.post(
+        "/callbacks/feishu/card",
+        content=body,
+        headers={
+            "Content-Type": "application/json",
+            "X-Lark-Request-Timestamp": timestamp,
+            "X-Lark-Request-Nonce": nonce,
+            "X-Lark-Signature": signature,
+        },
+    )

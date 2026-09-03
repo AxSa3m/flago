@@ -4,13 +4,19 @@ from contextlib import asynccontextmanager
 from html import escape
 from typing import Any
 
-from fastapi import FastAPI, HTTPException, Query
+from fastapi import FastAPI, HTTPException, Query, Request
 from fastapi.responses import HTMLResponse
 from starlette.middleware.sessions import SessionMiddleware
 
 from flago import __version__
 from flago.config import Settings, get_settings
-from flago.feishu.card_callback import is_url_verification, parse_card_callback
+from flago.feishu.card_callback import (
+    FeishuCardAuthenticationError,
+    FeishuCardAuthenticationNotConfiguredError,
+    authenticate_card_callback,
+    is_url_verification,
+    parse_card_callback,
+)
 from flago.feishu.client import FeishuClient
 from flago.feishu.oauth import FeishuOAuthService
 from flago.feishu.openapi import FeishuOpenAPI
@@ -120,7 +126,27 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         )
 
     @app.post("/callbacks/feishu/card")
-    async def feishu_card_callback(payload: dict[str, Any]) -> dict[str, Any]:
+    async def feishu_card_callback(request: Request) -> dict[str, Any]:
+        raw_body = await request.body()
+        try:
+            payload = authenticate_card_callback(
+                raw_body,
+                request.headers,
+                verification_token=settings.feishu_verification_token.get_secret_value(),
+                encrypt_key=settings.feishu_encrypt_key.get_secret_value(),
+            )
+        except FeishuCardAuthenticationNotConfiguredError as exc:
+            raise HTTPException(
+                status_code=503,
+                detail="飞书卡片回调验证尚未配置",
+            ) from exc
+        except FeishuCardAuthenticationError as exc:
+            raise HTTPException(
+                status_code=401,
+                detail="飞书卡片回调验证失败",
+            ) from exc
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
         if is_url_verification(payload):
             return {"challenge": payload["challenge"]}
         try:

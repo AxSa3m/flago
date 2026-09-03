@@ -4,6 +4,7 @@ import pytest
 from lark_oapi.event.callback.model.p2_card_action_trigger import P2CardActionTrigger
 
 from flago.config import Settings
+from flago.feishu import worker as worker_module
 from flago.feishu.worker import (
     FeishuLongConnectionWorker,
     _configure_lark_ws_proxy,
@@ -46,6 +47,55 @@ def test_configure_lark_ws_proxy_overrides_sdk_direct_ws_default(monkeypatch) ->
         "http": "http://127.0.0.1:7890",
         "https": "http://127.0.0.1:7890",
     }
+
+
+def test_worker_passes_encrypt_key_and_verification_token_in_sdk_order(
+    monkeypatch,
+) -> None:
+    captured: dict[str, tuple[str, str]] = {}
+
+    class FakeBuilder:
+        def register_p2_im_message_receive_v1(self, _handler):
+            return self
+
+        def register_p2_im_message_message_read_v1(self, _handler):
+            return self
+
+        def register_p2_application_bot_menu_v6(self, _handler):
+            return self
+
+        def register_p2_card_action_trigger(self, _handler):
+            return self
+
+        def build(self):
+            return object()
+
+    def fake_builder(encrypt_key: str, verification_token: str) -> FakeBuilder:
+        captured["arguments"] = (encrypt_key, verification_token)
+        return FakeBuilder()
+
+    class FakeClient:
+        def __init__(self, *_args, **_kwargs) -> None:
+            pass
+
+        def start(self) -> None:
+            pass
+
+    monkeypatch.setattr(worker_module, "_configure_lark_ws_proxy", lambda _settings: None)
+    monkeypatch.setattr(worker_module.lark.EventDispatcherHandler, "builder", fake_builder)
+    monkeypatch.setattr(worker_module.lark.ws, "Client", FakeClient)
+    worker = FeishuLongConnectionWorker(
+        Settings(
+            env="test",
+            feishu_encrypt_key="encrypt-key",
+            feishu_verification_token="verify-token",
+        ),
+        router=None,
+    )
+
+    worker.run_forever()
+
+    assert captured["arguments"] == ("encrypt-key", "verify-token")
 
 
 @pytest.mark.asyncio

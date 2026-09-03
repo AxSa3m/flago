@@ -7,7 +7,7 @@ import socket
 from dataclasses import dataclass
 from io import BytesIO
 from typing import Any, Literal
-from urllib.parse import unquote, urlparse
+from urllib.parse import unquote, urljoin, urlparse
 
 import httpx
 from bs4 import BeautifulSoup
@@ -26,6 +26,8 @@ from flago.models import AuditEventType, ResourceReadResult, ResourceRef, Resour
 from flago.resources.attachments import extract_attachment
 
 logger = logging.getLogger(__name__)
+
+MAX_WEB_REDIRECTS = 5
 
 
 @dataclass(frozen=True)
@@ -637,36 +639,64 @@ class WebResourceReader:
     async def read(self, ref: ResourceRef, actor_id: str) -> ResourceReadResult:  # noqa: ARG002
         if ref.type != ResourceType.WEB:
             return ResourceReadResult(ref=ref, error="不是普通网页链接")
-        control_error = await _web_read_control_error(ref.url, self.settings)
-        if control_error:
-            return ResourceReadResult(ref=ref, error=control_error)
         try:
             async with httpx.AsyncClient(
                 timeout=self.settings.web_timeout_seconds,
-                follow_redirects=True,
+                follow_redirects=False,
                 headers={
                     "User-Agent": "FLAGO/0.1 (+https://github.com/AxSa3m/flago)",
                     "Accept": "text/html,application/xhtml+xml,text/plain;q=0.9,*/*;q=0.1",
                 },
             ) as client:
-                response = await client.get(ref.url)
-                response.raise_for_status()
-            content_length = response.headers.get("content-length")
-            declared_size = _int_or_none(content_length)
-            if declared_size is not None and declared_size > self.settings.web_max_bytes:
-                return ResourceReadResult(ref=ref, error="网页内容过大，已按安全限制跳过读取")
-            content_type = response.headers.get("content-type", "").lower()
-            if content_type and not _is_readable_web_content(content_type):
-                return ResourceReadResult(
-                    ref=ref,
-                    error=f"不支持读取该网页内容类型：{content_type.split(';', 1)[0]}",
-                )
-            if len(response.content) > self.settings.web_max_bytes:
-                return ResourceReadResult(
-                    ref=ref,
-                    error="网页内容过大，已按安全限制跳过读取",
-                )
-            soup = BeautifulSoup(response.text, "html.parser")
+                current_url = ref.url
+                for redirect_count in range(MAX_WEB_REDIRECTS + 1):
+                    control_error = await _web_read_control_error(current_url, self.settings)
+                    if control_error:
+                        return ResourceReadResult(ref=ref, error=control_error)
+                    async with client.stream("GET", current_url) as response:
+                        if response.is_redirect:
+                            location = response.headers.get("location")
+                            if not location:
+                                return ResourceReadResult(ref=ref, error="网页重定向缺少目标地址")
+                            if redirect_count >= MAX_WEB_REDIRECTS:
+                                return ResourceReadResult(
+                                    ref=ref,
+                                    error="网页重定向次数过多，已停止读取",
+                                )
+                            current_url = urljoin(str(response.url), location)
+                            continue
+                        response.raise_for_status()
+                        content_length = response.headers.get("content-length")
+                        declared_size = _int_or_none(content_length)
+                        if (
+                            declared_size is not None
+                            and declared_size > self.settings.web_max_bytes
+                        ):
+                            return ResourceReadResult(
+                                ref=ref,
+                                error="网页内容过大，已按安全限制跳过读取",
+                            )
+                        content_type = response.headers.get("content-type", "").lower()
+                        if content_type and not _is_readable_web_content(content_type):
+                            return ResourceReadResult(
+                                ref=ref,
+                                error=f"不支持读取该网页内容类型：{content_type.split(';', 1)[0]}",
+                            )
+                        content = await _read_limited_web_content(
+                            response,
+                            max_bytes=self.settings.web_max_bytes,
+                        )
+                        if content is None:
+                            return ResourceReadResult(
+                                ref=ref,
+                                error="网页内容过大，已按安全限制跳过读取",
+                            )
+                        encoding = response.encoding or "utf-8"
+                        page_text = content.decode(encoding, errors="replace")
+                        break
+                else:  # pragma: no cover - the redirect limit returns inside the loop
+                    return ResourceReadResult(ref=ref, error="网页重定向次数过多，已停止读取")
+            soup = BeautifulSoup(page_text, "html.parser")
             for tag in soup(["script", "style", "noscript", "svg", "canvas"]):
                 tag.decompose()
             title = soup.title.string.strip() if soup.title and soup.title.string else None
@@ -679,6 +709,21 @@ class WebResourceReader:
             return ResourceReadResult(ref=ref, title=title, content=text, truncated=truncated)
         except Exception as exc:  # noqa: BLE001
             return ResourceReadResult(ref=ref, error=str(exc))
+
+
+async def _read_limited_web_content(
+    response: httpx.Response,
+    *,
+    max_bytes: int,
+) -> bytes | None:
+    chunks: list[bytes] = []
+    total = 0
+    async for chunk in response.aiter_bytes():
+        total += len(chunk)
+        if total > max_bytes:
+            return None
+        chunks.append(chunk)
+    return b"".join(chunks)
 
 
 def _resource_error_type(error: str | None) -> str | None:

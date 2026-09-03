@@ -18,3 +18,4 @@ service-control*.log
 
 # Local-only project planning/specification notes.
 docs/_local/
+docs/research/

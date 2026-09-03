@@ -1,5 +1,10 @@
+import hashlib
+import hmac
+import json
+from collections.abc import Mapping
 from typing import Any, Literal
 
+from lark_oapi.core.utils import AESCipher
 from pydantic import BaseModel, Field
 
 
@@ -11,6 +16,49 @@ class FeishuCardCallback(BaseModel):
     event_id: str = ""
     value: dict[str, Any] = Field(default_factory=dict)
     raw: dict[str, Any]
+
+
+class FeishuCardAuthenticationError(ValueError):
+    pass
+
+
+class FeishuCardAuthenticationNotConfiguredError(
+    FeishuCardAuthenticationError
+):
+    pass
+
+
+def authenticate_card_callback(
+    raw_body: bytes,
+    headers: Mapping[str, str],
+    *,
+    verification_token: str,
+    encrypt_key: str = "",
+) -> dict[str, Any]:
+    token = verification_token.strip()
+    if not token:
+        raise FeishuCardAuthenticationNotConfiguredError(
+            "Feishu card callback verification token is not configured"
+        )
+
+    payload = _decode_payload(raw_body, encrypt_key)
+    if is_url_verification(payload):
+        callback_token = str(payload.get("token") or "")
+        if not hmac.compare_digest(token, callback_token):
+            raise FeishuCardAuthenticationError("invalid verification token")
+        return payload
+
+    timestamp = headers.get("X-Lark-Request-Timestamp", "")
+    nonce = headers.get("X-Lark-Request-Nonce", "")
+    signature = headers.get("X-Lark-Signature", "")
+    if not timestamp or not nonce or not signature:
+        raise FeishuCardAuthenticationError("missing callback signature")
+    expected = hashlib.sha1(
+        (timestamp + nonce + token).encode("utf-8") + raw_body
+    ).hexdigest()
+    if not hmac.compare_digest(expected, signature):
+        raise FeishuCardAuthenticationError("invalid callback signature")
+    return payload
 
 
 def parse_card_callback(payload: dict[str, Any]) -> FeishuCardCallback:
@@ -42,6 +90,30 @@ def parse_card_callback(payload: dict[str, Any]) -> FeishuCardCallback:
 
 def is_url_verification(payload: dict[str, Any]) -> bool:
     return bool(payload.get("challenge")) and payload.get("type") == "url_verification"
+
+
+def _decode_payload(raw_body: bytes, encrypt_key: str) -> dict[str, Any]:
+    try:
+        envelope = json.loads(raw_body)
+    except (UnicodeDecodeError, json.JSONDecodeError) as exc:
+        raise ValueError("invalid card callback JSON") from exc
+    if not isinstance(envelope, dict):
+        raise ValueError("invalid card callback payload")
+
+    encrypted = envelope.get("encrypt")
+    if not encrypted:
+        return envelope
+    if not encrypt_key:
+        raise FeishuCardAuthenticationNotConfiguredError(
+            "Feishu card callback encrypt key is not configured"
+        )
+    try:
+        payload = json.loads(AESCipher(encrypt_key).decrypt_str(str(encrypted)))
+    except Exception as exc:
+        raise FeishuCardAuthenticationError("invalid encrypted callback") from exc
+    if not isinstance(payload, dict):
+        raise ValueError("invalid card callback payload")
+    return payload
 
 
 def _action_value(payload: dict[str, Any]) -> dict[str, Any]:

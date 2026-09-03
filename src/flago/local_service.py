@@ -10,6 +10,8 @@ import urllib.request
 from pathlib import Path
 from typing import Any, Literal
 
+from dotenv import dotenv_values
+
 ServiceAction = Literal["start", "stop", "restart", "status"]
 
 
@@ -27,8 +29,18 @@ def service_control_logs(workspace: Path | None = None) -> tuple[Path, Path]:
     return root / "service-control.out.log", root / "service-control.err.log"
 
 
-def default_port() -> int:
-    return int(os.environ.get("FLAGO_RESTART_PORT", os.environ.get("FLAGO_PORT", "8000")))
+def default_port(workspace: Path | None = None) -> int:
+    root = workspace or workspace_root()
+    env_file = root / ".env"
+    file_values = dotenv_values(env_file) if env_file.exists() else {}
+    value = (
+        os.environ.get("FLAGO_RESTART_PORT")
+        or os.environ.get("FLAGO_PORT")
+        or file_values.get("FLAGO_RESTART_PORT")
+        or file_values.get("FLAGO_PORT")
+        or "8000"
+    )
+    return int(value)
 
 
 def service_status(
@@ -38,7 +50,7 @@ def service_status(
     assume_http_running: bool = False,
 ) -> dict[str, Any]:
     root = workspace or workspace_root()
-    service_port = port or default_port()
+    service_port = port or default_port(root)
     pids = flago_server_pids(root)
     health = True if assume_http_running else _health_ok(service_port)
     port_busy = _port_in_use(service_port)
@@ -77,7 +89,7 @@ def run_service_action(
     startup_timeout: int | None = None,
 ) -> dict[str, Any]:
     root = workspace or workspace_root()
-    service_port = port or default_port()
+    service_port = port or default_port(root)
     timeout = startup_timeout or int(os.environ.get("FLAGO_RESTART_TIMEOUT_SECONDS", "60"))
     if action == "status":
         return service_status(workspace=root, port=service_port)
@@ -142,7 +154,7 @@ def start_service(
     startup_timeout: int = 60,
 ) -> dict[str, Any]:
     root = workspace or workspace_root()
-    service_port = port or default_port()
+    service_port = port or default_port(root)
     status = service_status(workspace=root, port=service_port)
     if status["state"] == "running":
         return status
@@ -205,6 +217,12 @@ def _windows_flago_server_pids(
     *,
     exclude_pid: int | None = None,
 ) -> list[int]:
+    if workspace is not None:
+        pids = set(_windows_python_pids_using_workspace_modules(workspace))
+        if exclude_pid is not None:
+            pids.discard(exclude_pid)
+        return sorted(pids)
+
     command = (
         "Get-CimInstance Win32_Process | "
         "Where-Object { $_.Name -like 'python*' -and "
@@ -220,11 +238,8 @@ def _windows_flago_server_pids(
     if completed.returncode != 0:
         raise RuntimeError(completed.stderr.strip() or "failed to inspect processes")
     pids = set(_parse_pids(completed.stdout))
-    if workspace is not None:
-        module_pids = set(_windows_python_pids_using_workspace_modules(workspace))
-        if exclude_pid is not None:
-            module_pids.discard(exclude_pid)
-        pids.update(module_pids)
+    if exclude_pid is not None:
+        pids.discard(exclude_pid)
     return sorted(pids)
 
 
@@ -343,8 +358,14 @@ def _health_url_ok(url: str) -> bool:
 
 
 def _port_in_use(port: int) -> bool:
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as probe:
+        probe.settimeout(0.5)
+        if probe.connect_ex(("127.0.0.1", port)) == 0:
+            return True
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
-        sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        exclusive_address_use = getattr(socket, "SO_EXCLUSIVEADDRUSE", None)
+        if exclusive_address_use is not None:
+            sock.setsockopt(socket.SOL_SOCKET, exclusive_address_use, 1)
         try:
             sock.bind(("127.0.0.1", port))
         except OSError:

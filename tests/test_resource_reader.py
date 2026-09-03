@@ -4,7 +4,7 @@ from io import BytesIO
 import aiosqlite
 import pytest
 import respx
-from httpx import Response
+from httpx import AsyncByteStream, Response
 from pypdf import PdfWriter
 
 from flago.config import Settings
@@ -185,6 +185,17 @@ class FakeVisionModelRouter:
     async def generate_model(self, request: ModelRequest) -> ModelResponse:
         self.calls.append(request)
         return ModelResponse(text=self.text, provider=request.provider, model=request.model)
+
+
+class TrackingAsyncByteStream(AsyncByteStream):
+    def __init__(self, chunks: list[bytes]) -> None:
+        self.chunks = chunks
+        self.read_count = 0
+
+    async def __aiter__(self):
+        for chunk in self.chunks:
+            self.read_count += 1
+            yield chunk
 
 
 def _settings(
@@ -1209,6 +1220,23 @@ async def test_read_web_resource_blocks_private_address() -> None:
 
 
 @pytest.mark.asyncio
+@respx.mock
+async def test_read_web_resource_revalidates_redirect_targets() -> None:
+    respx.get("https://example.com/redirect").mock(
+        return_value=Response(
+            302,
+            headers={"location": "http://127.0.0.1:8000/healthz"},
+        )
+    )
+    reader = WebResourceReader(_settings())
+    ref = ResourceRef(type=ResourceType.WEB, url="https://example.com/redirect")
+
+    result = await reader.read(ref, "ou_user")
+
+    assert result.error == "为避免访问本机或内网地址，已跳过该网页链接"
+
+
+@pytest.mark.asyncio
 async def test_read_web_resource_rejects_url_outside_allowlist() -> None:
     reader = WebResourceReader(_settings(web_allowed_hosts="trusted.example"))
     ref = ResourceRef(type=ResourceType.WEB, url="https://example.com/article")
@@ -1244,6 +1272,26 @@ async def test_read_web_resource_rejects_declared_large_content() -> None:
     result = await reader.read(ref, "ou_user")
 
     assert result.error == "网页内容过大，已按安全限制跳过读取"
+
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_read_web_resource_stops_streaming_after_size_limit() -> None:
+    stream = TrackingAsyncByteStream([b"a" * 600, b"b" * 600, b"c" * 600])
+    respx.get("https://example.com/chunked").mock(
+        return_value=Response(
+            200,
+            headers={"content-type": "text/plain"},
+            stream=stream,
+        )
+    )
+    reader = WebResourceReader(_settings(web_max_bytes=1000))
+    ref = ResourceRef(type=ResourceType.WEB, url="https://example.com/chunked")
+
+    result = await reader.read(ref, "ou_user")
+
+    assert result.error == "网页内容过大，已按安全限制跳过读取"
+    assert stream.read_count == 2
 
 
 @pytest.mark.asyncio

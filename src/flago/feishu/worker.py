@@ -41,8 +41,8 @@ class FeishuLongConnectionWorker:
         _configure_lark_ws_proxy(self.settings)
         event_handler = (
             lark.EventDispatcherHandler.builder(
-                self.settings.feishu_verification_token.get_secret_value(),
                 self.settings.feishu_encrypt_key.get_secret_value(),
+                self.settings.feishu_verification_token.get_secret_value(),
             )
             .register_p2_im_message_receive_v1(self._handle_message_event)
             .register_p2_im_message_message_read_v1(self._handle_message_read_event)

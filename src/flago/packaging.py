@@ -23,6 +23,7 @@ IGNORE_NAMES = {
     "data",
     "logs",
     "_local",
+    "research",
 }
 IGNORE_SUFFIXES = (".pyc", ".pyo", ".log")
 

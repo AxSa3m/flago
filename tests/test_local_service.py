@@ -1,6 +1,41 @@
+import socket
 from pathlib import Path
 
 from flago import local_service
+
+
+def test_default_port_reads_workspace_env_file(monkeypatch, tmp_path: Path) -> None:
+    monkeypatch.delenv("FLAGO_RESTART_PORT", raising=False)
+    monkeypatch.delenv("FLAGO_PORT", raising=False)
+    (tmp_path / ".env").write_text("FLAGO_PORT=8123\n", encoding="utf-8")
+
+    assert local_service.default_port(tmp_path) == 8123
+
+
+def test_windows_process_discovery_is_scoped_to_workspace(monkeypatch, tmp_path: Path) -> None:
+    monkeypatch.setattr(
+        local_service,
+        "_windows_python_pids_using_workspace_modules",
+        lambda workspace: [222],
+    )
+    monkeypatch.setattr(
+        local_service.subprocess,
+        "run",
+        lambda *args, **kwargs: (_ for _ in ()).throw(
+            AssertionError("workspace lookup must not run the global process query")
+        ),
+    )
+
+    assert local_service._windows_flago_server_pids(tmp_path, exclude_pid=None) == [222]
+
+
+def test_port_in_use_detects_listener_bound_to_all_interfaces() -> None:
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as listener:
+        listener.bind(("0.0.0.0", 0))
+        listener.listen()
+        port = int(listener.getsockname()[1])
+
+        assert local_service._port_in_use(port) is True
 
 
 def test_service_status_reports_running(monkeypatch, tmp_path: Path) -> None:

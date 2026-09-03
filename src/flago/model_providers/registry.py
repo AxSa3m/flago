@@ -241,6 +241,7 @@ def build_model_router(
 ) -> ModelRouter:
     registry = build_provider_registry(settings)
     default_provider = normalize_provider_name(settings.default_provider)
+    default_model = settings.default_model
     if not registry.has(default_provider):
         can_use_local_echo = settings.env in {"dev", "test"} and registry.has("echo")
         if can_use_local_echo:
@@ -249,6 +250,7 @@ def build_model_router(
                 default_provider,
             )
             default_provider = "echo"
+            default_model = None
         else:
             available = ", ".join(registry.names()) or "none"
             raise ValueError(
@@ -258,7 +260,7 @@ def build_model_router(
     return ModelRouter(
         registry=registry,
         default_provider=default_provider,
-        default_model=settings.default_model,
+        default_model=default_model,
         catalog=build_model_catalog(settings),
         audit_recorder=audit_recorder,
         provider_concurrency_limit=settings.model_provider_concurrency_limit,
