@@ -1,0 +1,45 @@
+{
+  "scopes": {
+    "tenant": [
+      "base:field:delete",
+      "base:field:read",
+      "base:record:create",
+      "base:record:delete",
+      "base:record:read",
+      "base:record:update",
+      "base:table:delete",
+      "base:table:read",
+      "base:view:read",
+      "bitable:app",
+      "bitable:app:readonly",
+      "docs:document.media:download",
+      "docx:document",
+      "docx:document.block:convert",
+      "docx:document:create",
+      "docx:document:readonly",
+      "docx:document:write_only",
+      "drive:drive.search:readonly",
+      "drive:file:download",
+      "drive:file:readonly",
+      "im:chat:readonly",
+      "im:message.group_at_msg:readonly",
+      "im:message.group_msg",
+      "im:message.p2p_msg:readonly",
+      "im:message:readonly",
+      "im:message:send_as_bot",
+      "search:docs:read",
+      "sheets:spreadsheet",
+      "sheets:spreadsheet.meta:read",
+      "sheets:spreadsheet.meta:write_only",
+      "sheets:spreadsheet:create",
+      "sheets:spreadsheet:read",
+      "sheets:spreadsheet:readonly",
+      "sheets:spreadsheet:write_only",
+      "wiki:node:read",
+      "wiki:wiki:readonly"
+    ],
+    "user": [
+      "offline_access"
+    ]
+  }
+}

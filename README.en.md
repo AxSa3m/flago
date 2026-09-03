@@ -93,6 +93,10 @@ Most detailed documents are currently written in Chinese:
 All configuration is provided through environment variables or `.env`.
 Do not commit real secrets to the repository.
 
+Use the [Feishu/Lark app scopes import file](config/feishu-app-scopes.json)
+to import the required app permissions in the Feishu/Lark developer console.
+It contains permission names only and does not include an App ID, secret, or user token.
+
 Common variables:
 
 - `FEISHU_APP_ID`

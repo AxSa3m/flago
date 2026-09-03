@@ -87,6 +87,10 @@ uv run flago doctor
 
 所有配置通过环境变量或 `.env` 注入。真实密钥不要提交到仓库。
 
+在飞书开放平台的权限管理页面，可使用
+[飞书应用权限 Scopes 导入清单](config/feishu-app-scopes.json)
+批量导入 Flago 所需的应用权限。该文件只包含权限名称，不包含 App ID、Secret 或用户 Token。
+
 关键变量：
 
 - `FEISHU_APP_ID`
